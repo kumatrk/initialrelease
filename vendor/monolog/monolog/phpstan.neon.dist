@@ -1,0 +1,23 @@
+parameters:
+    level: 8
+
+    treatPhpDocTypesAsCertain: false
+    reportUnmatchedIgnoredErrors: true
+
+    paths:
+        - src/
+#        - tests/
+
+    excludePaths:
+        - 'src/Monolog/Handler/PHPConsoleHandler.php'
+
+    ignoreErrors:
+        - '#zend_monitor_|ZEND_MONITOR_#'
+        - '#MongoDB\\(Client|Collection)#'
+
+includes:
+    - phpstan-baseline.neon
+    - phpstan-ignore-by-php-version.neon.php
+    - phar://phpstan.phar/conf/bleedingEdge.neon
+    - vendor/phpstan/phpstan-strict-rules/rules.neon
+    - vendor/phpstan/phpstan-deprecation-rules/rules.neon

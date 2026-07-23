@@ -1,0 +1,53 @@
+<?php
+
+/**
+ * Simple KUMA — Configuration template
+ *
+ * Copy to config.php only for manual setup. Prefer the web installer (public/install.php).
+ * NEVER commit config.php to git.
+ */
+
+declare(strict_types=1);
+
+define('DB_HOST', 'localhost');
+define('DB_NAME', 'simplekuma');
+define('DB_USER', 'your_db_user');
+define('DB_PASSWORD', 'your_db_password');
+define('DB_CHARSET', 'utf8mb4');
+define('DB_COLLATE', 'utf8mb4_unicode_ci');
+
+define('BASE_URL', 'https://yourdomain.com');
+define('PUBLIC_WEB_PREFIX', ''); // '' when document root is public/; else '/public'
+define('ASSETS_BASE_URL', rtrim(BASE_URL, '/') . PUBLIC_WEB_PREFIX);
+define('APP_BASE_URL', rtrim(BASE_URL, '/') . PUBLIC_WEB_PREFIX);
+define('APP_KEY', 'generate-a-unique-64-char-hex-key');
+define('APP_ENV', 'production');
+define('APP_DEBUG', false);
+define('SINGLE_ADMIN_MODE', true);
+
+// Click entry URL — query style avoids /km/ fingerprint; legacy /km/ links still work
+// define('CLICK_URL_STYLE', 'query');   // query = go.php?k= | path = /go/{key}
+// define('CLICK_ENTRY_SCRIPT', 'go.php');
+// define('CLICK_PATH_PREFIX', 'go');    // used when CLICK_URL_STYLE=path (pretty short links)
+
+define('APP_TIMEZONE', 'UTC');
+define('SESSION_LIFETIME', 7200);
+define('SESSION_COOKIE_HTTPONLY', true);
+define('SESSION_COOKIE_SECURE', true);
+
+define('HASH_ALGO', defined('PASSWORD_ARGON2ID') ? PASSWORD_ARGON2ID : PASSWORD_DEFAULT);
+// threads must be 1 on PHP builds that use libsodium for Argon2 (common on shared hosts)
+define('HASH_OPTIONS', [
+    'memory_cost' => 65536,
+    'time_cost' => 4,
+    'threads' => 1,
+]);
+
+define('ROOT_PATH', dirname(__DIR__));
+define('STORAGE_PATH', ROOT_PATH . '/storage');
+define('LOGS_PATH', STORAGE_PATH . '/logs');
+define('CACHE_PATH', STORAGE_PATH . '/cache');
+
+// Set by installer when complete:
+// define('INSTALLED', true);
+// define('INSTALL_DATE', 'YYYY-MM-DD HH:MM:SS');

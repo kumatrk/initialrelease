@@ -1,0 +1,7 @@
+# Staging publish tree — only zip contents should be committed
+.env
+.env.*
+config/config.php
+*.log
+*.zip
+.git/

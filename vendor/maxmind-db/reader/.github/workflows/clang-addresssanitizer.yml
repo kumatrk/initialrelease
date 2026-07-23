@@ -1,0 +1,82 @@
+name: Run Clang AddressSanitizer
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '53 3 * * SUN'
+
+permissions: {}
+
+jobs:
+  addresssanitizer:
+    name: Clang AddressSanitizer
+    runs-on: ubuntu-latest
+    env:
+      ASAN_OPTIONS: strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1:detect_invalid_pointer_pairs=2
+      CC: clang
+      CFLAGS: -fsanitize=address
+      LDFLAGS: -fsanitize=address
+    steps:
+      - name: Checkout
+        # We use v1 due to https://github.com/actions/checkout/issues/334
+        uses: actions/checkout@v5
+        with:
+          submodules: true
+          persist-credentials: false
+
+      - name: Install system dependencies
+        run: sudo apt update && sudo apt install pkg-config clang build-essential libxml2-dev libsqlite3-dev wget libssl-dev libcurl4 zlib1g-dev libcurl4-openssl-dev libonig-dev libzip-dev -y
+
+      # We install PHP from source as I was unsuccessful building only the
+      # extension with AddressSanitizer and getting that to run.
+      #
+      # Specifically: Clang does not link the ASan runtime to libraries. PHP
+      # from the image we use or from Ubuntu does not have ASan linked. If we
+      # link our extension with -shared-asan and then use LD_PRELOAD to load
+      # ASan, we get RTLD_DEEPBIND errors. I don't know if it's possible, but
+      # building PHP from source with ASan linked works around the issue.
+      - name: Install PHP
+        run: |
+              wget https://www.php.net/distributions/php-8.1.0.tar.gz
+              tar xzf php-8.1.0.tar.gz
+              cd php-8.1.0
+              ./configure --with-openssl --with-curl --with-zlib --enable-mbstring --enable-intl --with-zip
+              make -j2
+              sudo make install
+
+      - name: Install composer
+        run: |
+              php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+              php composer-setup.php
+              php -r "unlink('composer-setup.php');"
+              sudo mv composer.phar /usr/local/bin/composer
+
+      - name: Install libmaxminddb
+        run: |
+              git clone --recursive https://github.com/maxmind/libmaxminddb.git
+              cd libmaxminddb
+              ./bootstrap
+              ./configure
+              make -j2
+              sudo make install
+
+      - name: Build extension
+        run: |
+              cd ext
+              phpize
+              ./configure --with-maxminddb --enable-maxminddb-debug
+              make clean
+              make -j2
+              NO_INTERACTION=1 make test
+        env:
+          # -isystem as otherwise Clang generates warnings for includes there.
+          #  I don't think it should, but I haven't discovered a better way to
+          #  avoid this.
+          CFLAGS: -isystem /usr/local/include/php/Zend -fsanitize=address -Wall -Wextra -Wpedantic -Wformat=2 -Walloca -Wvla -Wimplicit-fallthrough -Wcast-qual -Wconversion -Wshadow -Wundef -Wstrict-prototypes -Wswitch-enum -fstack-protector -D_FORTIFY_SOURCE=2
+
+      - name: Install dependencies
+        run: composer install --no-progress --prefer-dist --optimize-autoloader
+
+      - name: Test with phpunit using extension
+        run: php -d extension=ext/modules/maxminddb.so vendor/bin/phpunit

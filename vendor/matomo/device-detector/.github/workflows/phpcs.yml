@@ -1,0 +1,34 @@
+name: PHPCS check
+
+permissions:
+  actions: read
+  checks: read
+  contents: read
+  deployments: none
+  issues: read
+  packages: none
+  pull-requests: read
+  repository-projects: none
+  security-events: none
+  statuses: none
+
+on:
+  pull_request:
+  push:
+    branches: [ master ]
+
+jobs:
+  phpcs:
+    name: PHPCS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install dependencies
+        run: composer install --dev --prefer-dist --no-progress --no-suggest --ignore-platform-reqs
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '7.2'
+          tools: cs2pr
+      - name: Run phpcs
+        run: ./vendor/bin/phpcs -q --report=checkstyle | cs2pr

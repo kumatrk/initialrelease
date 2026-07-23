@@ -1,0 +1,134 @@
+# Simple KUMA - Apache Configuration
+# Document root is /home/subscribler/public_html
+# This redirects requests to /public/ folder
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    # RewriteBase auto-detects based on .htaccess location
+    # In root: RewriteBase = /
+    # In subdirectory: RewriteBase = /subdirectory/
+    # This allows the same rules to work in both contexts
+
+    # CRITICAL: Handle /km/ URLs FIRST before any other rules
+    # This must be at the very top to prevent other rules from interfering
+    # IMPORTANT: Exclude /public/ from matching to avoid loops
+    # QSA flag preserves existing query string and appends key parameter
+    # Supports both root (/km/) and subdirectory (/simplekuma/km/) installations
+    # Uses REQUEST_URI matching to work regardless of where .htaccess is located
+    # NOTE: Debug routes (km/debugstep, km/bare, km/echo, etc.) removed for production security
+
+    # Generic /km/<key> rule - handles /km/<key> and /simplekuma/km/<key>
+    # Pattern works for both root and subdirectory installations
+    # When .htaccess is in subdirectory, RewriteRule pattern is relative to that directory
+    # So we match REQUEST_URI in RewriteCond (full path) and use simple pattern in RewriteRule
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteCond %{REQUEST_URI} ^/.*km/([a-zA-Z0-9]+)/?$
+    RewriteRule ^km/([a-zA-Z0-9]+)/?$ public/km.php?key=$1 [QSA,L]
+    
+    # Handle /km/<key>/<slug> pattern (with slug)
+    # Works for both /km/<key>/<slug> and /simplekuma/km/<key>/<slug>
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteCond %{REQUEST_URI} ^/.*km/([a-zA-Z0-9]+)/(.+)$
+    RewriteRule ^km/([a-zA-Z0-9]+)/(.+)$ public/km.php?key=$1&slug=$2 [QSA,L]
+
+    # Alternate click path when CLICK_URL_STYLE=path (legacy /km/ and /c/ rules above always remain)
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteCond %{REQUEST_URI} ^/.*go/([a-zA-Z0-9]+)/?$
+    RewriteRule ^go/([a-zA-Z0-9]+)/?$ public/km.php?key=$1 [QSA,L]
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteCond %{REQUEST_URI} ^/.*go/([a-zA-Z0-9]+)/(.+)$
+    RewriteRule ^go/([a-zA-Z0-9]+)/(.+)$ public/km.php?key=$1&slug=$2 [QSA,L]
+
+    # Legacy /c/ short path (older SK builds that set CLICK_PATH_PREFIX=c)
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteCond %{REQUEST_URI} ^/.*c/([a-zA-Z0-9]+)/?$
+    RewriteRule ^c/([a-zA-Z0-9]+)/?$ public/km.php?key=$1 [QSA,L]
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteCond %{REQUEST_URI} ^/.*c/([a-zA-Z0-9]+)/(.+)$
+    RewriteRule ^c/([a-zA-Z0-9]+)/(.+)$ public/km.php?key=$1&slug=$2 [QSA,L]
+
+    # Tracking endpoints in public/ (postback, pixel, redirectless track)
+    RewriteRule ^postback\.php$ public/postback.php [L,QSA]
+    RewriteRule ^pixel\.php$ public/pixel.php [L,QSA]
+    RewriteRule ^track\.php$ public/track.php [L,QSA]
+
+    # REST API v1
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteCond %{REQUEST_URI} ^/.*api/v1(/.*)?$
+    RewriteRule ^api/v1(/.*)?$ public/api/v1/index.php [L,QSA]
+
+    # CRITICAL: Redirect /index.php to /public/index.php BEFORE PHP executes
+    # This must be FIRST to catch index.php before server blocks it
+    RewriteCond %{REQUEST_URI} ^/index\.php$ [NC]
+    RewriteRule ^index\.php$ public/index.php [L,QSA]
+    
+    # Redirect /app.php to /public/index.php
+    RewriteCond %{REQUEST_URI} ^/app\.php$ [NC]
+    RewriteRule ^app\.php$ public/index.php [L,QSA]
+    
+    # Redirect other PHP files that exist in public/ directory
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteCond %{REQUEST_URI} \.php$ [NC]
+    RewriteCond %{DOCUMENT_ROOT}/public%{REQUEST_URI} -f
+    RewriteRule ^(.*)$ public/$1 [L,QSA]
+    
+    # Redirect other files that exist in public/ directory
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteCond %{DOCUMENT_ROOT}/public%{REQUEST_URI} -f
+    RewriteRule ^(.*)$ public/$1 [L]
+    
+    # Redirect root (/) to /public/index.php
+    RewriteCond %{REQUEST_URI} ^/$
+    RewriteRule ^$ public/index.php [L,QSA]
+    
+    # NOTE: Removed fallback redirect to public/index.php
+    # Non-existent files/directories will now return 404 (like CPVLab behavior)
+    # This allows landing pages in custom directories (e.g., /landing/lp1/) to work properly
+    # If a file/directory doesn't exist, Apache will return a clean 404 error instead of redirecting to login
+</IfModule>
+
+# Security headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains" env=HTTPS
+</IfModule>
+
+# Disable directory browsing
+Options -Indexes
+
+# Custom 404 error handling (optional - Apache default will work if this is commented)
+# Uncomment and create a 404.html file if you want a custom error page
+# ErrorDocument 404 /404.html
+
+# Protect sensitive files
+<FilesMatch "^(composer\.(json|lock)|\.env|\.git|config\.php)">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Block access to test, debug, utility, and migration scripts (production security)
+<FilesMatch "^(test-|debug-|check-|diagnose-|fix-|clear-|backfill-|backup-|convert-|revert-|set-|sync-|remove-|run-migration-|analyze-|find-|modsecurity-).*\.php$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Block access to scripts directory
+<IfModule mod_rewrite.c>
+    RewriteCond %{REQUEST_URI} ^/scripts/
+    RewriteRule .* - [F,L]
+</IfModule>
+
+# Block access to storage directory
+<IfModule mod_rewrite.c>
+    RewriteCond %{REQUEST_URI} ^/storage/
+    RewriteRule .* - [F,L]
+</IfModule>
+
+# Prevent access to config directory from web
+<IfModule mod_rewrite.c>
+    RewriteCond %{REQUEST_URI} ^/config/
+    RewriteRule .* - [F,L]
+</IfModule>

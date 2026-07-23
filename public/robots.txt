@@ -1,0 +1,22 @@
+# Simple KUMA — do not index admin/auth UI (customer installs should not appear in search)
+# Meta robots + X-Robots-Tag on these pages are the primary signal; this is defense in depth.
+# Wildcard paths cover both document-root and subdirectory installs (e.g. /tracker/login.php).
+User-agent: *
+Disallow: /*login.php
+Disallow: /*logout.php
+Disallow: /*forgot-password.php
+Disallow: /*reset-password.php
+Disallow: /*install.php
+Disallow: /*index.php
+Disallow: /*update-progress.php
+Disallow: /*view-cron-log.php
+Disallow: /*fire-postback-for-conversion.php
+Disallow: /*api-fire-postback.php
+Disallow: /*api-campaign-stats.php
+Disallow: /*api-campaign-tracking-link.php
+Disallow: /*api-postback-details.php
+Disallow: /*api-dashboard-campaigns.php
+Disallow: /*api-campaign-list-stats.php
+Disallow: /*api-campaign-stats-saved-views.php
+Disallow: /*api/v1/
+Disallow: /api/v1/
