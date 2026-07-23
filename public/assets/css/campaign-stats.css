@@ -629,6 +629,62 @@
     color: var(--stats-v2-negative);
 }
 
+/* Compact dismissible error banner (replaces giant raw SQL dumps in the KPI area) */
+.stats-v2-flash {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--stats-v2-negative) 35%, transparent);
+    background: color-mix(in srgb, var(--stats-v2-negative) 12%, transparent);
+    color: var(--stats-v2-text);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.stats-v2-flash.hidden,
+.stats-v2-flash[hidden] {
+    display: none !important;
+}
+
+.stats-v2-flash.error {
+    color: var(--stats-v2-negative);
+}
+
+.stats-v2-flash-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.stats-v2-flash-dismiss {
+    flex-shrink: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 0 2px;
+    opacity: 0.75;
+}
+
+.stats-v2-flash-dismiss:hover {
+    opacity: 1;
+}
+
+.stats-v2-breakdown-message.stats-v2-message.error {
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 13px;
+    border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--stats-v2-negative) 35%, transparent);
+    background: color-mix(in srgb, var(--stats-v2-negative) 12%, transparent);
+    margin-bottom: 8px;
+}
+
 .stats-v2-pagination {
     display: flex;
     align-items: center;

@@ -63,14 +63,6 @@ final class CampaignStatsDimensionRegistry
             $seen[$item['key']] = true;
         }
 
-        foreach (self::TRACKER as $item) {
-            if (isset($seen[$item['key']])) {
-                continue;
-            }
-            $out[] = $item;
-            $seen[$item['key']] = true;
-        }
-
         $utcFrom = null;
         $utcTo = null;
         if ($dateFrom !== null && $dateFrom !== '' && $dateTo !== null && $dateTo !== '') {
@@ -87,6 +79,8 @@ final class CampaignStatsDimensionRegistry
             $utcTo
         );
 
+        // Traffic-source tokens before tracker vars so colliding params (device, os, …)
+        // still appear under Traffic Source Tokens with a namespaced key (ts:device).
         foreach ($trafficSourceIds as $tsId) {
             $ts = $trafficSourceEntity->getById($tsId);
             if ($ts === null) {
@@ -98,7 +92,12 @@ final class CampaignStatsDimensionRegistry
 
             foreach (self::decodeTokenList($ts['tokens_json'] ?? []) as $token) {
                 $param = trim((string)($token['parameter'] ?? $token['key'] ?? ''));
-                if ($param === '' || isset($seen[$param]) || self::isExcludedParam($param, $exclude)) {
+                if ($param === '' || self::isExcludedParam($param, $exclude)) {
+                    continue;
+                }
+
+                $key = self::dimensionKeyForTokenParam($param, CampaignStatsExpressions::TS_TOKEN_PREFIX);
+                if (isset($seen[$key])) {
                     continue;
                 }
 
@@ -112,18 +111,23 @@ final class CampaignStatsDimensionRegistry
                 }
 
                 $out[] = [
-                    'key' => $param,
+                    'key' => $key,
                     'label' => $label,
                     'group' => 'traffic_source',
                     'traffic_source' => $tsName,
                 ];
-                $seen[$param] = true;
+                $seen[$key] = true;
             }
         }
 
         foreach (self::decodeTokenList($campaign['custom_tokens_json'] ?? []) as $token) {
             $param = trim((string)($token['parameter'] ?? ''));
-            if ($param === '' || isset($seen[$param])) {
+            if ($param === '') {
+                continue;
+            }
+
+            $key = self::dimensionKeyForTokenParam($param, CampaignStatsExpressions::CUSTOM_TOKEN_PREFIX);
+            if (isset($seen[$key]) || isset($seen[$param])) {
                 continue;
             }
 
@@ -133,14 +137,47 @@ final class CampaignStatsDimensionRegistry
             }
 
             $out[] = [
-                'key' => $param,
+                'key' => $key,
                 'label' => $label,
                 'group' => 'campaign',
             ];
-            $seen[$param] = true;
+            $seen[$key] = true;
+        }
+
+        foreach (self::TRACKER as $item) {
+            $key = $item['key'];
+            if (isset($seen[$key])) {
+                continue;
+            }
+            // No click-column fallback (e.g. isp): if a namespaced TS token already
+            // covers this param, skip the tracker entry so we don't show two dims
+            // that resolve to the same JSON path.
+            $hasColumn = isset(CampaignStatsExpressions::BUILTIN_COLUMN_MAP[$key]);
+            $tsKey = CampaignStatsExpressions::TS_TOKEN_PREFIX . $key;
+            if (!$hasColumn && isset($seen[$tsKey])) {
+                continue;
+            }
+            $out[] = $item;
+            $seen[$key] = true;
         }
 
         return $out;
+    }
+
+    /**
+     * Use a namespaced key when the token param would be swallowed by core/tracker columns.
+     */
+    private static function dimensionKeyForTokenParam(string $param, string $prefix): string
+    {
+        if (
+            isset(self::CORE[$param])
+            || isset(self::TRACKER[$param])
+            || isset(CampaignStatsExpressions::BUILTIN_COLUMN_MAP[$param])
+        ) {
+            return $prefix . $param;
+        }
+
+        return $param;
     }
 
     /** @var list<string> */

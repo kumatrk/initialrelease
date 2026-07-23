@@ -316,6 +316,7 @@ class CampaignStatsBreakdownService
      */
     private function queryTokenAggregate(int $campaignId, string $tokenParam, string $dateFrom, string $dateTo): array
     {
+        $storageParam = CampaignStatsExpressions::unwrapDimensionKey($tokenParam);
         $sql = "
             SELECT token_value AS group_key,
                    SUM(visitors) AS clicks,
@@ -328,7 +329,7 @@ class CampaignStatsBreakdownService
             GROUP BY token_value
         ";
         $stmt = $this->db->prepare($sql);
-        $stmt->bind_param('isss', $campaignId, $dateFrom, $dateTo, $tokenParam);
+        $stmt->bind_param('isss', $campaignId, $dateFrom, $dateTo, $storageParam);
         $stmt->execute();
         $result = $stmt->get_result();
         $rows = [];

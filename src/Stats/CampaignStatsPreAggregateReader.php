@@ -464,6 +464,7 @@ final class CampaignStatsPreAggregateReader
         string $dateTo,
         CampaignStatsQueryFilters $filters
     ): array {
+        $storageParam = CampaignStatsExpressions::unwrapDimensionKey($tokenParam);
         $sql = "
             SELECT token_value AS group_key,
                    SUM(visitors) AS clicks,
@@ -475,7 +476,7 @@ final class CampaignStatsPreAggregateReader
             WHERE campaign_id = ? AND summary_date >= ? AND summary_date <= ? AND token_param = ?
         ";
         $types = 'isss';
-        $params = [$campaignId, $dateFrom, $dateTo, $tokenParam];
+        $params = [$campaignId, $dateFrom, $dateTo, $storageParam];
 
         if ($filters->trafficSourceId !== null) {
             $sql .= ' AND traffic_source_id = ?';

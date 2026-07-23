@@ -2,10 +2,14 @@
 
 ## Changes in 1.1.5.5
 
+- Campaign Stats: traffic-source tokens that share names with tracker fields (e.g. RollerAds `device` / `os` / `browser`) now appear as drill-down dimensions without overriding tracker columns
+- Campaign Stats: compact dismissible error banner; raw MySQL/`only_full_group_by` messages are no longer shown in the UI
+- Campaign Stats: hourly chart `GROUP BY` aligned for MySQL `ONLY_FULL_GROUP_BY`
 - Public GitHub source now mirrors the production zip (same allowlists; no debug/dev/PII)
 - Packaging includes `LICENSE` (AGPL-3.0) and `release-notes.md` in the shippable tree
 - Stats view IP exclusions and related reporting updates (migration 080)
 - Version bump for packaging/export
+- Production zip includes public-domain GeoIP databases (with attribution) so location works out of the box
 
 ## Changes in 1.1.5.2
 
@@ -56,3 +60,9 @@ Fresh installs should apply forward migrations **001 through 060** (exclude `rol
 ## License
 
 AGPL-3.0. See LICENSE in the package.
+
+## Links
+
+- Website: [https://simplekuma.com](https://simplekuma.com)
+- YouTube: [https://www.youtube.com/@simplekumtracking](https://www.youtube.com/@simplekumtracking)
+- Source & releases: [https://github.com/kumatrk/initialrelease](https://github.com/kumatrk/initialrelease)

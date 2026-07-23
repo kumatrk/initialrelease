@@ -1416,12 +1416,13 @@ class CampaignStatsV2Service
         $actionClicks = CampaignStatsExpressions::actionClicksCountExpr();
         $conversions = CampaignStatsExpressions::conversionsCountExpr();
         $timezoneOffset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
+        $hourExpr = "COALESCE(HOUR(CONVERT_TZ(cl.ts, '+00:00', ?)), -1)";
 
         [$filterSql, $filterTypes, $filterParams] = $filters->clickFilterSql($this->db, 'cl', $filterKeys);
 
         $sql = "
             SELECT
-                COALESCE(HOUR(CONVERT_TZ(cl.ts, '+00:00', ?)), -1) AS hour,
+                {$hourExpr} AS hour,
                 {$visitors} AS visitors,
                 {$actionClicks} AS clicks,
                 {$conversions} AS conversions,
@@ -1435,7 +1436,7 @@ class CampaignStatsV2Service
             " . CampaignStatsExpressions::conversionsAggJoin() . "
             {$fbJoins}
             WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$filterSql}
-            GROUP BY HOUR(CONVERT_TZ(cl.ts, '+00:00', ?))
+            GROUP BY {$hourExpr}
             ORDER BY hour ASC
         ";
 

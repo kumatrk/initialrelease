@@ -1,7 +1,11 @@
-# Staging publish tree — only zip contents should be committed
+# Staging publish tree — zip contents minus GitHub-oversized GeoIP DBs
 .env
 .env.*
 config/config.php
 *.log
 *.zip
+*.mmdb
+geoip/*.BIN
+geoip/*.bin
+storage/GeoLite2*
 .git/

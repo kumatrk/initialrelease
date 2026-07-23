@@ -986,14 +986,15 @@ final class DashboardStatsService
         }
 
         $offset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
+        $hourExpr = "COALESCE(HOUR(CONVERT_TZ(cl.ts, '+00:00', ?)), -1)";
         // COUNT(*) on indexed clicks — avoid COUNT(DISTINCT) and full conversions derived table.
         $sql = "
             SELECT
-                COALESCE(HOUR(CONVERT_TZ(cl.ts, '+00:00', ?)), -1) AS hour,
+                {$hourExpr} AS hour,
                 COUNT(*) AS clicks
             FROM clicks cl
             WHERE cl.ts >= ? AND cl.ts <= ?
-            GROUP BY HOUR(CONVERT_TZ(cl.ts, '+00:00', ?))
+            GROUP BY {$hourExpr}
             ORDER BY hour ASC
         ";
 
@@ -1015,13 +1016,13 @@ final class DashboardStatsService
         // Conversions/revenue by hour (cheap when conversion volume is small)
         $convSql = "
             SELECT
-                COALESCE(HOUR(CONVERT_TZ(cl.ts, '+00:00', ?)), -1) AS hour,
+                {$hourExpr} AS hour,
                 COUNT(*) AS conversions,
                 COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
             FROM conversions cv
             INNER JOIN clicks cl ON cl.click_id = cv.click_id
             WHERE cl.ts >= ? AND cl.ts <= ?
-            GROUP BY HOUR(CONVERT_TZ(cl.ts, '+00:00', ?))
+            GROUP BY {$hourExpr}
         ";
         $convStmt = $this->db->prepare($convSql);
         if ($convStmt !== false) {

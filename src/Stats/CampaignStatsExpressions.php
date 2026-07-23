@@ -29,6 +29,36 @@ class CampaignStatsExpressions
         'landing_page_id' => 'cl.landing_page_id',
     ];
 
+    /**
+     * Prefix for traffic-source token dims whose param collides with a tracker/core key
+     * (e.g. RollerAds "TS Device" uses param `device` → dimension key `ts:device`).
+     */
+    public const TS_TOKEN_PREFIX = 'ts:';
+
+    /** Prefix for campaign custom tokens that collide with reserved keys. */
+    public const CUSTOM_TOKEN_PREFIX = 'token:';
+
+    /**
+     * Storage / JSON param name for a dimension key (strips ts:/token: namespace).
+     */
+    public static function unwrapDimensionKey(string $groupBy): string
+    {
+        if (str_starts_with($groupBy, self::TS_TOKEN_PREFIX)) {
+            return substr($groupBy, strlen(self::TS_TOKEN_PREFIX));
+        }
+        if (str_starts_with($groupBy, self::CUSTOM_TOKEN_PREFIX)) {
+            return substr($groupBy, strlen(self::CUSTOM_TOKEN_PREFIX));
+        }
+
+        return $groupBy;
+    }
+
+    public static function isNamespacedTokenKey(string $groupBy): bool
+    {
+        return str_starts_with($groupBy, self::TS_TOKEN_PREFIX)
+            || str_starts_with($groupBy, self::CUSTOM_TOKEN_PREFIX);
+    }
+
     public const FACEBOOK_TRAFFIC_SOURCE_ID = 4;
 
     public static function facebookTrafficCondition(string $tsAlias = 'ts'): string
@@ -279,6 +309,40 @@ class CampaignStatsExpressions
             ];
         }
 
+        // Namespaced token dims must use JSON even when the bare param matches a click column
+        // (e.g. ts:device → $.traffic_source_tokens.device, not cl.device).
+        if (self::isNamespacedTokenKey($groupBy)) {
+            $param = self::sanitizeJsonTokenParam(self::unwrapDimensionKey($groupBy));
+            if ($param === '') {
+                return [
+                    'expr' => "'N/A'",
+                    'label_expr' => null,
+                ];
+            }
+
+            if (str_starts_with($groupBy, self::CUSTOM_TOKEN_PREFIX)) {
+                $customScalar = "'\$.custom_tokens.{$param}'";
+                $customValue = "'\$.custom_tokens.{$param}.value'";
+                $tsPath = "'\$.traffic_source_tokens.{$param}'";
+
+                return [
+                    'expr' => "COALESCE("
+                        . "NULLIF(TRIM(JSON_UNQUOTE(JSON_EXTRACT(cl.extra_json, {$customScalar}))), ''), "
+                        . "NULLIF(TRIM(JSON_UNQUOTE(JSON_EXTRACT(cl.extra_json, {$customValue}))), ''), "
+                        . "NULLIF(TRIM(JSON_UNQUOTE(JSON_EXTRACT(cl.extra_json, {$tsPath}))), ''), "
+                        . "'N/A')",
+                    'label_expr' => null,
+                ];
+            }
+
+            $jsonPath = "'\$.traffic_source_tokens.{$param}'";
+
+            return [
+                'expr' => "COALESCE(NULLIF(TRIM(JSON_UNQUOTE(JSON_EXTRACT(cl.extra_json, {$jsonPath}))), ''), 'N/A')",
+                'label_expr' => null,
+            ];
+        }
+
         if (isset(self::BUILTIN_COLUMN_MAP[$groupBy])) {
             $col = self::BUILTIN_COLUMN_MAP[$groupBy];
 
@@ -309,12 +373,33 @@ class CampaignStatsExpressions
             ];
         }
 
-        $jsonPath = "'\$." . "traffic_source_tokens.{$groupBy}'";
+        $param = self::sanitizeJsonTokenParam($groupBy);
+        if ($param === '') {
+            return [
+                'expr' => "'N/A'",
+                'label_expr' => null,
+            ];
+        }
+
+        $jsonPath = "'\$.traffic_source_tokens.{$param}'";
 
         return [
             'expr' => "COALESCE(NULLIF(TRIM(JSON_UNQUOTE(JSON_EXTRACT(cl.extra_json, {$jsonPath}))), ''), 'N/A')",
             'label_expr' => null,
         ];
+    }
+
+    /**
+     * Allow only safe JSON path key characters (param names from traffic source config).
+     */
+    public static function sanitizeJsonTokenParam(string $param): string
+    {
+        $param = trim($param);
+        if ($param === '' || !preg_match('/^[A-Za-z0-9_.-]+$/', $param)) {
+            return '';
+        }
+
+        return $param;
     }
 
     public static function normalizeGroupValue(?string $value): string

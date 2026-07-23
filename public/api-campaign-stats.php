@@ -284,9 +284,21 @@ try {
 } catch (\InvalidArgumentException $e) {
     http_response_code(422);
     echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+} catch (\mysqli_sql_exception $e) {
+    error_log('Campaign Stats V2 SQL error: ' . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'Couldn’t load this report. Try again or change your filters.']);
 } catch (\RuntimeException $e) {
-    http_response_code(422);
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    $msg = $e->getMessage();
+    // Never leak raw SQL / driver errors to the browser.
+    if (preg_match('/sql_mode|only_full_group_by|SQLSTATE|mysqli|GROUP BY clause|syntax error/i', $msg)) {
+        error_log('Campaign Stats V2 runtime SQL-like error: ' . $msg);
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => 'Couldn’t load this report. Try again or change your filters.']);
+    } else {
+        http_response_code(422);
+        echo json_encode(['ok' => false, 'error' => $msg]);
+    }
 } catch (\Throwable $e) {
     error_log('Campaign Stats V2 API error: ' . $e->getMessage());
     http_response_code(500);

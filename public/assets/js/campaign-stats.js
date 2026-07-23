@@ -194,6 +194,54 @@
         return /aborted|AbortError/i.test(msg);
     }
 
+    /** Turn raw API/SQL errors into a short user-facing line. Full text stays in console. */
+    function friendlyErrorMessage(raw) {
+        const msg = String(raw || '').trim();
+        if (!msg) {
+            return 'Something went wrong loading stats.';
+        }
+        if (/sql_mode|only_full_group_by|SQLSTATE|mysqli|GROUP BY clause|syntax error|Query failed/i.test(msg)) {
+            return 'Couldn’t load this report. Try again or change your filters.';
+        }
+        if (msg.length > 140) {
+            return 'Couldn’t load stats. Please try again.';
+        }
+        return msg;
+    }
+
+    function clearStatsFlash() {
+        const flash = document.getElementById('stats-v2-flash');
+        if (!flash) {
+            return;
+        }
+        flash.classList.add('hidden');
+        flash.setAttribute('hidden', '');
+        flash.innerHTML = '';
+    }
+
+    function showStatsError(raw) {
+        const text = friendlyErrorMessage(raw);
+        if (raw && String(raw) !== text) {
+            console.error('[Campaign Stats]', raw);
+        } else {
+            console.error('[Campaign Stats]', text);
+        }
+        const flash = document.getElementById('stats-v2-flash');
+        if (!flash) {
+            return text;
+        }
+        flash.innerHTML = `<span class="stats-v2-flash-text">${escapeHtml(text)}</span>`
+            + `<button type="button" class="stats-v2-flash-dismiss" aria-label="Dismiss">&times;</button>`;
+        flash.classList.remove('hidden');
+        flash.removeAttribute('hidden');
+        flash.classList.add('error');
+        const btn = flash.querySelector('.stats-v2-flash-dismiss');
+        if (btn) {
+            btn.addEventListener('click', clearStatsFlash, { once: true });
+        }
+        return text;
+    }
+
     /** Cancel in-flight stats fetches (filter change or leaving the page). */
     function resetRequestAbort() {
         if (requestAbort) {
@@ -864,7 +912,7 @@
     }
 
     function exportBreakdownCsv() {
-        exportBreakdownCsvAsync().catch((err) => alert(err.message || 'Export failed'));
+        exportBreakdownCsvAsync().catch((err) => alert(friendlyErrorMessage(err.message || 'Export failed')));
     }
 
     async function exportBreakdownCsvAsync() {
@@ -1508,7 +1556,7 @@
                 return;
             }
             btn.textContent = '▶';
-            alert(err.message);
+            showStatsError(err.message);
         }
     }
 
@@ -1529,6 +1577,7 @@
         const tbody = document.getElementById('stats-v2-breakdown-body');
         msg.textContent = '';
         msg.className = 'stats-v2-message';
+        clearStatsFlash();
 
         if (state.dimensions.length === 0) {
             tbody.innerHTML = '<tr><td colspan="9" class="stats-v2-empty">Add at least one dimension</td></tr>';
@@ -1545,9 +1594,10 @@
             if (isAbortError(err)) {
                 return;
             }
-            msg.textContent = err.message;
-            msg.className = 'stats-v2-message error';
-            tbody.innerHTML = '<tr><td colspan="9" class="stats-v2-empty">—</td></tr>';
+            const text = showStatsError(err.message);
+            msg.textContent = text;
+            msg.className = 'stats-v2-message stats-v2-breakdown-message error';
+            tbody.innerHTML = '<tr><td colspan="9" class="stats-v2-empty">Couldn’t load breakdown</td></tr>';
         } finally {
             setBreakdownLoading(false);
         }
@@ -1585,6 +1635,7 @@
         const gen = ++refreshGeneration;
         setFiltersRefreshing(true);
         resetRequestAbort();
+        clearStatsFlash();
         readFiltersFromDom();
         try {
             await loadCampaignMeta();
@@ -1605,11 +1656,7 @@
             if (isAbortError(err)) {
                 return;
             }
-            console.error(err);
-            const kpi = document.getElementById('stats-v2-kpi');
-            if (kpi) {
-                kpi.innerHTML = `<div class="stats-v2-message error">${escapeHtml(err.message || 'Failed to refresh stats')}</div>`;
-            }
+            showStatsError(err.message || 'Failed to refresh stats');
         } finally {
             if (gen === refreshGeneration) {
                 setFiltersRefreshing(false);
@@ -1897,7 +1944,6 @@
         if (isAbortError(err)) {
             return;
         }
-        console.error(err);
-        document.getElementById('stats-v2-kpi').innerHTML = `<div class="stats-v2-message error">${escapeHtml(err.message)}</div>`;
+        showStatsError(err.message || 'Failed to load stats');
     });
 })();

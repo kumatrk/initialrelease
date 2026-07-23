@@ -49,6 +49,7 @@ $statsJsVer = file_exists($statsJsPath) ? (string)filemtime($statsJsPath) : '1';
             <h1 class="page-title">Campaign Stats</h1>
         </div>
     </div>
+    <div id="stats-v2-flash" class="stats-v2-flash hidden" role="alert" hidden></div>
     <?php if (!$hasCampaign): ?>
     <div class="stats-v2-message error">Select or create a campaign to view stats.</div>
     <?php else: ?>
