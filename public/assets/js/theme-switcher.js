@@ -2,11 +2,49 @@
     'use strict';
 
     var STORAGE_KEY = 'kuma_theme';
-    var VALID_THEMES = ['light', 'dark'];
+
+    function themeMap() {
+        var cfg = window.KUMA_THEME_CONFIG;
+        return (cfg && cfg.themes) ? cfg.themes : {};
+    }
+
+    function isValidTheme(theme) {
+        return Object.prototype.hasOwnProperty.call(themeMap(), theme);
+    }
+
+    function defaultThemeId() {
+        var map = themeMap();
+        if (isValidTheme('light')) {
+            return 'light';
+        }
+        var ids = Object.keys(map);
+        return ids.length ? ids[0] : 'light';
+    }
+
+    function resolveTheme(theme) {
+        return isValidTheme(theme) ? theme : defaultThemeId();
+    }
+
+    function metaFor(theme) {
+        var id = resolveTheme(theme);
+        var entry = themeMap()[id] || {};
+        return {
+            id: id,
+            label: entry.label || id,
+            logo: entry.logo || 'mainlogo.png',
+            base: entry.base === 'dark' ? 'dark' : 'light'
+        };
+    }
 
     function getTheme() {
-        var theme = document.documentElement.getAttribute('data-theme') || 'light';
-        return VALID_THEMES.indexOf(theme) !== -1 ? theme : 'light';
+        var theme = document.documentElement.getAttribute('data-theme') || defaultThemeId();
+        return resolveTheme(theme);
+    }
+
+    function logoUrlFor(meta) {
+        var cfg = window.KUMA_THEME_CONFIG;
+        var base = (cfg && cfg.assetsBaseUrl) ? cfg.assetsBaseUrl : '/assets/images/';
+        return base + meta.logo;
     }
 
     function logoForTheme(theme) {
@@ -14,25 +52,24 @@
         if (!img) {
             return;
         }
-        var light = img.getAttribute('data-logo-light');
-        var dark = img.getAttribute('data-logo-dark');
-        img.src = theme === 'dark' && dark ? dark : light;
+        img.src = logoUrlFor(metaFor(theme));
     }
 
     function applyTheme(theme, persistLocal) {
-        if (VALID_THEMES.indexOf(theme) === -1) {
-            theme = 'light';
-        }
-        document.documentElement.setAttribute('data-theme', theme);
-        logoForTheme(theme);
+        var meta = metaFor(theme);
+        document.documentElement.setAttribute('data-theme', meta.id);
+        document.documentElement.setAttribute('data-theme-base', meta.base);
+        logoForTheme(meta.id);
         if (persistLocal !== false) {
             try {
-                localStorage.setItem(STORAGE_KEY, theme);
+                localStorage.setItem(STORAGE_KEY, meta.id);
             } catch (e) {
                 /* ignore */
             }
         }
-        window.dispatchEvent(new CustomEvent('kuma-theme-change', { detail: { theme: theme } }));
+        window.dispatchEvent(new CustomEvent('kuma-theme-change', {
+            detail: { theme: meta.id, base: meta.base, meta: meta }
+        }));
     }
 
     function saveThemeToServer(theme) {
@@ -103,6 +140,9 @@
 
     window.KumaTheme = {
         apply: applyTheme,
-        get: getTheme
+        get: getTheme,
+        meta: function () {
+            return metaFor(getTheme());
+        }
     };
 })();

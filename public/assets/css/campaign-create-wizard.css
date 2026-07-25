@@ -108,7 +108,7 @@
     color: #888;
 }
 
-[data-theme="dark"] .campaign-wizard-progress-step {
+[data-theme-base="dark"] .campaign-wizard-progress-step {
     color: var(--color-gray-600);
 }
 
@@ -153,15 +153,15 @@
     font-weight: 600;
 }
 
-[data-theme="dark"] .campaign-wizard-progress-step::before {
+[data-theme-base="dark"] .campaign-wizard-progress-step::before {
     background: var(--color-gray-300);
 }
 
-[data-theme="dark"] .campaign-wizard-progress-step.is-active {
+[data-theme-base="dark"] .campaign-wizard-progress-step.is-active {
     color: var(--color-forest-light);
 }
 
-[data-theme="dark"] .campaign-wizard-progress-step.is-done {
+[data-theme-base="dark"] .campaign-wizard-progress-step.is-done {
     color: var(--color-forest);
 }
 
@@ -276,7 +276,7 @@
     box-shadow: none;
 }
 
-[data-theme="dark"] .campaign-wizard-card > .campaign-wizard-nav {
+[data-theme-base="dark"] .campaign-wizard-card > .campaign-wizard-nav {
     border-top-color: var(--color-gray-200);
 }
 
@@ -305,7 +305,7 @@
     margin: 0 0 8px;
 }
 
-[data-theme="dark"] .wizard-step-title {
+[data-theme-base="dark"] .wizard-step-title {
     color: var(--color-forest-light);
 }
 
@@ -315,7 +315,7 @@
     margin: 0 0 20px;
 }
 
-[data-theme="dark"] .wizard-step-desc {
+[data-theme-base="dark"] .wizard-step-desc {
     color: var(--color-gray-600);
 }
 
@@ -328,7 +328,7 @@
     line-height: 1.6;
 }
 
-[data-theme="dark"] .wizard-review-summary {
+[data-theme-base="dark"] .wizard-review-summary {
     background: var(--color-gray-100);
     border-color: var(--color-gray-200);
     color: var(--color-gray-600);
@@ -340,7 +340,7 @@
     margin-top: 10px;
 }
 
-[data-theme="dark"] .wizard-review-summary dt {
+[data-theme-base="dark"] .wizard-review-summary dt {
     color: var(--color-gray-800);
 }
 
@@ -353,7 +353,7 @@
     color: #555;
 }
 
-[data-theme="dark"] .wizard-review-summary dd {
+[data-theme-base="dark"] .wizard-review-summary dd {
     color: var(--color-gray-600);
 }
 
@@ -396,7 +396,7 @@
         background-color 0.2s ease;
 }
 
-[data-theme="dark"] .campaign-wizard-card select {
+[data-theme-base="dark"] .campaign-wizard-card select {
     border-color: var(--color-gray-300) !important;
     background-color: var(--color-gray-100);
     background-image:
@@ -418,7 +418,7 @@
     background-color: var(--color-white);
 }
 
-[data-theme="dark"] .campaign-wizard-card select:focus {
+[data-theme-base="dark"] .campaign-wizard-card select:focus {
     background-color: var(--color-gray-100);
 }
 
@@ -455,50 +455,50 @@
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-[data-theme="dark"] .campaign-wizard-card input[type="text"],
-[data-theme="dark"] .campaign-wizard-card input[type="number"],
-[data-theme="dark"] .campaign-wizard-card textarea {
+[data-theme-base="dark"] .campaign-wizard-card input[type="text"],
+[data-theme-base="dark"] .campaign-wizard-card input[type="number"],
+[data-theme-base="dark"] .campaign-wizard-card textarea {
     border-color: var(--color-gray-300) !important;
     background: var(--color-gray-100);
     color: var(--color-gray-800);
 }
 
 /* Wizard fieldsets & tinted panels (Flow, Traffic, etc.) */
-[data-theme="dark"] .campaign-wizard-card fieldset {
+[data-theme-base="dark"] .campaign-wizard-card fieldset {
     background: var(--color-gray-100) !important;
     border-color: var(--color-gray-300) !important;
     color: var(--color-gray-800);
 }
 
-[data-theme="dark"] .campaign-wizard-card fieldset legend {
+[data-theme-base="dark"] .campaign-wizard-card fieldset legend {
     color: var(--color-forest-light) !important;
 }
 
-[data-theme="dark"] .campaign-wizard-card fieldset label,
-[data-theme="dark"] .campaign-wizard-card fieldset span,
-[data-theme="dark"] .campaign-wizard-card fieldset p {
+[data-theme-base="dark"] .campaign-wizard-card fieldset label,
+[data-theme-base="dark"] .campaign-wizard-card fieldset span,
+[data-theme-base="dark"] .campaign-wizard-card fieldset p {
     color: var(--color-gray-800);
 }
 
-[data-theme="dark"] .campaign-wizard-card fieldset p[style*="color: #666"],
-[data-theme="dark"] .campaign-wizard-card fieldset p[style*="color:#666"] {
+[data-theme-base="dark"] .campaign-wizard-card fieldset p[style*="color: #666"],
+[data-theme-base="dark"] .campaign-wizard-card fieldset p[style*="color:#666"] {
     color: var(--color-gray-600) !important;
 }
 
-[data-theme="dark"] .campaign-wizard-card fieldset strong {
+[data-theme-base="dark"] .campaign-wizard-card fieldset strong {
     color: var(--color-forest-light);
 }
 
-[data-theme="dark"] .campaign-wizard-card .offer-rotation-row label span,
-[data-theme="dark"] .campaign-wizard-card #lp_fields label span {
+[data-theme-base="dark"] .campaign-wizard-card .offer-rotation-row label span,
+[data-theme-base="dark"] .campaign-wizard-card #lp_fields label span {
     color: var(--color-gray-800) !important;
 }
 
-[data-theme="dark"] .campaign-wizard-card details summary {
+[data-theme-base="dark"] .campaign-wizard-card details summary {
     color: var(--color-gray-800);
 }
 
-[data-theme="dark"] .campaign-wizard-card .custom-token-row > div[style*="color: #666"] {
+[data-theme-base="dark"] .campaign-wizard-card .custom-token-row > div[style*="color: #666"] {
     color: var(--color-gray-600) !important;
 }
 

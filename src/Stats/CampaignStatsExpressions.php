@@ -68,6 +68,7 @@ class CampaignStatsExpressions
 
 
     public const FACEBOOK_CRAWLER_UA_FRAGMENT = 'facebookexternalhit/1.1';
+    public const META_EXTERNAL_ADS_UA_FRAGMENT = 'meta-externalads/1.1';
 
     /**
      * Valid Facebook ad_id/adset_id using generated columns (indexed; no JSON_EXTRACT).
@@ -95,9 +96,11 @@ class CampaignStatsExpressions
     {
         $validIds = self::validFacebookIdsCondition($clAlias);
         $fbId = self::FACEBOOK_TRAFFIC_SOURCE_ID;
-        $ua = self::FACEBOOK_CRAWLER_UA_FRAGMENT;
+        $facebookUa = self::FACEBOOK_CRAWLER_UA_FRAGMENT;
+        $metaAdsUa = self::META_EXTERNAL_ADS_UA_FRAGMENT;
 
-        return "{$clAlias}.ua NOT LIKE '%{$ua}%'
+        return "{$clAlias}.ua NOT LIKE '%{$facebookUa}%'
+            AND {$clAlias}.ua NOT LIKE '%{$metaAdsUa}%'
             AND NOT (
                 {$clAlias}.traffic_source_id = {$fbId}
                 AND NOT ({$validIds})
@@ -126,7 +129,8 @@ class CampaignStatsExpressions
             return false;
         }
 
-        return stripos($ua, self::FACEBOOK_CRAWLER_UA_FRAGMENT) !== false;
+        return stripos($ua, self::FACEBOOK_CRAWLER_UA_FRAGMENT) !== false
+            || stripos($ua, self::META_EXTERNAL_ADS_UA_FRAGMENT) !== false;
     }
 
     /**
@@ -158,14 +162,24 @@ class CampaignStatsExpressions
     /**
      * Click id expression for a valid visitor (excludes FB bots and invalid FB clicks).
      */
-    public static function validClickCase(string $clAlias = 'cl', string $tsAlias = 'ts'): string
+    public static function validClickCase(
+        string $clAlias = 'cl',
+        string $tsAlias = 'ts',
+        bool $usePersistedFlag = false
+    ): string
     {
+        if ($usePersistedFlag) {
+            return "CASE WHEN {$clAlias}.exclude_from_stats = 0 THEN {$clAlias}.id ELSE NULL END";
+        }
+
         $fb = self::facebookTrafficCondition($tsAlias);
         $validIds = self::validFacebookIdsCondition($clAlias);
-        $ua = self::FACEBOOK_CRAWLER_UA_FRAGMENT;
+        $facebookUa = self::FACEBOOK_CRAWLER_UA_FRAGMENT;
+        $metaAdsUa = self::META_EXTERNAL_ADS_UA_FRAGMENT;
 
         return "CASE
-            WHEN {$clAlias}.ua LIKE '%{$ua}%' THEN NULL
+            WHEN {$clAlias}.ua LIKE '%{$facebookUa}%' THEN NULL
+            WHEN {$clAlias}.ua LIKE '%{$metaAdsUa}%' THEN NULL
             WHEN {$fb} THEN
                 CASE
                     WHEN {$validIds}
@@ -176,14 +190,22 @@ class CampaignStatsExpressions
         END";
     }
 
-    public static function visitorCountExpr(string $clAlias = 'cl', string $tsAlias = 'ts'): string
+    public static function visitorCountExpr(
+        string $clAlias = 'cl',
+        string $tsAlias = 'ts',
+        bool $usePersistedFlag = false
+    ): string
     {
-        return 'COUNT(DISTINCT ' . self::validClickCase($clAlias, $tsAlias) . ')';
+        return 'COUNT(DISTINCT ' . self::validClickCase($clAlias, $tsAlias, $usePersistedFlag) . ')';
     }
 
-    public static function lpClicksCountExpr(string $clAlias = 'cl', string $tsAlias = 'ts'): string
+    public static function lpClicksCountExpr(
+        string $clAlias = 'cl',
+        string $tsAlias = 'ts',
+        bool $usePersistedFlag = false
+    ): string
     {
-        $valid = self::validClickCase($clAlias, $tsAlias);
+        $valid = self::validClickCase($clAlias, $tsAlias, $usePersistedFlag);
 
         // True LP CTR only (landing page present). DTO sets lp_click=1 with NULL landing_page_id
         // and is tracked separately as direct_clicks in daily summary — do not count it here.
@@ -193,9 +215,13 @@ class CampaignStatsExpressions
     /**
      * Direct-to-offer "clicks" (DTO / no landing page).
      */
-    public static function directClicksCountExpr(string $clAlias = 'cl', string $tsAlias = 'ts'): string
+    public static function directClicksCountExpr(
+        string $clAlias = 'cl',
+        string $tsAlias = 'ts',
+        bool $usePersistedFlag = false
+    ): string
     {
-        $valid = self::validClickCase($clAlias, $tsAlias);
+        $valid = self::validClickCase($clAlias, $tsAlias, $usePersistedFlag);
 
         return "COUNT(DISTINCT CASE WHEN {$clAlias}.lp_click = 1 AND {$clAlias}.landing_page_id IS NULL THEN {$valid} ELSE NULL END)";
     }
@@ -203,15 +229,30 @@ class CampaignStatsExpressions
     /**
      * Action clicks = LP CTA + direct-to-offer (matches campaign list "Clicks" and KPI clicks).
      */
-    public static function actionClicksCountExpr(string $clAlias = 'cl', string $tsAlias = 'ts'): string
+    public static function actionClicksCountExpr(
+        string $clAlias = 'cl',
+        string $tsAlias = 'ts',
+        bool $usePersistedFlag = false
+    ): string
     {
-        $valid = self::validClickCase($clAlias, $tsAlias);
+        $valid = self::validClickCase($clAlias, $tsAlias, $usePersistedFlag);
 
         return "COUNT(DISTINCT CASE WHEN {$clAlias}.lp_click = 1 THEN {$valid} ELSE NULL END)";
     }
 
-    public static function conversionsCountExpr(string $clAlias = 'cl', string $tsAlias = 'ts'): string
+    public static function conversionsCountExpr(
+        string $clAlias = 'cl',
+        string $tsAlias = 'ts',
+        bool $usePersistedFlag = false
+    ): string
     {
+        if ($usePersistedFlag) {
+            return "COALESCE(SUM(CASE
+                WHEN {$clAlias}.exclude_from_stats = 0 THEN COALESCE(conv.conversion_count, 0)
+                ELSE 0
+            END), 0)";
+        }
+
         $fb = self::facebookTrafficCondition($tsAlias);
         $validIds = self::validFacebookIdsCondition($clAlias);
 

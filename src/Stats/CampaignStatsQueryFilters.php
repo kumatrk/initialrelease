@@ -70,6 +70,11 @@ final class CampaignStatsQueryFilters
         $sql = '';
         $types = '';
         $params = [];
+        $clicksTable = ClicksTableResolver::getStatsTable($db);
+        $persisted = StatsExclusionFlag::includedWhere($db, $clAlias, $clicksTable);
+        if ($persisted !== '') {
+            $sql .= ' AND ' . $persisted;
+        }
 
         if ($this->trafficSourceId !== null && self::clicksHaveColumn($db, 'traffic_source_id')) {
             $sql .= " AND {$clAlias}.traffic_source_id = ?";

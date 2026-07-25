@@ -23,6 +23,13 @@ final class CampaignListStatsService
         $this->db = $db;
     }
 
+    private function includedClickSql(string $table, string $alias = 'cl'): string
+    {
+        $predicate = StatsExclusionFlag::includedWhere($this->db, $alias, $table);
+
+        return $predicate !== '' ? ' AND ' . $predicate : '';
+    }
+
     /**
      * @param list<int> $campaignIds
      * @return array<int, array{
@@ -303,11 +310,12 @@ final class CampaignListStatsService
         $placeholders = implode(',', array_fill(0, count($campaignIds), '?'));
         $idTypes = str_repeat('i', count($campaignIds));
         $clicksTable = ClicksTableResolver::getStatsTable($this->db);
+        $includedSql = $this->includedClickSql($clicksTable);
 
         $clickTypes = $idTypes . 'ss';
         $clickParams = array_merge($campaignIds, [$utcFrom, $utcTo]);
-        // Covering-index friendly: no ua/ad_id/IP predicates (those force full row reads).
-        // Exclusions are applied at DailySummaryUpdater write time for the fast pre-agg path.
+        // Covering-index friendly: the persisted boolean is covered; never reintroduce
+        // ua/ad_id/IP predicates because those force full row reads.
         $clickSql = "
             SELECT
                 cl.campaign_id,
@@ -318,6 +326,7 @@ final class CampaignListStatsService
             FROM {$clicksTable} cl
             WHERE cl.campaign_id IN ({$placeholders})
               AND cl.ts >= ? AND cl.ts <= ?
+              {$includedSql}
             GROUP BY cl.campaign_id
         ";
 
@@ -352,6 +361,7 @@ final class CampaignListStatsService
             INNER JOIN {$clicksTable} cl ON cl.click_id = cv.click_id
             WHERE cl.ts >= ? AND cl.ts <= ?
               AND cl.campaign_id IN ({$placeholders})
+              {$includedSql}
             GROUP BY cl.campaign_id
         ";
         $convStmt = $this->db->prepare($convSql);

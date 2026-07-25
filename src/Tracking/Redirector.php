@@ -6,6 +6,8 @@ namespace SimpleKuma\Tracking;
 
 use mysqli;
 use SimpleKuma\Settings\SettingsManager;
+use SimpleKuma\Stats\CampaignStatsExpressions;
+use SimpleKuma\Stats\StatsExclusionFlag;
 
 /**
  * Redirector
@@ -1207,6 +1209,15 @@ class Redirector
             if ($postalCheck && $postalCheck->num_rows > 0) {
                 $postalColumnExists = true;
             }
+            $statsFlagColumnExists = StatsExclusionFlag::columnExists($this->db);
+            $excludeFromStats = CampaignStatsExpressions::shouldExcludeClickFromStats(
+                $trafficSourceId,
+                $extraData,
+                $ua
+            ) ? 1 : 0;
+            $statsFlagColumn = $statsFlagColumnExists ? ', exclude_from_stats' : '';
+            $statsFlagValue = $statsFlagColumnExists ? ', ?' : '';
+            $statsFlagType = $statsFlagColumnExists ? 'i' : '';
 
             $geoCols = "country, region, city";
             $geoPlaceholders = "?, ?, ?";
@@ -1221,17 +1232,17 @@ class Redirector
 
             // Build INSERT statement based on column existence
             if ($trafficSourceColumnExists) {
-                $sql = "INSERT INTO clicks 
-                    (campaign_id, slug_id, traffic_source_id, offer_id, landing_page_id, click_id, ts, ip, ua, referrer, " . $geoCols . ", 
-                     device, device_brand, device_model, os, os_version, browser, browser_version, cost, cost_currency, extra_json, ts_hour, lp_click, ts_lp) 
-                    VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, " . $geoPlaceholders . ", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATE_FORMAT(NOW(), '%Y-%m-%d %H:00:00'), ?, " . ($isDirectToOffer ? "NOW()" : "NULL") . ")";
-                $paramTypes = 'iiiiissss' . $geoParamTypes . 'sssssssdssi';
+                $sql = "INSERT INTO clicks
+                    (campaign_id, slug_id, traffic_source_id, offer_id, landing_page_id, click_id, ts, ip, ua, referrer, " . $geoCols . ",
+                     device, device_brand, device_model, os, os_version, browser, browser_version, cost, cost_currency, extra_json" . $statsFlagColumn . ", ts_hour, lp_click, ts_lp)
+                    VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, " . $geoPlaceholders . ", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?" . $statsFlagValue . ", DATE_FORMAT(NOW(), '%Y-%m-%d %H:00:00'), ?, " . ($isDirectToOffer ? "NOW()" : "NULL") . ")";
+                $paramTypes = 'iiiiissss' . $geoParamTypes . 'sssssssdss' . $statsFlagType . 'i';
             } else {
-                $sql = "INSERT INTO clicks 
-                    (campaign_id, slug_id, offer_id, landing_page_id, click_id, ts, ip, ua, referrer, " . $geoCols . ", 
-                     device, device_brand, device_model, os, os_version, browser, browser_version, cost, cost_currency, extra_json, ts_hour, lp_click, ts_lp) 
-                    VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?, " . $geoPlaceholders . ", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATE_FORMAT(NOW(), '%Y-%m-%d %H:00:00'), ?, " . ($isDirectToOffer ? "NOW()" : "NULL") . ")";
-                $paramTypes = 'iiiissss' . $geoParamTypes . 'sssssssdssi';
+                $sql = "INSERT INTO clicks
+                    (campaign_id, slug_id, offer_id, landing_page_id, click_id, ts, ip, ua, referrer, " . $geoCols . ",
+                     device, device_brand, device_model, os, os_version, browser, browser_version, cost, cost_currency, extra_json" . $statsFlagColumn . ", ts_hour, lp_click, ts_lp)
+                    VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?, " . $geoPlaceholders . ", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?" . $statsFlagValue . ", DATE_FORMAT(NOW(), '%Y-%m-%d %H:00:00'), ?, " . ($isDirectToOffer ? "NOW()" : "NULL") . ")";
+                $paramTypes = 'iiiissss' . $geoParamTypes . 'sssssssdss' . $statsFlagType . 'i';
             }
 
             $stmt = $this->db->prepare($sql);
@@ -1258,8 +1269,11 @@ class Redirector
                 $costValue,
                 $costCurrency,
                 $extraJson,
-                $lpClick,
             ]);
+            if ($statsFlagColumnExists) {
+                $bindValues[] = $excludeFromStats;
+            }
+            $bindValues[] = $lpClick;
             $stmt->bind_param($paramTypes, ...$bindValues);
 
             $stmt->execute();

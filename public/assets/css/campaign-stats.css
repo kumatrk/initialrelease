@@ -794,7 +794,7 @@
 }
 
 /* Dark mode */
-[data-theme="dark"] .stats-v2-page {
+[data-theme-base="dark"] .stats-v2-page {
     --stats-v2-green: #7cb342;
     --stats-v2-green-light: #4e9a4d;
     --stats-v2-negative: #ef5350;
@@ -815,33 +815,33 @@
     --stats-v2-dim-tag-border: rgba(78, 154, 77, 0.35);
 }
 
-[data-theme="dark"] .stats-v2-page .card {
+[data-theme-base="dark"] .stats-v2-page .card {
     background: var(--stats-v2-surface);
     border-color: var(--stats-v2-border);
 }
 
-[data-theme="dark"] .stats-v2-page .stats-v2-table-card {
+[data-theme-base="dark"] .stats-v2-page .stats-v2-table-card {
     background: var(--stats-v2-surface);
 }
 
-[data-theme="dark"] .stats-v2-page .stats-v2-table thead th {
+[data-theme-base="dark"] .stats-v2-page .stats-v2-table thead th {
     box-shadow: inset 0 -2px 0 var(--stats-v2-green-light);
 }
 
-[data-theme="dark"] .stats-v2-page .stats-v2-kpi-icon--visitors { background: rgba(92, 107, 192, 0.22); color: #9fa8da; }
-[data-theme="dark"] .stats-v2-page .stats-v2-kpi-icon--clicks { background: rgba(123, 31, 162, 0.22); color: #ce93d8; }
-[data-theme="dark"] .stats-v2-page .stats-v2-kpi-icon--conversions { background: rgba(239, 108, 0, 0.22); color: #ffb74d; }
-[data-theme="dark"] .stats-v2-page .stats-v2-kpi-icon--cr { background: rgba(78, 154, 77, 0.22); color: #81c784; }
-[data-theme="dark"] .stats-v2-page .stats-v2-kpi-icon--cost { background: rgba(239, 83, 80, 0.18); color: #ef9a9a; }
-[data-theme="dark"] .stats-v2-page .stats-v2-kpi-icon--revenue { background: rgba(78, 154, 77, 0.22); color: #81c784; }
-[data-theme="dark"] .stats-v2-page .stats-v2-kpi-icon--profit-pos { background: rgba(78, 154, 77, 0.22); color: #81c784; }
-[data-theme="dark"] .stats-v2-page .stats-v2-kpi-icon--profit-neg { background: rgba(239, 83, 80, 0.18); color: #ef9a9a; }
-[data-theme="dark"] .stats-v2-page .stats-v2-kpi-icon--roi { background: rgba(251, 140, 0, 0.2); color: #ffcc80; }
+[data-theme-base="dark"] .stats-v2-page .stats-v2-kpi-icon--visitors { background: rgba(92, 107, 192, 0.22); color: #9fa8da; }
+[data-theme-base="dark"] .stats-v2-page .stats-v2-kpi-icon--clicks { background: rgba(123, 31, 162, 0.22); color: #ce93d8; }
+[data-theme-base="dark"] .stats-v2-page .stats-v2-kpi-icon--conversions { background: rgba(239, 108, 0, 0.22); color: #ffb74d; }
+[data-theme-base="dark"] .stats-v2-page .stats-v2-kpi-icon--cr { background: rgba(78, 154, 77, 0.22); color: #81c784; }
+[data-theme-base="dark"] .stats-v2-page .stats-v2-kpi-icon--cost { background: rgba(239, 83, 80, 0.18); color: #ef9a9a; }
+[data-theme-base="dark"] .stats-v2-page .stats-v2-kpi-icon--revenue { background: rgba(78, 154, 77, 0.22); color: #81c784; }
+[data-theme-base="dark"] .stats-v2-page .stats-v2-kpi-icon--profit-pos { background: rgba(78, 154, 77, 0.22); color: #81c784; }
+[data-theme-base="dark"] .stats-v2-page .stats-v2-kpi-icon--profit-neg { background: rgba(239, 83, 80, 0.18); color: #ef9a9a; }
+[data-theme-base="dark"] .stats-v2-page .stats-v2-kpi-icon--roi { background: rgba(251, 140, 0, 0.2); color: #ffcc80; }
 
-[data-theme="dark"] .stats-v2-page .stats-v2-efficiency-card {
+[data-theme-base="dark"] .stats-v2-page .stats-v2-efficiency-card {
     background: #1e2328;
 }
 
-[data-theme="dark"] .stats-v2-page .stats-v2-checkbox {
+[data-theme-base="dark"] .stats-v2-page .stats-v2-checkbox {
     color: var(--stats-v2-text);
 }

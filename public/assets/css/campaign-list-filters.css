@@ -503,83 +503,83 @@
 }
 
 /* Dark theme */
-[data-theme="dark"] .campaign-filter-panel {
+[data-theme-base="dark"] .campaign-filter-panel {
     background: var(--color-white, #2d333b);
     border-color: var(--color-gray-300, #444c56);
 }
 
 @media (min-width: 769px) {
-    [data-theme="dark"] .campaign-filter-panel {
+    [data-theme-base="dark"] .campaign-filter-panel {
         background: var(--color-gray-100, #22272e);
         border: none;
     }
 
-    [data-theme="dark"] .campaign-status-card {
+    [data-theme-base="dark"] .campaign-status-card {
         background: transparent;
         border: none;
     }
 
-    [data-theme="dark"] .campaign-filter-label--desktop,
-    [data-theme="dark"] .campaign-status-card__label {
+    [data-theme-base="dark"] .campaign-filter-label--desktop,
+    [data-theme-base="dark"] .campaign-status-card__label {
         color: var(--color-gray-600, #adbac7);
     }
 
-    [data-theme="dark"] .campaign-filter-to {
+    [data-theme-base="dark"] .campaign-filter-to {
         color: var(--color-gray-600, #adbac7);
     }
 }
 
-[data-theme="dark"] .campaign-filter-label {
+[data-theme-base="dark"] .campaign-filter-label {
     color: var(--color-gray-800, #cdd9e5);
 }
 
-[data-theme="dark"] .campaign-filter-create-mobile,
-[data-theme="dark"] .campaign-filter-apply {
+[data-theme-base="dark"] .campaign-filter-create-mobile,
+[data-theme-base="dark"] .campaign-filter-apply {
     background: var(--color-forest, #6abf69);
     color: #1a1d21 !important;
 }
 
-[data-theme="dark"] .campaign-preset-btn {
+[data-theme-base="dark"] .campaign-preset-btn {
     background: var(--color-gray-100, #22272e);
     border-color: var(--color-gray-300, #444c56);
     color: var(--color-gray-800, #cdd9e5);
 }
 
-[data-theme="dark"] .campaign-preset-btn.is-active {
+[data-theme-base="dark"] .campaign-preset-btn.is-active {
     background: var(--color-forest, #6abf69);
     border-color: var(--color-forest, #6abf69);
     color: #1a1d21;
 }
 
-[data-theme="dark"] .campaign-filter-date-field,
-[data-theme="dark"] .campaign-filter-reset {
+[data-theme-base="dark"] .campaign-filter-date-field,
+[data-theme-base="dark"] .campaign-filter-reset {
     background: var(--color-gray-100, #22272e);
     border-color: var(--color-gray-300, #444c56);
     color: var(--color-gray-800, #cdd9e5);
 }
 
-[data-theme="dark"] .campaign-status-card {
+[data-theme-base="dark"] .campaign-status-card {
     background: var(--color-gray-100, #22272e);
     border-color: var(--color-gray-300, #444c56);
     color: var(--color-gray-800, #cdd9e5);
 }
 
-[data-theme="dark"] .campaign-filter-date-field input[type="date"],
-[data-theme="dark"] .campaign-status-card__label {
+[data-theme-base="dark"] .campaign-filter-date-field input[type="date"],
+[data-theme-base="dark"] .campaign-status-card__label {
     color: var(--color-gray-800, #cdd9e5);
     color-scheme: dark;
 }
 
-[data-theme="dark"] .campaign-status-check {
+[data-theme-base="dark"] .campaign-status-check {
     background: var(--color-gray-100, #22272e);
     border-color: var(--color-gray-300, #444c56);
 }
 
-[data-theme="dark"] .campaign-status-card.is-checked .campaign-status-check {
+[data-theme-base="dark"] .campaign-status-card.is-checked .campaign-status-check {
     background: var(--color-forest, #6abf69);
     border-color: var(--color-forest, #6abf69);
 }
 
-[data-theme="dark"] .campaign-status-card.is-checked .campaign-status-check::after {
+[data-theme-base="dark"] .campaign-status-card.is-checked .campaign-status-check::after {
     border-color: #1a1d21;
 }

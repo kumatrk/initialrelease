@@ -2,6 +2,10 @@
 
 ## Changes in 1.1.5.5
 
+- Dashboard / campaign list: Meta approval and crawler clicks are tagged at ingest (`exclude_from_stats`) and omitted from fast reporting without slowing stats (migration 081)
+- Converting clicks that were previously flagged as bunk are automatically promoted to REAL and restored in daily/token summaries
+- Visitor Log and Click Lookup honor the persisted flag; converted-but-tokenless clicks show as Included as REAL (converted)
+- Crawler detection now includes `meta-externalads/1.1` alongside `facebookexternalhit/1.1`
 - Campaign Stats: traffic-source tokens that share names with tracker fields (e.g. RollerAds `device` / `os` / `browser`) now appear as drill-down dimensions without overriding tracker columns
 - Campaign Stats: compact dismissible error banner; raw MySQL/`only_full_group_by` messages are no longer shown in the UI
 - Campaign Stats: hourly chart `GROUP BY` aligned for MySQL `ONLY_FULL_GROUP_BY`
@@ -55,7 +59,7 @@
 
 ## Migrations
 
-Fresh installs should apply forward migrations **001 through 060** (exclude `rollback_*.sql`).
+Fresh installs should apply forward migrations **001 through 081** (exclude `rollback_*.sql`). Existing installs: run pending migrations after upgrade (includes 081 for Meta click stats exclusion).
 
 ## License
 

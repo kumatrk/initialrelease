@@ -201,7 +201,7 @@
     font-variant-numeric: tabular-nums;
 }
 
-[data-theme="dark"] .api-usage-endpoints__count {
+[data-theme-base="dark"] .api-usage-endpoints__count {
     color: var(--color-forest-light, #7fd67e);
 }
 
@@ -274,22 +274,22 @@
 }
 
 /* Dark theme polish (variables already remap; tighten borders/contrast) */
-[data-theme="dark"] .api-usage-overview {
+[data-theme-base="dark"] .api-usage-overview {
     box-shadow: var(--shadow-sm, none);
 }
 
-[data-theme="dark"] .api-usage-metric__value,
-[data-theme="dark"] .api-usage-summary__tile-value {
+[data-theme-base="dark"] .api-usage-metric__value,
+[data-theme-base="dark"] .api-usage-summary__tile-value {
     color: var(--color-forest-light, #7fd67e);
 }
 
-[data-theme="dark"] .api-usage-provider__details {
+[data-theme-base="dark"] .api-usage-provider__details {
     color: #9ae08f;
     background: rgba(127, 214, 126, 0.14);
     border-color: rgba(127, 214, 126, 0.45);
 }
 
-[data-theme="dark"] .api-usage-provider__details:hover {
+[data-theme-base="dark"] .api-usage-provider__details:hover {
     background: rgba(127, 214, 126, 0.24);
     color: #b7f0ae;
 }
@@ -482,27 +482,27 @@ body.api-diag-modal-open {
     }
 }
 
-[data-theme="dark"] .api-diag-modal__panel,
-[data-theme="dark"] .api-diag-modal__header {
+[data-theme-base="dark"] .api-diag-modal__panel,
+[data-theme-base="dark"] .api-diag-modal__header {
     background: var(--color-white, #1a1a1a);
 }
 
-[data-theme="dark"] .api-diag-modal__close {
+[data-theme-base="dark"] .api-diag-modal__close {
     background: #2a2a2a;
     border-color: #555;
     color: #f0f0f0;
 }
 
-[data-theme="dark"] .api-diag-modal__close:hover {
+[data-theme-base="dark"] .api-diag-modal__close:hover {
     background: #3a3a3a;
 }
 
-[data-theme="dark"] .api-diag-banner {
+[data-theme-base="dark"] .api-diag-banner {
     background: rgba(127, 214, 126, 0.12);
     border-color: rgba(127, 214, 126, 0.35);
     color: #e8e8e8;
 }
 
-[data-theme="dark"] .api-diag-table th {
+[data-theme-base="dark"] .api-diag-table th {
     background: var(--color-gray-100, #222);
 }

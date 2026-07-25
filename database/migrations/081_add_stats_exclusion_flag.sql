@@ -1,0 +1,2 @@
+-- Executed by SimpleKuma\Database\Migrations\AddStatsExclusionFlag.
+-- Kept as a migration marker so the standard migration runner applies and tracks it.

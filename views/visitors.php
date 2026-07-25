@@ -121,7 +121,9 @@ if ($checkColumn && $row = $checkColumn->fetch_assoc()) {
 
 // Filter out Facebook approval team clicks (aligned with CampaignStatsExpressions)
 if ($excludeFbApprovalTeam) {
-    if ($trafficSourceColumnExists) {
+    if (\SimpleKuma\Stats\StatsExclusionFlag::columnExists($db)) {
+        $where[] = 'cl.exclude_from_stats = 0';
+    } elseif ($trafficSourceColumnExists) {
         $where[] = \SimpleKuma\Stats\CampaignStatsExpressions::excludeInvalidClickWhere('cl');
     } else {
         $where[] = "NOT (

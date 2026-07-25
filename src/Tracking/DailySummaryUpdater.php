@@ -4,6 +4,7 @@ namespace SimpleKuma\Tracking;
 
 use SimpleKuma\Stats\CampaignStatsExpressions;
 use SimpleKuma\Stats\StatsHiddenIpService;
+use SimpleKuma\Stats\StatsExclusionFlag;
 
 /**
  * On-write updates to clicks_daily_summary and clicks_stats_by_token_daily (plan: stats pre-aggregation).
@@ -19,6 +20,10 @@ class DailySummaryUpdater
 
     /** @var StatsHiddenIpService|null */
     private $hiddenIpService = null;
+
+    private ?bool $summaryTableExists = null;
+
+    private ?bool $tokenSummaryTableExists = null;
 
     public function __construct(\mysqli $db)
     {
@@ -60,8 +65,11 @@ class DailySummaryUpdater
      */
     public function tableExists(): bool
     {
+        if ($this->summaryTableExists !== null) {
+            return $this->summaryTableExists;
+        }
         $result = $this->db->query("SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clicks_daily_summary' LIMIT 1");
-        return $result && $result->num_rows > 0;
+        return $this->summaryTableExists = $result && $result->num_rows > 0;
     }
 
     /**
@@ -69,8 +77,11 @@ class DailySummaryUpdater
      */
     public function tokenTableExists(): bool
     {
+        if ($this->tokenSummaryTableExists !== null) {
+            return $this->tokenSummaryTableExists;
+        }
         $result = $this->db->query("SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clicks_stats_by_token_daily' LIMIT 1");
-        return $result && $result->num_rows > 0;
+        return $this->tokenSummaryTableExists = $result && $result->num_rows > 0;
     }
 
     /**
@@ -120,12 +131,14 @@ class DailySummaryUpdater
         int $conversionsDelta = 0,
         float $revenueDelta = 0.0,
         ?string $ua = null,
-        ?string $ip = null
+        ?string $ip = null,
+        bool $forceInclude = false
     ): void {
         if (!$this->tokenTableExists() || $extraDataAsArray === null) {
             return;
         }
-        if ($this->shouldSkipStatsAggregate($trafficSourceId, $extraDataAsArray, $ua, $ip)) {
+        if (!$forceInclude
+            && $this->shouldSkipStatsAggregate($trafficSourceId, $extraDataAsArray, $ua, $ip)) {
             return;
         }
         $tokens = $this->extractTokensFromExtraData($extraDataAsArray);
@@ -250,12 +263,30 @@ class DailySummaryUpdater
         if ($this->shouldSkipStatsAggregate($trafficSourceId, $extraDataAsArray, $ua, $ip)) {
             return;
         }
+        $this->upsertClickForSummaryDate(
+            $campaignId,
+            $trafficSourceId,
+            $offerId,
+            $landingPageId,
+            $lpClick,
+            $cost,
+            gmdate('Y-m-d')
+        );
+    }
+
+    private function upsertClickForSummaryDate(
+        int $campaignId,
+        ?int $trafficSourceId,
+        ?int $offerId,
+        ?int $landingPageId,
+        int $lpClick,
+        ?float $cost,
+        string $summaryDate
+    ): void {
         $cost = $cost !== null ? (float) $cost : 0.0;
         // LP rows (offer_id=null) get lp_clicks ONLY from upsertLpClickUpdate to avoid double-counting
         $lpInc = ($lpClick && $landingPageId !== null && $offerId !== null) ? 1 : 0;
         $directInc = ($lpClick && $landingPageId === null) ? 1 : 0;
-        // Must match DATE(ts) with DB session +00:00 (not PHP default timezone)
-        $summaryDate = gmdate('Y-m-d');
 
         // MySQL UNIQUE allows multiple NULLs, so ON DUPLICATE KEY never fires when
         // landing_page_id/offer_id/traffic_source_id is NULL. Update with <=> then insert.
@@ -373,7 +404,7 @@ class DailySummaryUpdater
         if (!$row || empty($row['landing_page_id'])) {
             return;
         }
-        if ($this->shouldSkipStatsAggregate($row['traffic_source_id'], $row['extra_data'], $row['ua'] ?? null, $row['ip'] ?? null)) {
+        if ($this->shouldSkipLoadedClick($row)) {
             return;
         }
 
@@ -402,7 +433,7 @@ class DailySummaryUpdater
         if (!$row || empty($row['landing_page_id'])) {
             return;
         }
-        if ($this->shouldSkipStatsAggregate($row['traffic_source_id'], $row['extra_data'], $row['ua'] ?? null, $row['ip'] ?? null)) {
+        if ($this->shouldSkipLoadedClick($row)) {
             return;
         }
 
@@ -464,8 +495,11 @@ class DailySummaryUpdater
      */
     private function loadClickForSummaryUpdate(string $clickId): ?array
     {
+        $hasPersistedFlag = StatsExclusionFlag::columnExists($this->db);
+        $flagSelect = $hasPersistedFlag ? ', exclude_from_stats' : '';
         $stmt = $this->db->prepare("
-            SELECT campaign_id, traffic_source_id, landing_page_id, DATE(ts) as summary_date, extra_json, cost, ua, ip
+            SELECT campaign_id, traffic_source_id, landing_page_id, DATE(ts) as summary_date,
+                   extra_json, cost, ua, ip{$flagSelect}
             FROM clicks
             WHERE click_id = ?
             LIMIT 1
@@ -487,7 +521,28 @@ class DailySummaryUpdater
             'cost' => isset($row['cost']) && $row['cost'] !== null ? (float) $row['cost'] : 0.0,
             'ua' => $row['ua'] !== null ? (string) $row['ua'] : null,
             'ip' => $row['ip'] !== null ? (string) $row['ip'] : null,
+            'exclude_from_stats' => $hasPersistedFlag ? (int)$row['exclude_from_stats'] : null,
+            '_stats_flag_present' => $hasPersistedFlag,
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function shouldSkipLoadedClick(array $row): bool
+    {
+        $ip = isset($row['ip']) && $row['ip'] !== null ? (string)$row['ip'] : null;
+        if (!empty($row['_stats_flag_present'])) {
+            return (int)($row['exclude_from_stats'] ?? 1) === 1
+                || ($ip !== null && $ip !== '' && $this->hiddenIps()->isHidden($ip));
+        }
+
+        return $this->shouldSkipStatsAggregate(
+            $row['traffic_source_id'] ?? null,
+            is_array($row['extra_data'] ?? null) ? $row['extra_data'] : null,
+            isset($row['ua']) ? (string)$row['ua'] : null,
+            $ip
+        );
     }
 
     /**
@@ -501,9 +556,15 @@ class DailySummaryUpdater
         $revenue = $payout !== null ? (float) $payout : ($value !== null ? (float) $value : 0.0);
 
         $row = null;
+        $rowTable = null;
+        $hasPersistedFlag = false;
         foreach (\SimpleKuma\Database\ClicksTableResolver::getClickLookupTables($this->db) as $clickTable) {
+            $tableHasFlag = StatsExclusionFlag::columnExists($this->db, $clickTable);
+            $flagSelect = $tableHasFlag ? ', exclude_from_stats' : '';
             $stmt = $this->db->prepare("
-                SELECT campaign_id, traffic_source_id, offer_id, landing_page_id, DATE(ts) as summary_date, extra_json, ua, ip
+                SELECT campaign_id, traffic_source_id, offer_id, landing_page_id,
+                       DATE(ts) as summary_date, lp_click, cost, extra_json, ua, ip
+                       {$flagSelect}
                 FROM `{$clickTable}`
                 WHERE click_id = ?
                 LIMIT 1
@@ -517,10 +578,12 @@ class DailySummaryUpdater
             $row = $stmt->get_result()->fetch_assoc();
             $stmt->close();
             if ($row) {
+                $rowTable = $clickTable;
+                $hasPersistedFlag = $tableHasFlag;
                 break;
             }
         }
-        if (!$row) {
+        if (!$row || $rowTable === null) {
             return;
         }
 
@@ -528,7 +591,40 @@ class DailySummaryUpdater
         $trafficSourceId = $row['traffic_source_id'] !== null ? (int) $row['traffic_source_id'] : null;
         $ua = $row['ua'] !== null ? (string) $row['ua'] : null;
         $ip = $row['ip'] !== null ? (string) $row['ip'] : null;
-        if ($this->shouldSkipStatsAggregate($trafficSourceId, is_array($extraData) ? $extraData : null, $ua, $ip)) {
+        $isHiddenIp = $ip !== null && $ip !== '' && $this->hiddenIps()->isHidden($ip);
+        $promoted = false;
+
+        if ($hasPersistedFlag) {
+            // A conversion proves the visitor is real, but never overrides an explicit hidden-IP rule.
+            if ($isHiddenIp) {
+                return;
+            }
+            if ((int)($row['exclude_from_stats'] ?? 0) === 1) {
+                $promote = $this->db->prepare(
+                    "UPDATE `{$rowTable}`
+                     SET exclude_from_stats = 0
+                     WHERE click_id = ? AND exclude_from_stats = 1
+                     LIMIT 1"
+                );
+                if ($promote === false) {
+                    error_log('DailySummaryUpdater::upsertConversion promotion prepare failed: ' . $this->db->error);
+                    return;
+                }
+                $promote->bind_param('s', $clickId);
+                if (!$promote->execute()) {
+                    error_log('DailySummaryUpdater::upsertConversion promotion failed: ' . $promote->error);
+                    $promote->close();
+                    return;
+                }
+                $promoted = $promote->affected_rows > 0;
+                $promote->close();
+            }
+        } elseif ($this->shouldSkipStatsAggregate(
+            $trafficSourceId,
+            is_array($extraData) ? $extraData : null,
+            $ua,
+            $ip
+        )) {
             return;
         }
 
@@ -536,6 +632,35 @@ class DailySummaryUpdater
         $offerId = $row['offer_id'] !== null ? (int) $row['offer_id'] : null;
         $landingPageId = $row['landing_page_id'] !== null ? (int) $row['landing_page_id'] : null;
         $summaryDate = $row['summary_date'];
+
+        if ($promoted) {
+            // The click was intentionally skipped at ingest. Add it exactly once before
+            // recording the conversion so views/clicks/cost and conversion stay aligned.
+            $this->upsertClickForSummaryDate(
+                $campaignId,
+                $trafficSourceId,
+                $offerId,
+                $landingPageId,
+                !empty($row['lp_click']) ? 1 : 0,
+                isset($row['cost']) && $row['cost'] !== null ? (float)$row['cost'] : null,
+                (string)$summaryDate
+            );
+            if ($this->tokenTableExists() && is_array($extraData)) {
+                $this->upsertTokenAggregatesForClick(
+                    $campaignId,
+                    $trafficSourceId,
+                    (string)$summaryDate,
+                    $extraData,
+                    !empty($row['lp_click']) ? 1 : 0,
+                    isset($row['cost']) && $row['cost'] !== null ? (float)$row['cost'] : null,
+                    0,
+                    0.0,
+                    $ua,
+                    $ip,
+                    true
+                );
+            }
+        }
 
         $upd = $this->db->prepare("
             UPDATE clicks_daily_summary
@@ -599,7 +724,8 @@ class DailySummaryUpdater
                 1,
                 $revenue,
                 $ua,
-                $ip
+                $ip,
+                $hasPersistedFlag
             );
         }
     }
@@ -655,7 +781,11 @@ class DailySummaryUpdater
                 0,
                 null,
                 -1,
-                -$revenue
+                -$revenue,
+                $row['ua'] ?? null,
+                $row['ip'] ?? null,
+                !empty($row['_stats_flag_present'])
+                    && (int)($row['exclude_from_stats'] ?? 1) === 0
             );
         }
     }
@@ -678,13 +808,16 @@ class DailySummaryUpdater
         $trafficSourceId = $row['traffic_source_id'] !== null ? (int) $row['traffic_source_id'] : null;
         $ua = isset($row['ua']) && $row['ua'] !== null ? (string) $row['ua'] : null;
         $ip = isset($row['ip']) && $row['ip'] !== null ? (string) $row['ip'] : null;
-        // Only skip Meta approval/crawler — hidden-IP omit uses removeClick after list insert,
-        // and those clicks were previously counted.
-        if (CampaignStatsExpressions::shouldExcludeClickFromStats(
-            $trafficSourceId,
-            is_array($extraData) ? $extraData : null,
-            $ua
-        )) {
+        // Hidden-IP omit calls this after list insertion. Persisted inclusion is the
+        // source of truth so converted real clicks with missing tokens are removed too.
+        $skipForClassification = !empty($row['_stats_flag_present'])
+            ? (int)($row['exclude_from_stats'] ?? 1) === 1
+            : CampaignStatsExpressions::shouldExcludeClickFromStats(
+                $trafficSourceId,
+                is_array($extraData) ? $extraData : null,
+                $ua
+            );
+        if ($skipForClassification) {
             return;
         }
 
@@ -769,7 +902,15 @@ class DailySummaryUpdater
         $trafficSourceId = $row['traffic_source_id'] !== null ? (int) $row['traffic_source_id'] : null;
         $ua = isset($row['ua']) && $row['ua'] !== null ? (string) $row['ua'] : null;
         $ip = isset($row['ip']) && $row['ip'] !== null ? (string) $row['ip'] : null;
-        if ($this->shouldSkipStatsAggregate($trafficSourceId, is_array($extraData) ? $extraData : null, $ua, $ip)) {
+        $skipForClassification = !empty($row['_stats_flag_present'])
+            ? (int)($row['exclude_from_stats'] ?? 1) === 1
+            : CampaignStatsExpressions::shouldExcludeClickFromStats(
+                $trafficSourceId,
+                is_array($extraData) ? $extraData : null,
+                $ua
+            );
+        if ($skipForClassification
+            || ($ip !== null && $ip !== '' && $this->hiddenIps()->isHidden($ip))) {
             return;
         }
 
@@ -837,7 +978,8 @@ class DailySummaryUpdater
                 0,
                 0.0,
                 $ua,
-                $ip
+                $ip,
+                !empty($row['_stats_flag_present'])
             );
         }
     }
@@ -851,8 +993,11 @@ class DailySummaryUpdater
     {
         $selectExtra = $includeCostAndLp ? ', cost, lp_click' : '';
         foreach (\SimpleKuma\Database\ClicksTableResolver::getClickLookupTables($this->db) as $clickTable) {
+            $hasPersistedFlag = StatsExclusionFlag::columnExists($this->db, $clickTable);
+            $flagSelect = $hasPersistedFlag ? ', exclude_from_stats' : '';
             $stmt = $this->db->prepare("
-                SELECT campaign_id, traffic_source_id, offer_id, landing_page_id, DATE(ts) as summary_date, extra_json, ua, ip{$selectExtra}
+                SELECT campaign_id, traffic_source_id, offer_id, landing_page_id,
+                       DATE(ts) as summary_date, extra_json, ua, ip{$flagSelect}{$selectExtra}
                 FROM `{$clickTable}`
                 WHERE click_id = ?
                 LIMIT 1
@@ -866,6 +1011,7 @@ class DailySummaryUpdater
             $row = $stmt->get_result()->fetch_assoc();
             $stmt->close();
             if ($row) {
+                $row['_stats_flag_present'] = $hasPersistedFlag;
                 return $row;
             }
         }

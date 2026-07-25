@@ -36,6 +36,10 @@ class ClicksQueryService
         $where = ['cl.ts >= ?', 'cl.ts <= ?'];
         $params = [$utcRange['from'], $utcRange['to']];
         $types = 'ss';
+        $persisted = StatsExclusionFlag::includedWhere($this->db, 'cl', $clicksTable);
+        if ($persisted !== '') {
+            $where[] = $persisted;
+        }
 
         if ($campaignId !== null) {
             $where[] = 'cl.campaign_id = ?';

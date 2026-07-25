@@ -440,27 +440,34 @@ if (!empty($clickId)) {
             
             <!-- Facebook Approval Check -->
             <?php 
-            if ($isFacebook && isset($clickData['extra_json_parsed']['traffic_source_tokens'])): 
-                $tokens = $clickData['extra_json_parsed']['traffic_source_tokens'];
+            if ($isFacebook):
+                $tokens = $clickData['extra_json_parsed']['traffic_source_tokens'] ?? [];
                 $adId = $tokens['ad_id'] ?? null;
                 $adsetId = $tokens['adset_id'] ?? null;
-                
-                // Check if this would be filtered as Facebook approval click
-                $isApprovalClick = false;
-                if (empty($adId) || $adId === '' || $adId === 'null' || 
-                    (is_string($adId) && (strpos($adId, '{{') === 0 || strpos($adId, '{ts:') === 0))) {
-                    $isApprovalClick = true;
-                }
-                if (empty($adsetId) || $adsetId === '' || $adsetId === 'null' || 
-                    (is_string($adsetId) && (strpos($adsetId, '{{') === 0 || strpos($adsetId, '{ts:') === 0))) {
-                    $isApprovalClick = true;
-                }
+
+                $isApprovalClick = \SimpleKuma\Stats\CampaignStatsExpressions::shouldExcludeClickFromStats(
+                    (int)($clickData['traffic_source_id'] ?? $clickData['campaign_traffic_source_id'] ?? 0),
+                    $clickData['extra_json_parsed'] ?? null,
+                    $clickData['ua'] ?? null
+                );
+                $hasPersistedFlag = array_key_exists('exclude_from_stats', $clickData);
+                $isConvertedReal = $isApprovalClick
+                    && !empty($conversions)
+                    && $hasPersistedFlag
+                    && (int)$clickData['exclude_from_stats'] === 0;
+                $isFiltered = $hasPersistedFlag
+                    ? (int)$clickData['exclude_from_stats'] === 1
+                    : $isApprovalClick;
+                $approvalColor = $isFiltered ? '#f57c00' : '#4caf50';
+                $approvalBackground = $isFiltered ? '#fff3e0' : '#e8f5e9';
             ?>
-            <div class="card" style="margin-bottom: 24px; border: 2px solid <?= $isApprovalClick ? '#f57c00' : '#4caf50' ?>;">
-                <div class="card-header" style="background: <?= $isApprovalClick ? '#fff3e0' : '#e8f5e9' ?>; padding: 16px; border-bottom: 2px solid <?= $isApprovalClick ? '#f57c00' : '#4caf50' ?>;">
+            <div class="card" style="margin-bottom: 24px; border: 2px solid <?= $approvalColor ?>;">
+                <div class="card-header" style="background: <?= $approvalBackground ?>; padding: 16px; border-bottom: 2px solid <?= $approvalColor ?>;">
                     <h2 style="margin: 0; font-size: 20px; color: #333;">
                         Facebook Approval Team Check
-                        <?php if ($isApprovalClick): ?>
+                        <?php if ($isConvertedReal): ?>
+                            <span style="color: #2e7d32; margin-left: 12px;">✓ Included as REAL (converted)</span>
+                        <?php elseif ($isFiltered): ?>
                             <span style="color: #f57c00; margin-left: 12px;">⚠️ Would be FILTERED</span>
                         <?php else: ?>
                             <span style="color: #4caf50; margin-left: 12px;">✓ Valid Click</span>

@@ -50,6 +50,9 @@ class ClicksUnifiedViewSync
             "ADD COLUMN adset_name_value VARCHAR(255) GENERATED ALWAYS AS (
                 JSON_UNQUOTE(JSON_EXTRACT(extra_json, '$.traffic_source_tokens.adset_name'))
             ) STORED",
+            "ADD COLUMN exclude_from_stats TINYINT(1) NOT NULL DEFAULT 0
+                COMMENT '1 = omit from reporting until a conversion proves the click real'
+                AFTER extra_json",
         ];
 
         foreach ($alterations as $fragment) {

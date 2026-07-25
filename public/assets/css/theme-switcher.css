@@ -19,7 +19,7 @@
     background-position: right 14px center;
 }
 
-[data-theme="dark"] .theme-select {
+[data-theme-base="dark"] .theme-select {
     /* brighter caret in dark mode */
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20'%3E%3Cpath fill='%23e8edf3' d='M5.6 7.6a1 1 0 0 1 1.4 0L10 10.6l3-3a1 1 0 1 1 1.4 1.4l-3.7 3.7a1 1 0 0 1-1.4 0L5.6 9a1 1 0 0 1 0-1.4z'/%3E%3C/svg%3E");
 }
@@ -33,7 +33,7 @@
     margin-left: var(--spacing-md);
     padding: 8px 16px;
     background: var(--color-bark);
-    color: #f5f1e8;
+    color: var(--btn-on-primary-text, #f5f1e8);
     border-radius: var(--radius-sm);
     text-decoration: none;
     font-size: var(--font-size-sm);
@@ -42,7 +42,7 @@
 
 .navbar-logout-btn:hover {
     background: var(--color-bark-dark);
-    color: #f5f1e8;
+    color: var(--btn-on-primary-text, #f5f1e8);
 }
 
 .sidebar-header {
@@ -54,17 +54,14 @@
     margin: 0 auto;
     width: auto;
     max-width: 220px;
+    max-height: 220px;
     height: auto;
     object-fit: contain;
     object-position: center;
 }
 
-/* Portrait logos (363×488); height drives display size in the 250px sidebar */
-[data-theme="light"] .sidebar-logo-img {
-    max-height: 220px;
-}
-
-[data-theme="dark"] .sidebar-logo-img {
+/* Portrait logos; dark-base themes use a slightly taller max height */
+[data-theme-base="dark"] .sidebar-logo-img {
     max-height: 232px;
 }
 

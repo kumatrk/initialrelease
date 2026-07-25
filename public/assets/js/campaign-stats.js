@@ -1110,16 +1110,30 @@
     };
 
     function isDarkTheme() {
-        return document.documentElement.getAttribute('data-theme') === 'dark';
+        if (window.KumaTheme && typeof window.KumaTheme.meta === 'function') {
+            return window.KumaTheme.meta().base === 'dark';
+        }
+        return document.documentElement.getAttribute('data-theme-base') === 'dark';
+    }
+
+    function chartThemeColors() {
+        const root = getComputedStyle(document.documentElement);
+        const css = (name, fallback) => {
+            const v = root.getPropertyValue(name).trim();
+            return v || fallback;
+        };
+        const dark = isDarkTheme();
+        return {
+            gridColor: css('--chart-grid', dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)'),
+            tickColor: css('--chart-tick', dark ? '#9aa0a6' : '#666'),
+        };
     }
 
     function buildChart(canvasId, chartData, selectedMetrics) {
         const canvas = document.getElementById(canvasId);
         if (!canvas || !window.Chart) return null;
 
-        const dark = isDarkTheme();
-        const gridColor = dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
-        const tickColor = dark ? '#9aa0a6' : '#666';
+        const { gridColor, tickColor } = chartThemeColors();
 
         const datasets = [];
         selectedMetrics.forEach((key) => {

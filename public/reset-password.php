@@ -21,6 +21,7 @@ $skAppVersion = is_array($skVersionData) ? (string) ($skVersionData['version'] ?
 
 use SimpleKuma\Auth\Auth;
 use SimpleKuma\Auth\Csrf;
+use SimpleKuma\Theme\ThemeRegistry;
 
 // Database connection
 $db = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
@@ -81,6 +82,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $tokenValid) {
 }
 
 $db->close();
+$themeClientConfig = ThemeRegistry::toClientConfig();
+$authLogoDefault = ThemeRegistry::logo(ThemeRegistry::DEFAULT_THEME);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -92,9 +95,12 @@ $db->close();
     <script>
     (function () {
         try {
+            var themes = <?= json_encode($themeClientConfig, JSON_THROW_ON_ERROR) ?>;
             var t = localStorage.getItem('kuma_theme');
-            if (t === 'light' || t === 'dark') {
+            if (t && themes[t]) {
                 document.documentElement.setAttribute('data-theme', t);
+                document.documentElement.setAttribute('data-theme-base', themes[t].base === 'dark' ? 'dark' : 'light');
+                window.__KUMA_AUTH_THEME__ = themes[t];
             }
         } catch (e) { /* ignore */ }
     })();
@@ -263,7 +269,7 @@ $db->close();
     <div class="login-container">
         <div class="login-header">
             <div style="margin-bottom: 16px;">
-                <img src="<?= ASSETS_BASE_URL ?>/assets/images/mainlogo.png" alt="" style="max-height: 140px; height: auto;">
+                <img id="auth-logo-img" src="<?= ASSETS_BASE_URL ?>/assets/images/<?= htmlspecialchars($authLogoDefault) ?>" alt="" style="max-height: 140px; height: auto;">
             </div>
             <span class="retro-text">Harder, Better, Faster, Stronger</span>
         </div>
@@ -337,6 +343,16 @@ $db->close();
             </div>
         </div>
     </div>
+    <script>
+    (function () {
+        var meta = window.__KUMA_AUTH_THEME__;
+        if (!meta || !meta.logo) return;
+        var img = document.getElementById('auth-logo-img');
+        if (img) {
+            img.src = <?= json_encode(ASSETS_BASE_URL . '/assets/images/', JSON_THROW_ON_ERROR) ?> + meta.logo;
+        }
+    })();
+    </script>
 </body>
 </html>
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SimpleKuma\Database;
 
+use SimpleKuma\Database\Migrations\AddStatsExclusionFlag;
 use SimpleKuma\Database\Migrations\RemoveFbclidFromTrafficSources;
 use mysqli;
 use Throwable;
@@ -239,6 +240,12 @@ class MigrationRunner
             return $this->runPhpMigration(
                 $migration,
                 static fn (mysqli $db): ?string => RemoveFbclidFromTrafficSources::run($db)
+            );
+        }
+        if ($migration === '081_add_stats_exclusion_flag.sql') {
+            return $this->runPhpMigration(
+                $migration,
+                static fn (mysqli $db): ?string => AddStatsExclusionFlag::run($db)
             );
         }
 

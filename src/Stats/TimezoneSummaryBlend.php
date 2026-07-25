@@ -220,20 +220,22 @@ final class TimezoneSummaryBlend
         $summaryClicks = (int)($stmt->get_result()->fetch_assoc()['summary_clicks'] ?? 0);
         $stmt->close();
 
-        // Cheap covering-index COUNT(*) on clicks (ts, campaign_id, …).
-        // Do NOT add ua/ad_id/IP predicates here — they force full row reads and turn a
-        // sub-second reliability check into multi-second (or timeout) on large ranges.
-        // Invalid-FB / hidden-IP exclusions belong on write-time DailySummaryUpdater;
-        // the 0.85–1.15 ratio below absorbs the small remaining gap.
+        // Cheap covering-index COUNT(*) on clicks (ts, campaign_id, exclusion flag, …).
+        // Never add ua/ad_id/IP predicates here: the persisted boolean keeps this
+        // index-only while matching write-time Meta exclusions. The ratio band absorbs
+        // hidden-IP differences and brief write races.
         $utcFrom = $summaryDateFrom . ' 00:00:00';
         $utcTo = $summaryDateTo . ' 23:59:59';
         $paramsRaw = array_merge($campaignIds, [$utcFrom, $utcTo]);
+        $activeFlag = StatsExclusionFlag::includedWhere($db, 'cl', 'clicks');
+        $activeFlagSql = $activeFlag !== '' ? " AND {$activeFlag}" : '';
         $stmt = $db->prepare("
             SELECT COUNT(*) AS raw_clicks
             FROM clicks cl
             WHERE cl.campaign_id IN ({$placeholders})
               AND cl.ts >= ?
               AND cl.ts <= ?
+              {$activeFlagSql}
         ");
         if ($stmt === false) {
             return false;
@@ -244,12 +246,15 @@ final class TimezoneSummaryBlend
         $stmt->close();
 
         if ($rawClicks === 0 && \SimpleKuma\Database\ClicksTableResolver::archiveHasRows($db)) {
+            $archiveFlag = StatsExclusionFlag::includedWhere($db, 'cl', 'clicks_archive');
+            $archiveFlagSql = $archiveFlag !== '' ? " AND {$archiveFlag}" : '';
             $stmt = $db->prepare("
                 SELECT COUNT(*) AS raw_clicks
                 FROM clicks_archive cl
                 WHERE cl.campaign_id IN ({$placeholders})
                   AND cl.ts >= ?
                   AND cl.ts <= ?
+                  {$archiveFlagSql}
             ");
             if ($stmt !== false) {
                 $stmt->bind_param($types, ...$paramsRaw);
@@ -261,7 +266,7 @@ final class TimezoneSummaryBlend
         if ($rawClicks === 0) {
             return true;
         }
-        // Allow small gap for invalid-FB exclusion / race; hard-fail when summary clearly incomplete
+        // Allow a small hidden-IP/race gap; hard-fail when summary is clearly incomplete.
         if ($summaryClicks === 0) {
             return false;
         }

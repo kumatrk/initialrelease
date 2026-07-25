@@ -28,6 +28,17 @@ final class DashboardStatsService
         return ClicksTableResolver::getStatsTable($this->db);
     }
 
+    private function includedClickSql(string $alias = 'cl', ?string $table = null): string
+    {
+        $predicate = StatsExclusionFlag::includedWhere(
+            $this->db,
+            $alias,
+            $table ?? $this->clicksTable()
+        );
+
+        return $predicate !== '' ? ' AND ' . $predicate : '';
+    }
+
     public function __construct(mysqli $db)
     {
         $this->db = $db;
@@ -481,6 +492,7 @@ final class DashboardStatsService
             $types .= str_repeat('s', count($allowedStatuses));
             $params = array_merge($params, $allowedStatuses);
         }
+        $includedSql = $this->includedClickSql('cl', 'clicks');
 
         $sql = "
             SELECT
@@ -491,6 +503,7 @@ final class DashboardStatsService
             FROM clicks cl
             {$statusJoin}
             WHERE cl.ts >= ? AND cl.ts <= ?
+            {$includedSql}
             {$statusSql}
         ";
         $stmt = $this->db->prepare($sql);
@@ -520,6 +533,7 @@ final class DashboardStatsService
             INNER JOIN clicks cl ON cl.click_id = cv.click_id
             {$convStatusJoin}
             WHERE cl.ts >= ? AND cl.ts <= ?
+            {$includedSql}
             {$convStatusSql}
         ";
         $conversions = 0;
@@ -673,6 +687,8 @@ final class DashboardStatsService
      */
     private function queryActiveCampaignIdsFromRaw(string $utcFrom, string $utcTo, ?array $allowedStatuses): array
     {
+        $clicksTable = $this->clicksTable();
+        $includedSql = $this->includedClickSql('cl', $clicksTable);
         $statusSql = '';
         $types = 'ss';
         $params = [$utcFrom, $utcTo];
@@ -685,9 +701,10 @@ final class DashboardStatsService
 
         $sql = "
             SELECT DISTINCT cl.campaign_id
-            FROM " . $this->clicksTable() . " cl
+            FROM {$clicksTable} cl
             INNER JOIN campaigns cp ON cp.id = cl.campaign_id
             WHERE cl.ts >= ? AND cl.ts <= ?
+            {$includedSql}
             {$statusSql}
         ";
         $stmt = $this->db->prepare($sql);
@@ -807,6 +824,7 @@ final class DashboardStatsService
             $types .= str_repeat('s', count($allowedStatuses));
             $params = array_merge($params, $allowedStatuses);
         }
+        $includedSql = $this->includedClickSql('cl', 'clicks');
 
         $sql = "
             SELECT
@@ -836,6 +854,7 @@ final class DashboardStatsService
                     COALESCE(SUM(cl.cost), 0) AS manual_cost
                 FROM clicks cl
                 WHERE cl.ts >= ? AND cl.ts <= ?
+                {$includedSql}
                 GROUP BY cl.campaign_id
             ) agg ON agg.campaign_id = cp.id
             LEFT JOIN (
@@ -846,6 +865,7 @@ final class DashboardStatsService
                 FROM conversions cv
                 INNER JOIN clicks cl ON cl.click_id = cv.click_id
                 WHERE cl.ts >= ? AND cl.ts <= ?
+                {$includedSql}
                 GROUP BY cl.campaign_id
             ) conv ON conv.campaign_id = cp.id
             WHERE 1=1 {$statusSql}
@@ -923,12 +943,14 @@ final class DashboardStatsService
             $mph = implode(',', array_fill(0, count($manualIds), '?'));
             $mTypes = 'ss' . str_repeat('i', count($manualIds));
             $mParams = array_merge([$utcFrom, $utcTo], $manualIds);
+            $includedSql = $this->includedClickSql('cl', 'clicks');
             $mStmt = $this->db->prepare(
                 "SELECT campaign_id, COALESCE(SUM(cost), 0) AS total_cost
-                 FROM clicks
-                 WHERE ts >= ? AND ts <= ?
-                   AND campaign_id IN ({$mph})
-                 GROUP BY campaign_id"
+                 FROM clicks cl
+                 WHERE cl.ts >= ? AND cl.ts <= ?
+                   AND cl.campaign_id IN ({$mph})
+                   {$includedSql}
+                 GROUP BY cl.campaign_id"
             );
             if ($mStmt !== false) {
                 $mStmt->bind_param($mTypes, ...$mParams);
@@ -987,6 +1009,7 @@ final class DashboardStatsService
 
         $offset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
         $hourExpr = "COALESCE(HOUR(CONVERT_TZ(cl.ts, '+00:00', ?)), -1)";
+        $includedSql = $this->includedClickSql('cl', 'clicks');
         // COUNT(*) on indexed clicks — avoid COUNT(DISTINCT) and full conversions derived table.
         $sql = "
             SELECT
@@ -994,6 +1017,7 @@ final class DashboardStatsService
                 COUNT(*) AS clicks
             FROM clicks cl
             WHERE cl.ts >= ? AND cl.ts <= ?
+            {$includedSql}
             GROUP BY {$hourExpr}
             ORDER BY hour ASC
         ";
@@ -1022,6 +1046,7 @@ final class DashboardStatsService
             FROM conversions cv
             INNER JOIN clicks cl ON cl.click_id = cv.click_id
             WHERE cl.ts >= ? AND cl.ts <= ?
+            {$includedSql}
             GROUP BY {$hourExpr}
         ";
         $convStmt = $this->db->prepare($convSql);
@@ -1086,11 +1111,13 @@ final class DashboardStatsService
         // so mapping summary_date → user day buckets silently drops/shifts evening traffic.
         // Aggregate on indexed `clicks` with COUNT(*) — never COUNT(DISTINCT)/unified view.
         $offset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
+        $includedSql = $this->includedClickSql('cl', 'clicks');
         $sql = "
             SELECT DATE(CONVERT_TZ(cl.ts, '+00:00', ?)) AS day,
                    COUNT(*) AS clicks
             FROM clicks cl
             WHERE cl.ts >= ? AND cl.ts <= ?
+            {$includedSql}
             GROUP BY DATE(CONVERT_TZ(cl.ts, '+00:00', ?))
             ORDER BY day ASC
         ";
@@ -1115,6 +1142,7 @@ final class DashboardStatsService
             FROM conversions cv
             INNER JOIN clicks cl ON cl.click_id = cv.click_id
             WHERE cl.ts >= ? AND cl.ts <= ?
+            {$includedSql}
             GROUP BY DATE(CONVERT_TZ(cl.ts, '+00:00', ?))
         ";
         $convStmt = $this->db->prepare($convSql);

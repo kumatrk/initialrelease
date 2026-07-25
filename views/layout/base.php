@@ -11,13 +11,15 @@ $skAppVersion = is_array($skVersionData) ? (string) ($skVersionData['version'] ?
 
 $userTheme = ThemeRegistry::normalize($GLOBALS['userTheme'] ?? ThemeRegistry::DEFAULT_THEME);
 $themeOptions = ThemeRegistry::all();
-$logoFile = $userTheme === 'dark' ? 'darkmodelogo2.png' : 'mainlogo.png';
+$themeBase = ThemeRegistry::base($userTheme);
+$logoFile = ThemeRegistry::logo($userTheme);
+$themeClientConfig = ThemeRegistry::toClientConfig();
 $themeCsrfToken = Csrf::ensureToken();
 $sidebarCollapsed = !empty($GLOBALS['sidebarCollapsed']);
 $dashboardChartsHidden = !empty($GLOBALS['dashboardChartsHidden']);
 ?>
 <!DOCTYPE html>
-<html lang="en" data-theme="<?= htmlspecialchars($userTheme) ?>"<?= $sidebarCollapsed ? ' class="sidebar-collapsed"' : '' ?>>
+<html lang="en" data-theme="<?= htmlspecialchars($userTheme) ?>" data-theme-base="<?= htmlspecialchars($themeBase) ?>"<?= $sidebarCollapsed ? ' class="sidebar-collapsed"' : '' ?>>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -26,7 +28,9 @@ $dashboardChartsHidden = !empty($GLOBALS['dashboardChartsHidden']);
     (function () {
         try {
             var serverTheme = <?= json_encode($userTheme, JSON_THROW_ON_ERROR) ?>;
+            var serverBase = <?= json_encode($themeBase, JSON_THROW_ON_ERROR) ?>;
             document.documentElement.setAttribute('data-theme', serverTheme);
+            document.documentElement.setAttribute('data-theme-base', serverBase);
             localStorage.setItem('kuma_theme', serverTheme);
             var serverSidebarCollapsed = <?= $sidebarCollapsed ? 'true' : 'false' ?>;
             document.documentElement.classList.toggle('sidebar-collapsed', serverSidebarCollapsed);
@@ -72,8 +76,6 @@ $dashboardChartsHidden = !empty($GLOBALS['dashboardChartsHidden']);
                     <img id="sidebar-logo-img"
                          class="sidebar-logo-img"
                          src="<?= ASSETS_BASE_URL ?>/assets/images/<?= htmlspecialchars($logoFile) ?>"
-                         data-logo-light="<?= ASSETS_BASE_URL ?>/assets/images/mainlogo.png"
-                         data-logo-dark="<?= ASSETS_BASE_URL ?>/assets/images/darkmodelogo2.png"
                          alt="Simple KUMA">
                 </a>
                 <button type="button"
@@ -513,7 +515,9 @@ $dashboardChartsHidden = !empty($GLOBALS['dashboardChartsHidden']);
     window.KUMA_THEME_CONFIG = {
         apiUrl: <?= json_encode(APP_BASE_URL . '/api-user-theme.php', JSON_THROW_ON_ERROR) ?>,
         csrfToken: <?= json_encode($themeCsrfToken, JSON_THROW_ON_ERROR) ?>,
-        serverTheme: <?= json_encode($userTheme, JSON_THROW_ON_ERROR) ?>
+        serverTheme: <?= json_encode($userTheme, JSON_THROW_ON_ERROR) ?>,
+        assetsBaseUrl: <?= json_encode(ASSETS_BASE_URL . '/assets/images/', JSON_THROW_ON_ERROR) ?>,
+        themes: <?= json_encode($themeClientConfig, JSON_THROW_ON_ERROR) ?>
     };
     window.KUMA_UI_PREFS_CONFIG = {
         apiUrl: <?= json_encode(APP_BASE_URL . '/api-user-ui-prefs.php', JSON_THROW_ON_ERROR) ?>,

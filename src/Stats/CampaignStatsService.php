@@ -27,9 +27,12 @@ class CampaignStatsService
     {
         $utcRange = Formatter::convertDateRangeToUTC($dateFrom, $dateTo, $timezone);
         $clicksTable = ClicksTableResolver::getStatsTable($this->db);
+        $usePersistedFlag = StatsExclusionFlag::columnExists($this->db, $clicksTable);
+        $includedJoin = $usePersistedFlag ? ' AND cl.exclude_from_stats = 0' : '';
 
-        $visitors = CampaignStatsExpressions::visitorCountExpr();
-        $lpClicks = CampaignStatsExpressions::lpClicksCountExpr();
+        $visitors = CampaignStatsExpressions::visitorCountExpr('cl', 'ts', $usePersistedFlag);
+        $lpClicks = CampaignStatsExpressions::lpClicksCountExpr('cl', 'ts', $usePersistedFlag);
+        $conversions = CampaignStatsExpressions::conversionsCountExpr('cl', 'ts', $usePersistedFlag);
 
         $sql = "
             SELECT
@@ -38,12 +41,12 @@ class CampaignStatsService
                 cp.status,
                 {$visitors} AS clicks,
                 {$lpClicks} AS lp_clicks,
-                " . CampaignStatsExpressions::conversionsCountExpr() . " AS conversions,
+                {$conversions} AS conversions,
                 COALESCE(SUM(cl.cost), 0) AS cost,
                 COALESCE(SUM(conv.revenue_sum), 0) AS revenue
             FROM campaigns cp
             LEFT JOIN {$clicksTable} cl ON cl.campaign_id = cp.id
-                AND cl.ts >= ? AND cl.ts <= ?
+                AND cl.ts >= ? AND cl.ts <= ?{$includedJoin}
             LEFT JOIN traffic_sources ts ON cp.traffic_source_id = ts.id
             " . CampaignStatsExpressions::conversionsAggJoin() . "
         ";

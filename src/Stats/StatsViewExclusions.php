@@ -7,10 +7,9 @@ namespace SimpleKuma\Stats;
 /**
  * Combined click exclusions for stats views (FB approval/crawler + hidden IPs).
  *
- * Use on visitor log, cron rebuilds, and similar non-hot paths.
- * Do NOT apply to dashboard/list reliability checks or covering-index COUNT(*)
- * aggregates — ua/ad_id predicates force full row reads and destroy the fast path.
- * Those surfaces rely on DailySummaryUpdater write-time exclusion instead.
+ * Uses the persisted flag after migration 081, with legacy rule evaluation only while
+ * upgrading. Hot dashboard/list paths use StatsExclusionFlag directly so their
+ * COUNT(*) queries remain covering-index only.
  */
 final class StatsViewExclusions
 {
@@ -19,7 +18,12 @@ final class StatsViewExclusions
      */
     public static function clickWhereSql(\mysqli $db, string $clAlias = 'cl'): string
     {
-        $parts = [CampaignStatsExpressions::excludeInvalidClickWhere($clAlias)];
+        $persisted = StatsExclusionFlag::includedWhere($db, $clAlias);
+        $parts = [
+            $persisted !== ''
+                ? $persisted
+                : CampaignStatsExpressions::excludeInvalidClickWhere($clAlias),
+        ];
         $ipSql = (new StatsHiddenIpService($db))->exclusionSql($clAlias);
         if ($ipSql !== '') {
             $parts[] = $ipSql;

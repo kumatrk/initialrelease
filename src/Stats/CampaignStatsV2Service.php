@@ -97,11 +97,12 @@ class CampaignStatsV2Service
 
         $filterKeys = $this->filterableKeys($campaignId, $dateFrom, $dateTo, $timezone);
         $clicksTable = $this->clicksTable;
+        $usePersistedFlag = StatsExclusionFlag::columnExists($this->db, $clicksTable);
 
-        $visitors = CampaignStatsExpressions::visitorCountExpr();
-        $lpClicks = CampaignStatsExpressions::lpClicksCountExpr();
-        $conversions = CampaignStatsExpressions::conversionsCountExpr();
-        $lpValid = CampaignStatsExpressions::validClickCase();
+        $visitors = CampaignStatsExpressions::visitorCountExpr('cl', 'ts', $usePersistedFlag);
+        $lpClicks = CampaignStatsExpressions::lpClicksCountExpr('cl', 'ts', $usePersistedFlag);
+        $conversions = CampaignStatsExpressions::conversionsCountExpr('cl', 'ts', $usePersistedFlag);
+        $lpValid = CampaignStatsExpressions::validClickCase('cl', 'ts', $usePersistedFlag);
         [$filterSql, $filterTypes, $filterParams] = $filters->clickFilterSql($this->db, 'cl', $filterKeys);
 
         $useScopedCost = $filters->requiresScopedCost();
@@ -339,10 +340,11 @@ class CampaignStatsV2Service
     ): array {
         $filterKeys = $this->filterableKeys($campaignId, $dateFrom, $dateTo, $timezone);
         $clicksTable = $this->clicksTable;
-        $visitors = CampaignStatsExpressions::visitorCountExpr();
-        $lpClicks = CampaignStatsExpressions::lpClicksCountExpr();
-        $conversions = CampaignStatsExpressions::conversionsCountExpr();
-        $lpValid = CampaignStatsExpressions::validClickCase();
+        $usePersistedFlag = StatsExclusionFlag::columnExists($this->db, $clicksTable);
+        $visitors = CampaignStatsExpressions::visitorCountExpr('cl', 'ts', $usePersistedFlag);
+        $lpClicks = CampaignStatsExpressions::lpClicksCountExpr('cl', 'ts', $usePersistedFlag);
+        $conversions = CampaignStatsExpressions::conversionsCountExpr('cl', 'ts', $usePersistedFlag);
+        $lpValid = CampaignStatsExpressions::validClickCase('cl', 'ts', $usePersistedFlag);
         [$filterSql, $filterTypes, $filterParams] = $filters->clickFilterSql($this->db, 'cl', $filterKeys);
 
         $sql = "
@@ -558,13 +560,14 @@ class CampaignStatsV2Service
         ?array $campaign = null
     ): array {
         $clicksTable = $this->clicksTable;
+        $usePersistedFlag = StatsExclusionFlag::columnExists($this->db, $clicksTable);
         $timezoneOffset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
         $parts = CampaignStatsExpressions::groupKeyParts($groupBy, $timezoneOffset);
         $groupExpr = $parts['expr'];
         $labelExpr = $parts['label_expr'];
-        $visitors = CampaignStatsExpressions::visitorCountExpr();
-        $lpClicks = CampaignStatsExpressions::lpClicksCountExpr();
-        $conversions = CampaignStatsExpressions::conversionsCountExpr();
+        $visitors = CampaignStatsExpressions::visitorCountExpr('cl', 'ts', $usePersistedFlag);
+        $lpClicks = CampaignStatsExpressions::lpClicksCountExpr('cl', 'ts', $usePersistedFlag);
+        $conversions = CampaignStatsExpressions::conversionsCountExpr('cl', 'ts', $usePersistedFlag);
         // Blended edge segments only run for manual-cost pre-agg; keep joins off.
         $useApiCostJoins = $this->campaignUsesIntegratedApiCost($campaign);
         $fbCase = '0';
@@ -842,6 +845,8 @@ class CampaignStatsV2Service
         );
 
         $dbName = $this->db->query('SELECT DATABASE()')->fetch_row()[0] ?? '';
+        $persisted = StatsExclusionFlag::includedWhere($this->db, 'cl', $clicksTable);
+        $includedSql = $persisted !== '' ? ' AND ' . $persisted : '';
         $column = 'traffic_source_id';
         $stmt = $this->db->prepare(
             "SELECT 1 FROM information_schema.COLUMNS
@@ -864,6 +869,7 @@ class CampaignStatsV2Service
                     LEFT JOIN traffic_sources ts ON ts.id = cl.traffic_source_id
                     WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?
                       AND cl.traffic_source_id IS NOT NULL
+                      {$includedSql}
                     ORDER BY ts.name
                 ";
                 $q = $this->db->prepare($sql);
@@ -899,6 +905,7 @@ class CampaignStatsV2Service
                 LEFT JOIN offers o ON o.id = cl.offer_id
                 WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?
                   AND cl.offer_id IS NOT NULL AND cl.offer_id > 0
+                  {$includedSql}
                 ORDER BY o.name
             ";
             $offerQ = $this->db->prepare($offerSql);
@@ -927,6 +934,7 @@ class CampaignStatsV2Service
                 LEFT JOIN landing_pages lp ON lp.id = cl.landing_page_id
                 WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?
                   AND cl.landing_page_id IS NOT NULL AND cl.landing_page_id > 0
+                  {$includedSql}
                 ORDER BY lp.name
             ";
             $lpQ = $this->db->prepare($lpSql);
@@ -987,14 +995,16 @@ class CampaignStatsV2Service
         $clicksTable = $this->clicksTable;
         $parts = CampaignStatsExpressions::groupKeyParts($tokenParam);
         $groupExpr = $parts['expr'];
-        $visitors = CampaignStatsExpressions::visitorCountExpr();
+        $usePersistedFlag = StatsExclusionFlag::columnExists($this->db, $clicksTable);
+        $visitors = CampaignStatsExpressions::visitorCountExpr('cl', 'ts', $usePersistedFlag);
+        $includedSql = $usePersistedFlag ? ' AND cl.exclude_from_stats = 0' : '';
 
         $sql = "
             SELECT ({$groupExpr}) AS token_value, {$visitors} AS cnt
             FROM {$clicksTable} cl
             INNER JOIN campaigns cp ON cl.campaign_id = cp.id
             LEFT JOIN traffic_sources ts ON cp.traffic_source_id = ts.id
-            WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?
+            WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$includedSql}
             GROUP BY token_value
             HAVING token_value IS NOT NULL
                AND TRIM(token_value) != ''
@@ -1163,14 +1173,15 @@ class CampaignStatsV2Service
 
         // Raw path: skip FB/GA cost joins for manual-cost campaigns (SUM(cl.cost) is enough).
         $clicksTable = $this->clicksTable;
+        $usePersistedFlag = StatsExclusionFlag::columnExists($this->db, $clicksTable);
         $timezoneOffset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
         $parts = CampaignStatsExpressions::groupKeyParts($groupBy, $timezoneOffset);
         $groupExpr = $parts['expr'];
         $labelExpr = $parts['label_expr'];
-        $visitors = CampaignStatsExpressions::visitorCountExpr();
-        $lpClicks = CampaignStatsExpressions::lpClicksCountExpr();
-        $directClicks = CampaignStatsExpressions::directClicksCountExpr();
-        $conversions = CampaignStatsExpressions::conversionsCountExpr();
+        $visitors = CampaignStatsExpressions::visitorCountExpr('cl', 'ts', $usePersistedFlag);
+        $lpClicks = CampaignStatsExpressions::lpClicksCountExpr('cl', 'ts', $usePersistedFlag);
+        $directClicks = CampaignStatsExpressions::directClicksCountExpr('cl', 'ts', $usePersistedFlag);
+        $conversions = CampaignStatsExpressions::conversionsCountExpr('cl', 'ts', $usePersistedFlag);
         $useApiCostJoins = $this->campaignUsesIntegratedApiCost($campaign);
         $fbCase = '0';
         $gaCase = '0';
@@ -1402,6 +1413,7 @@ class CampaignStatsV2Service
         ?array $campaign = null
     ): array {
         $clicksTable = $this->clicksTable;
+        $usePersistedFlag = StatsExclusionFlag::columnExists($this->db, $clicksTable);
         $useApiCostJoins = $this->campaignUsesIntegratedApiCost($campaign);
         $fbCase = '0';
         $gaCase = '0';
@@ -1412,9 +1424,9 @@ class CampaignStatsV2Service
             $fbJoins = CampaignStatsCostSql::scopedApiCostJoins($clicksTable)['joins'];
         }
         $filterKeys = $this->filterableKeys($campaignId, $dateFrom, $dateTo, $userTimezone);
-        $visitors = CampaignStatsExpressions::visitorCountExpr();
-        $actionClicks = CampaignStatsExpressions::actionClicksCountExpr();
-        $conversions = CampaignStatsExpressions::conversionsCountExpr();
+        $visitors = CampaignStatsExpressions::visitorCountExpr('cl', 'ts', $usePersistedFlag);
+        $actionClicks = CampaignStatsExpressions::actionClicksCountExpr('cl', 'ts', $usePersistedFlag);
+        $conversions = CampaignStatsExpressions::conversionsCountExpr('cl', 'ts', $usePersistedFlag);
         $timezoneOffset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
         $hourExpr = "COALESCE(HOUR(CONVERT_TZ(cl.ts, '+00:00', ?)), -1)";
 
@@ -1524,6 +1536,7 @@ class CampaignStatsV2Service
         }
 
         $clicksTable = $this->clicksTable;
+        $usePersistedFlag = StatsExclusionFlag::columnExists($this->db, $clicksTable);
         $useApiCostJoins = $this->campaignUsesIntegratedApiCost($campaign);
         $fbCase = '0';
         $gaCase = '0';
@@ -1533,9 +1546,9 @@ class CampaignStatsV2Service
             $gaCase = CampaignStatsCostSql::perClickGoogleCostCase($clicksTable);
             $fbJoins = CampaignStatsCostSql::scopedApiCostJoins($clicksTable)['joins'];
         }
-        $visitors = CampaignStatsExpressions::visitorCountExpr();
-        $actionClicks = CampaignStatsExpressions::actionClicksCountExpr();
-        $conversions = CampaignStatsExpressions::conversionsCountExpr();
+        $visitors = CampaignStatsExpressions::visitorCountExpr('cl', 'ts', $usePersistedFlag);
+        $actionClicks = CampaignStatsExpressions::actionClicksCountExpr('cl', 'ts', $usePersistedFlag);
+        $conversions = CampaignStatsExpressions::conversionsCountExpr('cl', 'ts', $usePersistedFlag);
         $filterKeys = $this->filterableKeys($campaignId, $dateFrom, $dateTo, $userTimezone);
         $timezoneOffset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
         $dayExpr = "DATE(CONVERT_TZ(cl.ts, '+00:00', '{$timezoneOffset}'))";

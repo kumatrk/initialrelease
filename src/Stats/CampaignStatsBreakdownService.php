@@ -356,10 +356,12 @@ class CampaignStatsBreakdownService
         string $dateFrom = ''
     ): array {
         $clicksTable = ClicksTableResolver::getStatsTable($this->db);
-        $visitors = CampaignStatsExpressions::visitorCountExpr();
-        $lpClicks = CampaignStatsExpressions::lpClicksCountExpr();
-        $directClicks = CampaignStatsExpressions::directClicksCountExpr();
-        $conversions = CampaignStatsExpressions::conversionsCountExpr();
+        $usePersistedFlag = StatsExclusionFlag::columnExists($this->db, $clicksTable);
+        $visitors = CampaignStatsExpressions::visitorCountExpr('cl', 'ts', $usePersistedFlag);
+        $lpClicks = CampaignStatsExpressions::lpClicksCountExpr('cl', 'ts', $usePersistedFlag);
+        $directClicks = CampaignStatsExpressions::directClicksCountExpr('cl', 'ts', $usePersistedFlag);
+        $conversions = CampaignStatsExpressions::conversionsCountExpr('cl', 'ts', $usePersistedFlag);
+        $includedSql = $usePersistedFlag ? ' AND cl.exclude_from_stats = 0' : '';
         $fbCase = CampaignStatsCostSql::perClickFacebookCostCase($clicksTable);
         $gaCase = CampaignStatsCostSql::perClickGoogleCostCase($clicksTable);
         $fbJoins = CampaignStatsCostSql::scopedApiCostJoins($clicksTable)['joins'];
@@ -382,7 +384,7 @@ class CampaignStatsBreakdownService
             LEFT JOIN traffic_sources ts ON cp.traffic_source_id = ts.id
             " . CampaignStatsExpressions::conversionsAggJoin() . "
             {$fbJoins}
-            WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?
+            WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$includedSql}
             GROUP BY {$dayExpr}
         ";
         $types = 'iss';
@@ -421,13 +423,15 @@ class CampaignStatsBreakdownService
     private function queryRawClicksGroup(int $campaignId, string $groupBy, string $utcFrom, string $utcTo): array
     {
         $clicksTable = ClicksTableResolver::getStatsTable($this->db);
+        $usePersistedFlag = StatsExclusionFlag::columnExists($this->db, $clicksTable);
         $parts = CampaignStatsExpressions::groupKeyParts($groupBy);
         $groupExpr = $parts['expr'];
         $labelExpr = $parts['label_expr'];
-        $visitors = CampaignStatsExpressions::visitorCountExpr();
-        $lpClicks = CampaignStatsExpressions::lpClicksCountExpr();
-        $directClicks = CampaignStatsExpressions::directClicksCountExpr();
-        $conversions = CampaignStatsExpressions::conversionsCountExpr();
+        $visitors = CampaignStatsExpressions::visitorCountExpr('cl', 'ts', $usePersistedFlag);
+        $lpClicks = CampaignStatsExpressions::lpClicksCountExpr('cl', 'ts', $usePersistedFlag);
+        $directClicks = CampaignStatsExpressions::directClicksCountExpr('cl', 'ts', $usePersistedFlag);
+        $conversions = CampaignStatsExpressions::conversionsCountExpr('cl', 'ts', $usePersistedFlag);
+        $includedSql = $usePersistedFlag ? ' AND cl.exclude_from_stats = 0' : '';
         $fbCase = CampaignStatsCostSql::perClickFacebookCostCase($clicksTable);
         $gaCase = CampaignStatsCostSql::perClickGoogleCostCase($clicksTable);
         $fbJoins = CampaignStatsCostSql::scopedApiCostJoins($clicksTable)['joins'];
@@ -455,7 +459,7 @@ class CampaignStatsBreakdownService
             {$joinOffer}
             {$joinLp}
             {$fbJoins}
-            WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?
+            WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$includedSql}
             GROUP BY {$groupBySql}
         ";
 

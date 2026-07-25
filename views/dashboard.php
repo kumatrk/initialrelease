@@ -353,12 +353,12 @@ $dashboardCampaignsApiUrl = rtrim(APP_BASE_URL, '/') . '/api-dashboard-campaigns
     color: var(--color-gray-600, #666);
 }
 
-[data-theme="dark"] .dashboard-chart-collapsed {
+[data-theme-base="dark"] .dashboard-chart-collapsed {
     border-color: rgba(255, 255, 255, 0.15);
 }
 
-[data-theme="dark"] .dashboard-chart-collapsed-label {
-    color: #adbac7;
+[data-theme-base="dark"] .dashboard-chart-collapsed-label {
+    color: var(--chart-tick, #adbac7);
 }
 
 /* Performance chart container - mobile: no fixed height */
@@ -651,16 +651,25 @@ document.addEventListener('keydown', function(e) {
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 function getDashboardChartTheme() {
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const root = getComputedStyle(document.documentElement);
+    const css = (name, fallback) => {
+        const v = root.getPropertyValue(name).trim();
+        return v || fallback;
+    };
+    const meta = (window.KumaTheme && typeof window.KumaTheme.meta === 'function')
+        ? window.KumaTheme.meta()
+        : { base: document.documentElement.getAttribute('data-theme-base') || 'light' };
+    const isDark = meta.base === 'dark';
     return {
         isDark: isDark,
-        gridColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
-        tickColor: isDark ? '#adbac7' : '#666',
-        legendColor: isDark ? '#adbac7' : '#666',
-        pointBorder: isDark ? '#2d333b' : '#fff',
-        clicksColor: isDark ? '#7fd67e' : '#3d5a26',
-        clicksFill: isDark ? 'rgba(127, 214, 126, 0.15)' : 'rgba(61, 90, 38, 0.1)',
-        tooltipBorder: isDark ? '#6abf69' : '#3d5a26'
+        gridColor: css('--chart-grid', isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)'),
+        tickColor: css('--chart-tick', isDark ? '#adbac7' : '#666'),
+        legendColor: css('--chart-legend', isDark ? '#adbac7' : '#666'),
+        pointBorder: css('--chart-point-border', isDark ? '#2d333b' : '#fff'),
+        clicksColor: css('--chart-clicks', isDark ? '#7fd67e' : '#3d5a26'),
+        clicksFill: css('--chart-clicks-fill', isDark ? 'rgba(127, 214, 126, 0.15)' : 'rgba(61, 90, 38, 0.1)'),
+        tooltipBorder: css('--chart-tooltip-border', isDark ? '#6abf69' : '#3d5a26'),
+        tooltipBg: css('--chart-tooltip-bg', isDark ? 'rgba(45, 51, 59, 0.95)' : 'rgba(0, 0, 0, 0.8)')
     };
 }
 
@@ -763,7 +772,7 @@ function initPerformanceChart() {
                     }
                 },
                 tooltip: {
-                    backgroundColor: theme.isDark ? 'rgba(45, 51, 59, 0.95)' : 'rgba(0, 0, 0, 0.8)',
+                    backgroundColor: theme.tooltipBg,
                     padding: 12,
                     titleFont: {
                         size: 14,
