@@ -14,10 +14,12 @@ use SimpleKuma\Database\DbTimezone;
 use SimpleKuma\Tracking\ConversionTracker;
 
 // Get parameters
-$clickId = $_GET['click_id'] ?? $_POST['click_id'] ?? null;
-$value = isset($_GET['value']) ? (float)$_GET['value'] : (isset($_POST['value']) ? (float)$_POST['value'] : null);
-$currency = $_GET['currency'] ?? $_POST['currency'] ?? 'USD';
-$eventId = $_GET['event_id'] ?? $_POST['event_id'] ?? null;
+$params = array_merge($_GET, $_POST);
+
+$clickId = $params['click_id'] ?? null;
+$value = isset($params['value']) && $params['value'] !== '' ? (float)$params['value'] : null;
+$currency = $params['currency'] ?? 'USD';
+$eventId = $params['event_id'] ?? null;
 
 // Validate required parameter
 if (!$clickId) {
@@ -42,11 +44,14 @@ DbTimezone::init($db);
 
 // Track conversion
 $tracker = new ConversionTracker($db);
-$result = $tracker->trackConversion($clickId, [
+$result = $tracker->trackConversion((string)$clickId, [
     'source' => 'pixel',
     'value' => $value,
     'currency' => $currency,
     'event_id' => $eventId,
+    'et' => $params['et'] ?? null,
+    'event_type' => $params['event_type'] ?? null,
+    'event' => $params['event'] ?? null,
 ]);
 
 $db->close();
@@ -54,11 +59,15 @@ $db->close();
 // Return response
 if ($result['success']) {
     http_response_code(200);
-    
+
     // Support both image pixel and script
     if (isset($_GET['format']) && $_GET['format'] === 'json') {
         header('Content-Type: application/json');
-        echo json_encode(['status' => 'ok', 'message' => $result['message']]);
+        $payload = ['status' => 'ok', 'message' => $result['message']];
+        if (array_key_exists('event_key', $result)) {
+            $payload['event_key'] = $result['event_key'];
+        }
+        echo json_encode($payload);
     } else {
         // 1x1 transparent GIF
         header('Content-Type: image/gif');
@@ -69,5 +78,3 @@ if ($result['success']) {
     header('Content-Type: application/json');
     echo json_encode(['error' => $result['message']]);
 }
-
-

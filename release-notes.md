@@ -1,7 +1,28 @@
 # Simple Kuma Tracker Version 1.1.5.5
 
+## Unreleased
+
+- Settings → Updates can check versioned `v{version}` tags in `kumatrk/initialrelease`, download the tagged repository tree, safely overlay application files, and run pending database migrations in one operation
+- One-click updates preserve `config/config.php`, `.env`, all runtime `storage/` data, existing GeoIP databases, and the locked production installer
+- The CLI release upgrader now shares the same protected-path and backup logic as the web updater
+
 ## Changes in 1.1.5.5
 
+### Meta CAPI custom conversion event mapping
+- Inbound postbacks/pixels accept optional funnel keys (`et`, with aliases `event_type` / `event`) stored as `conversions.event_key` (migration **082**)
+- Settings → Meta CAPI integrations: map inbound keys (e.g. `register`, `ftd`, `rebill`) to Meta standard or custom event names; default event still used when `et` is missing/unmapped
+- Multi-step funnels on one click: distinct Meta `event_id` / `order_id` so FTD + rebill do not collide
+- Optional non-blocking **Send PageView on click** for linked CAPI integrations
+- Custom postbacks gain `{event_key}` token for traffic-source S2S URLs
+- Postback URLs page documents multi-event funnel examples
+
+### Login privacy gate (custom login token)
+- Optional login-page gate: require a secret query token (default `?mv=…`, param name configurable) before the login form is shown
+- Unauthorized visitors are redirected to a decoy URL (custom if set, otherwise Google)
+- Short-lived signed cookie after a successful token visit; token stored hashed in settings (never plaintext at rest)
+- Settings UI to enable/disable, set/rotate token, choose param name, and set decoy redirect
+
+### Also in 1.1.5.5
 - Dashboard / campaign list: Meta approval and crawler clicks are tagged at ingest (`exclude_from_stats`) and omitted from fast reporting without slowing stats (migration 081)
 - Converting clicks that were previously flagged as bunk are automatically promoted to REAL and restored in daily/token summaries
 - Visitor Log and Click Lookup honor the persisted flag; converted-but-tokenless clicks show as Included as REAL (converted)
@@ -59,7 +80,7 @@
 
 ## Migrations
 
-Fresh installs should apply forward migrations **001 through 081** (exclude `rollback_*.sql`). Existing installs: run pending migrations after upgrade (includes 081 for Meta click stats exclusion).
+Fresh installs should apply forward migrations **001 through 082** (exclude `rollback_*.sql`). Existing installs: run pending migrations after upgrade (includes **081** for Meta click stats exclusion and **082** for conversion event mapping).
 
 ## License
 

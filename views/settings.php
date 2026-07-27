@@ -30,6 +30,7 @@ $isMobile = isMobileDevice();
 use SimpleKuma\Settings\SettingsManager;
 use SimpleKuma\Auth\Auth;
 use SimpleKuma\Auth\Csrf;
+use SimpleKuma\Auth\LoginGate;
 use SimpleKuma\Auth\Permission;
 use SimpleKuma\Auth\SingleAdminMode;
 use SimpleKuma\Database\MigrationRunner;
@@ -273,10 +274,16 @@ if (isset($_GET['success'])) {
         'domain_deleted' => 'Tracking domain deleted successfully',
         'domain_tested' => 'Domain verification completed',
         'update_settings_saved' => 'Update settings saved successfully',
+        'update_check_complete' => 'Update check completed',
+        'application_updated' => 'Simple Kuma updated successfully',
         'db_migrations_applied' => 'Database updated successfully',
         'db_up_to_date' => 'Database schema is already up to date',
+        'login_gate_saved' => 'Login page privacy settings saved.',
     ];
     $success = $successMap[$_GET['success']] ?? '';
+    if ($_GET['success'] === 'login_gate_saved' && !empty($_SESSION['login_gate_url_reveal'])) {
+        $success = 'Login page privacy settings saved. Copy your private login URL below — it will not be shown again.';
+    }
     
     // Handle fetched accounts message
     if (isset($_GET['fetched_accounts']) && $_GET['fetched_accounts'] == '1') {
@@ -297,6 +304,17 @@ if (!empty($_SESSION['flash_db_migrations']) && is_array($_SESSION['flash_db_mig
     }
     if (!empty($flash['errors']) && is_array($flash['errors'])) {
         $errors['general'] = implode(' ', $flash['errors']);
+    }
+}
+
+if (!empty($_SESSION['flash_application_update']) && is_array($_SESSION['flash_application_update'])) {
+    $flash = $_SESSION['flash_application_update'];
+    unset($_SESSION['flash_application_update']);
+    if (!empty($flash['message']) && is_string($flash['message'])) {
+        $success = $flash['message'];
+    }
+    if (!empty($flash['errors']) && is_array($flash['errors'])) {
+        $errors['general'] = implode(' ', array_map('strval', $flash['errors']));
     }
 }
 
@@ -479,6 +497,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors['general'] = 'Failed to update password';
             }
         }
+    } elseif ($action === 'update_login_gate') {
+        $canEditLoginGate = SingleAdminMode::isEnabled()
+            || ($permission && $permission->hasPermission(Permission::PERM_SETTINGS_EDIT));
+
+        if (!$canEditLoginGate) {
+            $errors['general'] = 'You do not have permission to change login page privacy settings.';
+        } else {
+            $loginGate = new LoginGate();
+            $result = $loginGate->saveSettings($db, [
+                'enabled' => isset($_POST['login_gate_enabled']),
+                'secret' => (string) ($_POST['login_gate_secret'] ?? $_POST['login_gate_token'] ?? ''),
+                'param' => (string) ($_POST['login_gate_param'] ?? LoginGate::DEFAULT_PARAM_NAME),
+                'redirect_url' => (string) ($_POST['login_gate_redirect_url'] ?? ''),
+                'clear_token' => isset($_POST['login_gate_clear_token']),
+            ]);
+
+            if (!$result['success']) {
+                foreach ($result['errors'] as $field => $message) {
+                    $errors[$field] = $message;
+                }
+            } else {
+                $success = 'Login page privacy settings saved.';
+                if (!empty($result['plain_token'])) {
+                    $_SESSION['login_gate_url_reveal'] = $loginGate->buildLoginUrl($db, $result['plain_token']);
+                    $success .= ' Copy your private login URL below — it will not be shown again.';
+                }
+                header('Location: ?page=settings&tab=account&success=login_gate_saved');
+                exit;
+            }
+        }
     } elseif ($action === 'update_settings') {
         $settingsData = [
             'attribution_window_days' => $_POST['attribution_window_days'] ?? '30',
@@ -496,31 +544,103 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors['general'] = 'Failed to save settings';
         }
     } elseif ($action === 'save_update_settings') {
-        // Save update check settings
-        // Checkbox sends '1' when checked, nothing when unchecked
-        $updateCheckEnabled = (isset($_POST['update_check_enabled']) && $_POST['update_check_enabled'] === '1') ? '1' : '0';
-        
-        if ($settings->set('update_check_enabled', $updateCheckEnabled)) {
+        $canManageUpdates = $permission && $permission->hasPermission(Permission::PERM_UPDATE_MANAGE);
+        $updateCheckEnabled = isset($_POST['update_check_enabled'])
+            && $_POST['update_check_enabled'] === '1' ? '1' : '0';
+
+        if (!$canManageUpdates) {
+            $errors['general'] = 'You do not have permission to manage application updates.';
+        } elseif ($settings->set('update_check_enabled', $updateCheckEnabled)) {
             // Redirect to prevent form resubmission and ensure checkbox state is refreshed
             header('Location: ?page=settings&tab=updates&success=update_settings_saved');
             exit;
         } else {
             $errors['general'] = 'Failed to save update settings';
         }
-    } elseif ($action === 'start_update') {
-        // Force start the update process
-        require_once __DIR__ . '/../src/Update/UpdateChecker.php';
-        $updateChecker = new \SimpleKuma\Update\UpdateChecker($db);
-        $updateInfo = $updateChecker->checkForUpdates();
-        
-        if ($updateInfo['success'] && $updateInfo['update_available']) {
-            // TODO: Implement actual update installation process
-            // For now, redirect to a page that will handle the update
-            // This is a placeholder - the actual update installer will be built later
-            $success = 'Update process started. This feature is under development.';
-            error_log("Update process requested: {$updateInfo['current_version']} -> {$updateInfo['latest_version']}");
+    } elseif ($action === 'check_updates') {
+        $canManageUpdates = $permission && $permission->hasPermission(Permission::PERM_UPDATE_MANAGE);
+        if (!$canManageUpdates) {
+            $errors['general'] = 'You do not have permission to check for application updates.';
         } else {
-            $errors['general'] = 'No update available or update check failed.';
+            $updateChecker = new \SimpleKuma\Update\UpdateChecker($db);
+            $updateInfo = $updateChecker->checkForUpdates(true, true);
+            if (!empty($updateInfo['success'])) {
+                header('Location: ?page=settings&tab=updates&success=update_check_complete');
+                exit;
+            }
+            $errors['general'] = (string) ($updateInfo['message'] ?? 'The update check failed.');
+        }
+    } elseif ($action === 'start_update') {
+        $canManageUpdates = $permission && $permission->hasPermission(Permission::PERM_UPDATE_MANAGE);
+        if (!$canManageUpdates) {
+            $errors['general'] = 'You do not have permission to install application updates.';
+        } else {
+            @set_time_limit(600);
+            @ini_set('max_execution_time', '600');
+            @ignore_user_abort(true);
+
+            $updateChecker = new \SimpleKuma\Update\UpdateChecker($db);
+            $updateInfo = $updateChecker->checkForUpdates(true, true);
+            if (empty($updateInfo['success']) || empty($updateInfo['update_available'])) {
+                $errors['general'] = (string) ($updateInfo['message'] ?? 'No newer tagged update is available.');
+            } else {
+                // Bring the current package schema up to date first. This
+                // guarantees update_logs exists even on older installations.
+                $preUpdateRunner = new MigrationRunner($db);
+                if (!$preUpdateRunner->run()) {
+                    $installResult = [
+                        'success' => false,
+                        'errors' => array_merge(
+                            ['Current database migrations must succeed before application files can be updated.'],
+                            $preUpdateRunner->getErrors()
+                        ),
+                    ];
+                } else {
+                    $lockResult = $db->query("SELECT GET_LOCK('simplekuma_application_update', 0) AS acquired");
+                    $lockRow = $lockResult ? $lockResult->fetch_assoc() : null;
+                    if ((int) ($lockRow['acquired'] ?? 0) !== 1) {
+                        $installResult = [
+                            'success' => false,
+                            'errors' => ['Another application update is already running. Wait for it to finish and check again.'],
+                        ];
+                    } else {
+                        try {
+                            $installer = new \SimpleKuma\Update\UpdateInstaller($db);
+                            $installResult = $installer->install(
+                                $updateInfo,
+                                (string) $updateInfo['current_version'],
+                                isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null
+                            );
+                        } catch (Throwable $e) {
+                            $installResult = [
+                                'success' => false,
+                                'errors' => [$e->getMessage()],
+                            ];
+                        } finally {
+                            $db->query("SELECT RELEASE_LOCK('simplekuma_application_update')");
+                        }
+                    }
+                }
+
+                if (!empty($installResult['success'])) {
+                    $fileCount = count($installResult['files_updated'] ?? []);
+                    $migrationCount = count($installResult['migrations_applied'] ?? []);
+                    $_SESSION['flash_application_update'] = [
+                        'message' => 'Simple Kuma updated to '
+                            . $updateInfo['latest_version']
+                            . " ({$fileCount} files, {$migrationCount} database migration"
+                            . ($migrationCount === 1 ? '' : 's') . ').',
+                    ];
+                    header('Location: ?page=settings&tab=updates&success=application_updated');
+                    exit;
+                }
+
+                $_SESSION['flash_application_update'] = [
+                    'errors' => $installResult['errors'] ?? ['The update failed.'],
+                ];
+                header('Location: ?page=settings&tab=updates');
+                exit;
+            }
         }
     } elseif ($action === 'run_db_migrations') {
         $canRunDbUpdate = $permission && (
@@ -1056,13 +1176,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif (empty($eventType)) {
             $eventType = 'Purchase'; // Default
         }
+
+        $eventMapping = [];
+        $mapKeys = $_POST['fb_map_key'] ?? [];
+        $mapEvents = $_POST['fb_map_event'] ?? [];
+        $mapCustoms = $_POST['fb_map_custom_event'] ?? [];
+        if (is_array($mapKeys) && is_array($mapEvents)) {
+            foreach ($mapKeys as $i => $key) {
+                $key = trim((string)$key);
+                $evt = trim((string)($mapEvents[$i] ?? ''));
+                if ($evt === 'custom') {
+                    $evt = trim((string)($mapCustoms[$i] ?? ''));
+                }
+                if ($key === '' || $evt === '') {
+                    continue;
+                }
+                $eventMapping[$key] = $evt;
+            }
+        }
+        $sendPageview = !empty($_POST['fb_send_pageview_on_click']);
         
         $validationErrors = $facebookCapi->validate([
             'name' => $name,
             'pixel_id' => $pixelId,
             'access_token' => $accessToken,
             'test_code' => $testCode,
-            'event_type' => $eventType
+            'event_type' => $eventType,
+            'event_mapping' => $eventMapping,
         ], false);
         
         if (!empty($validationErrors)) {
@@ -1073,7 +1213,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'pixel_id' => $pixelId,
                 'access_token' => $accessToken,
                 'test_code' => empty($testCode) ? null : $testCode,
-                'event_type' => $eventType
+                'event_type' => $eventType,
+                'event_mapping' => $eventMapping,
+                'send_pageview_on_click' => $sendPageview,
             ]);
             
             if ($integrationId) {
@@ -1099,6 +1241,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif (empty($eventType)) {
             $eventType = 'Purchase'; // Default
         }
+
+        $eventMapping = [];
+        $mapKeys = $_POST['fb_map_key'] ?? [];
+        $mapEvents = $_POST['fb_map_event'] ?? [];
+        $mapCustoms = $_POST['fb_map_custom_event'] ?? [];
+        if (is_array($mapKeys) && is_array($mapEvents)) {
+            foreach ($mapKeys as $i => $key) {
+                $key = trim((string)$key);
+                $evt = trim((string)($mapEvents[$i] ?? ''));
+                if ($evt === 'custom') {
+                    $evt = trim((string)($mapCustoms[$i] ?? ''));
+                }
+                if ($key === '' || $evt === '') {
+                    continue;
+                }
+                $eventMapping[$key] = $evt;
+            }
+        }
+        $sendPageview = !empty($_POST['fb_send_pageview_on_click']);
         
         if ($id <= 0) {
             $errors['general'] = 'Invalid integration ID';
@@ -1109,7 +1270,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'pixel_id' => $pixelId,
                 'access_token' => $accessToken,
                 'test_code' => $testCode,
-                'event_type' => $eventType
+                'event_type' => $eventType,
+                'event_mapping' => $eventMapping,
             ], true);
             
             if (!empty($validationErrors)) {
@@ -1120,7 +1282,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'pixel_id' => $pixelId,
                     'access_token' => $accessToken,
                     'test_code' => empty($testCode) ? null : $testCode,
-                    'event_type' => $eventType
+                    'event_type' => $eventType,
+                    'event_mapping' => $eventMapping,
+                    'send_pageview_on_click' => $sendPageview,
                 ];
                 
                 if ($facebookCapi->update($id, $updateData)) {
@@ -1993,6 +2157,32 @@ $currentUser['pass_hash'] = $userRow['pass_hash'];
 </div>
 
 <?php if ($activeTab === 'account'): ?>
+    <?php
+    $loginGate = new LoginGate();
+    $loginGateEnabled = isset($_POST['action']) && $_POST['action'] === 'update_login_gate'
+        ? isset($_POST['login_gate_enabled'])
+        : $loginGate->isEnabled($db);
+    $loginGateHasToken = $loginGate->hasTokenConfigured($db);
+    $loginGateParam = isset($_POST['login_gate_param'])
+        ? trim((string) $_POST['login_gate_param'])
+        : $loginGate->getParamName($db);
+    if ($loginGateParam === '') {
+        $loginGateParam = LoginGate::DEFAULT_PARAM_NAME;
+    }
+    $loginGateRedirectUrl = isset($_POST['login_gate_redirect_url'])
+        ? trim((string) $_POST['login_gate_redirect_url'])
+        : $loginGate->getCustomRedirectUrl($db);
+    $loginGateTokenValue = (isset($_POST['action']) && $_POST['action'] === 'update_login_gate')
+        ? (string) ($_POST['login_gate_secret'] ?? $_POST['login_gate_token'] ?? '')
+        : '';
+    $loginGateRevealUrl = null;
+    if (!empty($_SESSION['login_gate_url_reveal']) && is_string($_SESSION['login_gate_url_reveal'])) {
+        $loginGateRevealUrl = $_SESSION['login_gate_url_reveal'];
+        unset($_SESSION['login_gate_url_reveal']);
+    }
+    $canEditLoginGate = SingleAdminMode::isEnabled()
+        || ($permission && $permission->hasPermission(Permission::PERM_SETTINGS_EDIT));
+    ?>
     <?php require __DIR__ . '/settings-partials/account-tab.php'; ?>
 
 <!-- Domains Tab -->
@@ -2605,9 +2795,10 @@ $currentUser['pass_hash'] = $userRow['pass_hash'];
                                 'AddToWishlist',
                                 'CustomizeProduct',
                                 'Donate',
-                                'InitiateCheckout'
+                                'InitiateCheckout',
+                                'PageView',
                             ];
-                            $isCustom = !in_array($currentEventType, $standardEvents);
+                            $isCustom = !in_array($currentEventType, $standardEvents, true);
                             ?>
                             <select name="fb_event_type" id="fb_event_type" 
                                     onchange="toggleCustomEventType(this)"
@@ -2628,7 +2819,81 @@ $currentUser['pass_hash'] = $userRow['pass_hash'];
                                        style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px; font-family: monospace;">
                                 <div style="font-size: 12px; color: #666; margin-top: 4px;">Enter a custom event name for Facebook CAPI</div>
                             </div>
-                            <div style="font-size: 12px; color: #666; margin-top: 4px;">The Facebook event type to send when conversions occur</div>
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">Default Meta event when a postback has no <code>et</code> (or an unmapped key). These 17 (+ PageView) are Meta's full web standard set; use Custom for anything else.</div>
+                        </div>
+
+                        <?php
+                        $existingMapping = [];
+                        if (is_array($editingFacebookIntegration) && !empty($editingFacebookIntegration['event_mapping_json'])) {
+                            $decodedMap = json_decode($editingFacebookIntegration['event_mapping_json'], true);
+                            if (is_array($decodedMap)) {
+                                $existingMapping = $decodedMap;
+                            }
+                        }
+                        if ($existingMapping === []) {
+                            $existingMapping = [
+                                'register' => 'CompleteRegistration',
+                                'ftd' => 'Purchase',
+                                'rebill' => 'Subscribe',
+                                'lead' => 'Lead',
+                            ];
+                        }
+                        $sendPageviewChecked = is_array($editingFacebookIntegration)
+                            && !empty($editingFacebookIntegration['send_pageview_on_click']);
+                        ?>
+
+                        <div style="margin-bottom: 20px;">
+                            <label style="display: block; font-weight: 600; margin-bottom: 8px;">Event mapping (optional)</label>
+                            <p style="font-size: 12px; color: #666; margin: 0 0 10px;">
+                                Map inbound postback <code>et</code> values to Meta event names.
+                                Example: <code>et=register</code> → CompleteRegistration.
+                                Prefer standard events for optimization; Custom works but Meta will not optimize for it until you create a Custom Conversion in Events Manager.
+                            </p>
+                            <div id="fb_event_mapping_rows">
+                                <?php foreach ($existingMapping as $mapKey => $mapEvent): ?>
+                                    <?php
+                                    $mapIsCustom = !in_array($mapEvent, $standardEvents, true);
+                                    $mapSelectValue = $mapIsCustom ? 'custom' : $mapEvent;
+                                    ?>
+                                    <div class="fb-map-row" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; align-items: center;">
+                                        <input type="text" name="fb_map_key[]" value="<?= htmlspecialchars((string)$mapKey) ?>"
+                                               placeholder="inbound key (e.g. register)"
+                                               style="flex: 1; min-width: 140px; padding: 8px; border: 2px solid #ddd; border-radius: 4px; font-family: monospace;">
+                                        <span style="color:#888;">→</span>
+                                        <select name="fb_map_event[]" onchange="toggleMapCustom(this)"
+                                                style="flex: 1; min-width: 160px; padding: 8px; border: 2px solid #ddd; border-radius: 4px;">
+                                            <?php foreach ($standardEvents as $event): ?>
+                                                <option value="<?= htmlspecialchars($event) ?>" <?= $mapSelectValue === $event ? 'selected' : '' ?>>
+                                                    <?= htmlspecialchars($event) ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                            <option value="custom" <?= $mapIsCustom ? 'selected' : '' ?>>Custom Event</option>
+                                        </select>
+                                        <input type="text" name="fb_map_custom_event[]"
+                                               value="<?= $mapIsCustom ? htmlspecialchars((string)$mapEvent) : '' ?>"
+                                               placeholder="Custom event name"
+                                               class="fb-map-custom-input"
+                                               style="flex: 1; min-width: 140px; padding: 8px; border: 2px solid #ddd; border-radius: 4px; font-family: monospace; <?= $mapIsCustom ? '' : 'display:none;' ?>">
+                                        <button type="button" onclick="removeFbMapRow(this)"
+                                                title="Remove mapping"
+                                                aria-label="Remove mapping"
+                                                style="padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; background: #f5f5f5; color: #666; cursor: pointer; white-space: nowrap;">
+                                            Remove
+                                        </button>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <button type="button" class="btn btn-secondary" onclick="addFbMapRow()" style="margin-top: 4px;">+ Add mapping</button>
+                        </div>
+
+                        <div style="margin-bottom: 20px;">
+                            <label style="display: flex; align-items: center; gap: 8px; font-weight: 600;">
+                                <input type="checkbox" name="fb_send_pageview_on_click" value="1" <?= $sendPageviewChecked ? 'checked' : '' ?>>
+                                Send PageView on click
+                            </label>
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                When enabled, fires a Meta CAPI <code>PageView</code> asynchronously after a tracked click (does not delay redirects).
+                            </div>
                         </div>
 
                         <div style="display: flex; gap: 12px;">
@@ -2654,6 +2919,44 @@ $currentUser['pass_hash'] = $userRow['pass_hash'];
                             customInput.value = '';
                         }
                     }
+                }
+
+                function toggleMapCustom(select) {
+                    const row = select.closest('.fb-map-row');
+                    if (!row) return;
+                    const customInput = row.querySelector('.fb-map-custom-input');
+                    if (!customInput) return;
+                    if (select.value === 'custom') {
+                        customInput.style.display = '';
+                        customInput.required = true;
+                    } else {
+                        customInput.style.display = 'none';
+                        customInput.required = false;
+                        customInput.value = '';
+                    }
+                }
+
+                function removeFbMapRow(btn) {
+                    const row = btn.closest('.fb-map-row');
+                    if (!row) return;
+                    row.remove();
+                }
+
+                function addFbMapRow() {
+                    const wrap = document.getElementById('fb_event_mapping_rows');
+                    if (!wrap) return;
+                    const standard = <?= json_encode(array_values($standardEvents)) ?>;
+                    const row = document.createElement('div');
+                    row.className = 'fb-map-row';
+                    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;align-items:center;';
+                    let opts = standard.map(e => '<option value="' + e + '">' + e + '</option>').join('');
+                    opts += '<option value="custom">Custom Event</option>';
+                    row.innerHTML = '<input type="text" name="fb_map_key[]" placeholder="inbound key (e.g. register)" style="flex:1;min-width:140px;padding:8px;border:2px solid #ddd;border-radius:4px;font-family:monospace;">'
+                        + '<span style="color:#888;">→</span>'
+                        + '<select name="fb_map_event[]" onchange="toggleMapCustom(this)" style="flex:1;min-width:160px;padding:8px;border:2px solid #ddd;border-radius:4px;">' + opts + '</select>'
+                        + '<input type="text" name="fb_map_custom_event[]" placeholder="Custom event name" class="fb-map-custom-input" style="flex:1;min-width:140px;padding:8px;border:2px solid #ddd;border-radius:4px;font-family:monospace;display:none;">'
+                        + '<button type="button" onclick="removeFbMapRow(this)" title="Remove mapping" aria-label="Remove mapping" style="padding:8px 12px;border:1px solid #ccc;border-radius:4px;background:#f5f5f5;color:#666;cursor:pointer;white-space:nowrap;">Remove</button>';
+                    wrap.appendChild(row);
                 }
 
                 </script>
@@ -4798,7 +5101,13 @@ $currentUser['pass_hash'] = $userRow['pass_hash'];
     $updateChecker = new \SimpleKuma\Update\UpdateChecker($db);
     $currentVersion = $updateChecker->getCurrentVersion();
     $updateCheckEnabled = $updateChecker->isUpdateCheckEnabled();
+    if ($updateCheckEnabled) {
+        // Cached for one hour; only the first admin request after expiry contacts GitHub.
+        $updateChecker->checkForUpdates();
+    }
     $lastUpdateCheck = $updateChecker->getLastUpdateCheck();
+    $canManageAppUpdate = $permission
+        && $permission->hasPermission(Permission::PERM_UPDATE_MANAGE);
 
     $migrationRunner = new MigrationRunner($db);
     $dbMigrationStatus = $migrationRunner->getStatus();
@@ -4879,15 +5188,16 @@ $currentUser['pass_hash'] = $userRow['pass_hash'];
         <div class="card-body">
             <form method="POST" action="?page=settings&tab=updates" id="update-settings-form">
                 <input type="hidden" name="action" value="save_update_settings">
+                <?= Csrf::field() ?>
                 
                 <div style="margin-bottom: 24px;">
-                    <label style="display: flex; align-items: center; gap: 12px; cursor: not-allowed; font-size: 16px; font-weight: 600; color: #3d5a26; opacity: 0.65;">
+                    <label style="display: flex; align-items: center; gap: 12px; cursor: <?= $canManageAppUpdate ? 'pointer' : 'not-allowed' ?>; font-size: 16px; font-weight: 600; color: #3d5a26; opacity: <?= $canManageAppUpdate ? '1' : '0.65' ?>;">
                         <input type="checkbox" 
                                name="update_check_enabled" 
                                value="1" 
-                               disabled
+                               <?= $canManageAppUpdate ? '' : 'disabled' ?>
                                <?= ($updateCheckEnabled === true || $updateCheckEnabled === '1' || $settings->get('update_check_enabled', '0') === '1') ? 'checked' : '' ?>
-                               style="width: 20px; height: 20px; cursor: not-allowed;">
+                               style="width: 20px; height: 20px; cursor: <?= $canManageAppUpdate ? 'pointer' : 'not-allowed' ?>;">
                         <span>Enable automatic update checking</span>
                     </label>
                     <p style="margin: 8px 0 0 32px; color: #666; font-size: 14px;">
@@ -4937,7 +5247,13 @@ $currentUser['pass_hash'] = $userRow['pass_hash'];
                         <div style="background: white; padding: 16px; border-radius: 6px; max-height: 400px; overflow-y: auto; font-size: 14px; line-height: 1.6; color: #333;">
                             <?php
                             // Parse and display changelog
-                            $changelog = $lastUpdateCheck['changelog'];
+                            // Release notes are remote content. Escape first, then add
+                            // only the small formatting subset we control.
+                            $changelog = htmlspecialchars(
+                                (string) $lastUpdateCheck['changelog'],
+                                ENT_QUOTES | ENT_SUBSTITUTE,
+                                'UTF-8'
+                            );
                             
                             // If it's markdown, convert to HTML
                             $changelog = preg_replace('/^### (.+)$/m', '<h4 style="margin: 16px 0 8px 0; color: #3d5a26; font-size: 16px; font-weight: 600;">$1</h4>', $changelog);
@@ -4969,23 +5285,45 @@ $currentUser['pass_hash'] = $userRow['pass_hash'];
                     </div>
                 <?php endif; ?>
 
-                <div style="margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
-                    <button type="submit" class="btn btn-primary" id="save-update-settings-btn" style="padding: 12px 24px; background: #3d5a26; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                <div style="margin-top: 24px;">
+                    <button type="submit"
+                            class="btn btn-primary"
+                            id="save-update-settings-btn"
+                            <?= $canManageAppUpdate ? '' : 'disabled' ?>
+                            style="padding: 12px 24px; background: <?= $canManageAppUpdate ? '#3d5a26' : '#9e9e9e' ?>; color: white; border: none; border-radius: 6px; cursor: <?= $canManageAppUpdate ? 'pointer' : 'not-allowed' ?>; font-weight: 600;">
                         Save Settings
                     </button>
+                </div>
+            </form>
+
+            <?php if ($canManageAppUpdate): ?>
+                <div style="margin-top: 16px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+                    <form method="POST" action="?page=settings&tab=updates" style="margin: 0;">
+                        <input type="hidden" name="action" value="check_updates">
+                        <?= Csrf::field() ?>
+                        <button type="submit" class="btn" style="padding: 12px 24px;">
+                            Check for updates
+                        </button>
+                    </form>
+
                     <?php if ($lastUpdateCheck && $lastUpdateCheck['update_available']): ?>
-                        <!-- Update Now button - separate form to avoid nested form issue, but in same flex container -->
-                        <form method="POST" action="?page=settings&tab=updates" style="display: inline; margin: 0;">
+                        <form method="POST"
+                              action="?page=settings&tab=updates"
+                              id="application-update-form"
+                              style="margin: 0;"
+                              onsubmit="if (!confirm('Install Kuma <?= htmlspecialchars((string)$lastUpdateCheck['latest_version']) ?> now?\n\nKuma will download the tagged GitHub source, preserve config and stored data, overlay application files, and run pending database migrations. Do not close this page until it finishes.')) return false; document.getElementById('application-update-button').disabled = true; document.getElementById('application-update-status').style.display = 'inline';">
                             <input type="hidden" name="action" value="start_update">
-                            <button type="submit" class="btn" style="padding: 12px 24px; background: #f57c00; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; transition: all 0.2s;"
-                                    onmouseover="this.style.background='#e67e00'"
-                                    onmouseout="this.style.background='#f57c00'">
-                                🔄 Update Now
+                            <?= Csrf::field() ?>
+                            <button type="submit" class="btn" id="application-update-button" style="padding: 12px 24px; background: #f57c00; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                                Update Now
                             </button>
                         </form>
                     <?php endif; ?>
+                    <span id="application-update-status" style="display: none; color: #666; font-size: 13px;">
+                        Downloading and applying the update. Keep this page open…
+                    </span>
                 </div>
-            </form>
+            <?php endif; ?>
         </div>
     </div>
 <?php elseif ($activeTab === 'geoip'): ?>

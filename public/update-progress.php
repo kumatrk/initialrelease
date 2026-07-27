@@ -4,11 +4,14 @@
  * Provides real-time update progress via AJAX
  */
 
+require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../config/config.php';
-require_once __DIR__ . '/../src/Auth/Auth.php';
-require_once __DIR__ . '/../src/Auth/Permission.php';
+
+use SimpleKuma\Auth\Auth;
+use SimpleKuma\Auth\Permission;
 
 header('Content-Type: application/json');
+header('Cache-Control: no-store');
 
 $db = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
 $auth = new Auth($db);

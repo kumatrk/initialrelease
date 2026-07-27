@@ -90,7 +90,8 @@ Authorization: Bearer YOUR_API_KEY
 - **Light / dark theme** (per user, persisted)
 - Collapsible desktop sidebar; mobile-friendly layouts
 - CSRF protection, login rate limiting, secure remember-me tokens
-- Web installer + upgrade path (`UPGRADE.md`, `apply-release-upgrade.php`)
+- Web installer + one-click tagged GitHub updates from **Settings → Updates**
+- CLI upgrade fallback (`UPGRADE.md`, `apply-release-upgrade.php`)
 - Data retention / data-management tools for cleaning old click logs
 
 ---
@@ -133,7 +134,12 @@ chmod 755 config storage storage/logs storage/cache
 
 ### Upgrading
 
-Do **not** overwrite `config/config.php` or re-run `install.php` on a live install. Use [UPGRADE.md](UPGRADE.md) and:
+Preferred: open **Kuma admin → Settings → Updates**, click **Check for updates**, then
+**Update Now**. Kuma downloads the repository tree for the newest `v{version}` tag, preserves
+configuration and stored data, overlays application files, and applies pending migrations.
+
+Do **not** overwrite `config/config.php` or re-run `install.php` on a live install. If the host
+blocks the web updater, use the [UPGRADE.md](UPGRADE.md) CLI fallback:
 
 ```bash
 php scripts/apply-release-upgrade.php --source=/path/to/simplekuma-vX.Y.Z.zip

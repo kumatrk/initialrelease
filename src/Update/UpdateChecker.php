@@ -15,7 +15,7 @@ class UpdateChecker
 {
     private mysqli $db;
     private SettingsManager $settings;
-    private const GITHUB_REPO_DEFAULT = 'SimpleKuma/simplekuma';
+    private const GITHUB_REPO_DEFAULT = 'kumatrk/initialrelease';
     private const GITHUB_API_BASE = 'https://api.github.com/repos/';
     private const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/';
     private const CACHE_DURATION = 3600; // 1 hour cache
@@ -31,8 +31,14 @@ class UpdateChecker
      */
     private function getRepository(): string
     {
-        $repo = $this->settings->get('update_repository', null);
-        return $repo ?: self::GITHUB_REPO_DEFAULT;
+        $repo = trim((string) $this->settings->get('update_repository', ''));
+        if ($repo === '' || strcasecmp($repo, 'SimpleKuma/simplekuma') === 0) {
+            return self::GITHUB_REPO_DEFAULT;
+        }
+
+        return preg_match('#^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$#', $repo) === 1
+            ? $repo
+            : self::GITHUB_REPO_DEFAULT;
     }
 
     /**
@@ -40,24 +46,19 @@ class UpdateChecker
      */
     public function getCurrentVersion(): string
     {
-        // Try to get from settings first
-        $version = $this->settings->get('app_version', null);
-        
-        if ($version) {
-            return $version;
-        }
-
-        // Fallback: try to read from version file if it exists
+        // version.php is the package source of truth. The DB value is only a
+        // compatibility fallback for older installs.
         $versionFile = __DIR__ . '/../../version.php';
         if (file_exists($versionFile)) {
             $versionData = include $versionFile;
-            if (isset($versionData['version'])) {
-                return $versionData['version'];
+            $packageVersion = trim((string) ($versionData['version'] ?? ''));
+            if ($this->isValidVersion($packageVersion)) {
+                return $packageVersion;
             }
         }
 
-        // Default version if nothing found
-        return '1.1.5.2';
+        $storedVersion = trim((string) $this->settings->get('app_version', ''));
+        return $this->isValidVersion($storedVersion) ? $storedVersion : '0.0.0';
     }
 
     /**
@@ -100,40 +101,30 @@ class UpdateChecker
             if (!$latestRelease || !isset($latestRelease['tag_name'])) {
                 return [
                     'success' => false,
-                    'message' => 'Could not fetch release information from GitHub',
+                    'message' => 'No versioned GitHub tag was found. Releases must use tags such as v1.2.3.4.',
                     'update_available' => false
                 ];
             }
 
-            $latestVersion = $this->extractVersionFromTag($latestRelease['tag_name']);
+            $latestVersion = self::extractVersionFromTag($latestRelease['tag_name']);
+            if ($latestVersion === null) {
+                throw new \RuntimeException('The latest GitHub tag is not a supported version tag.');
+            }
             $updateAvailable = $this->compareVersions($currentVersion, $latestVersion) < 0;
             $updateType = $this->determineUpdateType($currentVersion, $latestVersion);
-
-            // Fetch detailed update information from repository files
-            $updateDetails = $this->fetchUpdateDetails($latestVersion);
             
-            // Try to fetch manifest for file-level update information
-            $manifest = $this->fetchManifest($latestVersion);
-            if ($manifest) {
-                $result['manifest'] = $manifest;
-                $result['files'] = $manifest['files'] ?? [];
-            }
-            
-            // Merge GitHub release data with file-based update details
             $result = [
                 'success' => true,
                 'current_version' => $currentVersion,
                 'latest_version' => $latestVersion,
+                'tag_name' => $latestRelease['tag_name'],
+                'zipball_url' => $latestRelease['zipball_url']
+                    ?? (self::GITHUB_API_BASE . $this->getRepository() . '/zipball/' . rawurlencode($latestRelease['tag_name'])),
                 'update_available' => $updateAvailable,
                 'update_type' => $updateType,
-                'changelog' => $updateDetails['changelog'] ?? $latestRelease['body'] ?? '',
-                'changelog_structured' => $updateDetails['changelog_structured'] ?? null,
+                'changelog' => $latestRelease['body'] ?? '',
                 'release_url' => $latestRelease['html_url'] ?? '',
-                'published_at' => $latestRelease['published_at'] ?? $updateDetails['release_date'] ?? null,
-                'requirements' => $updateDetails['requirements'] ?? null,
-                'critical' => $updateDetails['critical'] ?? false,
-                'maintenance_mode_required' => $updateDetails['maintenance_mode_required'] ?? false,
-                'migrations' => $updateDetails['migrations'] ?? [],
+                'published_at' => $latestRelease['published_at'] ?? null,
                 'checked_at' => time()
             ];
 
@@ -166,8 +157,49 @@ class UpdateChecker
     private function fetchLatestRelease(): ?array
     {
         $repo = $this->getRepository();
-        $url = self::GITHUB_API_BASE . $repo . '/releases/latest';
-        
+        $candidates = [];
+
+        $releases = $this->fetchGitHubJson(self::GITHUB_API_BASE . $repo . '/releases?per_page=30');
+        foreach ($releases as $release) {
+            if (!is_array($release) || !empty($release['draft']) || !empty($release['prerelease'])) {
+                continue;
+            }
+            $version = self::extractVersionFromTag((string) ($release['tag_name'] ?? ''));
+            if ($version !== null) {
+                $candidates[$version] = $release;
+            }
+        }
+
+        // A versioned Git tag is sufficient for an update; a GitHub Release
+        // and uploaded release asset are not required.
+        $tags = $this->fetchGitHubJson(self::GITHUB_API_BASE . $repo . '/tags?per_page=100');
+        foreach ($tags as $tag) {
+            if (!is_array($tag)) {
+                continue;
+            }
+            $tagName = (string) ($tag['name'] ?? '');
+            $version = self::extractVersionFromTag($tagName);
+            if ($version === null || isset($candidates[$version])) {
+                continue;
+            }
+            $candidates[$version] = [
+                'tag_name' => $tagName,
+                'zipball_url' => self::GITHUB_API_BASE . $repo . '/zipball/' . rawurlencode($tagName),
+                'html_url' => 'https://github.com/' . $repo . '/tree/' . rawurlencode($tagName),
+                'body' => '',
+                'published_at' => null,
+            ];
+        }
+
+        if ($candidates === []) {
+            return null;
+        }
+        uksort($candidates, 'version_compare');
+        return end($candidates) ?: null;
+    }
+
+    private function fetchGitHubJson(string $url): array
+    {
         $ch = curl_init();
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
@@ -217,9 +249,8 @@ class UpdateChecker
             throw new \Exception("Invalid response from GitHub: $jsonError");
         }
 
-        if (!isset($data['tag_name'])) {
-            error_log("Update check failed: Missing tag_name in response");
-            throw new \Exception("Invalid release data: missing version tag");
+        if (!is_array($data)) {
+            throw new \Exception('Invalid response from GitHub: expected a JSON array.');
         }
 
         return $data;
@@ -228,9 +259,18 @@ class UpdateChecker
     /**
      * Extract version from Git tag (e.g., "v1.2.3" -> "1.2.3")
      */
-    private function extractVersionFromTag(string $tag): string
+    public static function extractVersionFromTag(string $tag): ?string
     {
-        return ltrim($tag, 'v');
+        if (preg_match('/^v(\d+\.\d+\.\d+(?:\.\d+)?)$/i', trim($tag), $matches) !== 1) {
+            return null;
+        }
+
+        return $matches[1];
+    }
+
+    private function isValidVersion(string $version): bool
+    {
+        return preg_match('/^\d+\.\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?$/', $version) === 1;
     }
 
     /**
@@ -310,9 +350,13 @@ class UpdateChecker
             (current_version, latest_version, update_available, update_type, changelog, check_successful, error_message)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         ");
-        
+        if ($stmt === false) {
+            error_log('Could not record update check: ' . $this->db->error);
+            return;
+        }
+
         $stmt->bind_param(
-            'ssissss',
+            'ssissis',
             $currentVersion,
             $latestVersion,
             $updateAvailable,
@@ -335,6 +379,9 @@ class UpdateChecker
             ORDER BY checked_at DESC 
             LIMIT 1
         ");
+        if ($stmt === false) {
+            return null;
+        }
         $stmt->execute();
         $result = $stmt->get_result();
         $row = $result->fetch_assoc();
@@ -370,7 +417,7 @@ class UpdateChecker
                 }
             }
         }
-        
+
         // If updates.json doesn't have this version, try parsing CHANGELOG.md
         if (empty($details['changelog'])) {
             $changelogMd = $this->fetchRawFile('CHANGELOG.md');
@@ -381,7 +428,7 @@ class UpdateChecker
                 }
             }
         }
-        
+
         return $details;
     }
 
@@ -491,7 +538,7 @@ class UpdateChecker
                 return $data;
             }
         }
-        
+
         // Fallback to root updates.json (for backward compatibility)
         $rootManifest = $this->fetchRawFile('updates.json');
         if ($rootManifest) {
@@ -500,7 +547,7 @@ class UpdateChecker
                 return $data;
             }
         }
-        
+
         return null;
     }
 }

@@ -68,7 +68,7 @@ $defaultHost = parse_url(BASE_URL, PHP_URL_HOST) ?: 'Current Domain';
             <div class="postback-url-box">
                 <div class="postback-url-row">
                     <div class="postback-url-text" id="s2s-url" data-base-url="<?= htmlspecialchars($defaultTrackingBase) ?>">
-                        <?= htmlspecialchars($defaultTrackingBase) ?>/postback.php?click_id={click_id}&txid={txid}&payout={payout}&status={status}
+                        <?= htmlspecialchars($defaultTrackingBase) ?>/postback.php?click_id={click_id}&txid={txid}&payout={payout}&status={status}&et={et}
                     </div>
                     <button type="button" onclick="copyUrl('s2s-url', this)" class="btn btn-primary postback-copy-btn">
                         Copy
@@ -104,7 +104,23 @@ $defaultHost = parse_url(BASE_URL, PHP_URL_HOST) ?: 'Current Domain';
                             <td class="is-optional">{event_id}</td>
                             <td>Optional — For deduplication</td>
                         </tr>
+                        <tr>
+                            <td class="is-optional">{et}</td>
+                            <td>Optional — Funnel event key (e.g. register, ftd, rebill). Aliases: event_type, event. Mapped to Meta CAPI events in Settings → Integrations.</td>
+                        </tr>
                     </table>
+                </div>
+            </section>
+
+            <section class="postback-doc-section postback-doc-section--info">
+                <h3 class="postback-section-heading postback-section-heading--info">Multi-event funnel example (Meta CAPI)</h3>
+                <p class="postback-example-text">
+                    Configure event mapping on your Meta CAPI integration, then send distinct <code class="postback-inline-code">et</code> values with unique <code class="postback-inline-code">txid</code>s:
+                </p>
+                <div class="postback-network-examples">
+                    <div>Register: .../postback.php?click_id=<strong>{click_id}</strong>&amp;et=<strong>register</strong>&amp;txid=<strong>reg-123</strong></div>
+                    <div>FTD: .../postback.php?click_id=<strong>{click_id}</strong>&amp;et=<strong>ftd</strong>&amp;payout=<strong>50</strong>&amp;txid=<strong>ftd-456</strong></div>
+                    <div>Rebill: .../postback.php?click_id=<strong>{click_id}</strong>&amp;et=<strong>rebill</strong>&amp;payout=<strong>30</strong>&amp;txid=<strong>reb-789</strong></div>
                 </div>
             </section>
 
@@ -325,7 +341,7 @@ $defaultHost = parse_url(BASE_URL, PHP_URL_HOST) ?: 'Current Domain';
         const domainBase = selectedDomain || baseUrl;
 
         if (type === 's2s') {
-            urlElement.textContent = domainBase + '/postback.php?click_id={click_id}&txid={txid}&payout={payout}&status={status}';
+            urlElement.textContent = domainBase + '/postback.php?click_id={click_id}&txid={txid}&payout={payout}&status={status}&et={et}';
             const testLink = document.getElementById('test-s2s-link');
             if (testLink) {
                 testLink.href = domainBase + '/postback.php?click_id=test-123&txid=test-txid&payout=25.00&status=approved';

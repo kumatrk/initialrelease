@@ -73,18 +73,28 @@ $configPath = $installRoot . '/config/config.php';
 if (!is_file($configPath)) {
     fail("Not an existing install (missing config/config.php): {$installRoot}", $jsonOut);
 }
+require_once $installRoot . '/vendor/autoload.php';
+
+try {
+    $releaseUpgrader = new \SimpleKuma\Update\ReleaseUpgrader($installRoot);
+} catch (Throwable $e) {
+    fail($e->getMessage(), $jsonOut);
+}
 
 $sourceRoot = null;
 $releaseVersion = null;
 if (!empty($options['source'])) {
-    $sourceRoot = resolveSourceRoot($options['source']);
+    $resolvedSource = resolveSourceRoot($options['source']);
+    $sourceRoot = $resolvedSource === null
+        ? null
+        : \SimpleKuma\Update\ReleaseUpgrader::locateSourceRoot($resolvedSource);
     if ($sourceRoot === null) {
         fail('Invalid --source: ' . $options['source'], $jsonOut);
     }
-    $releaseVersion = readReleaseVersion($sourceRoot);
+    $releaseVersion = \SimpleKuma\Update\ReleaseUpgrader::readVersion($sourceRoot);
 }
 
-$currentVersion = readReleaseVersion($installRoot) ?? 'unknown';
+$currentVersion = \SimpleKuma\Update\ReleaseUpgrader::readVersion($installRoot) ?? 'unknown';
 
 $mode = $previewOnly ? 'preview' : ($applyFiles ? ($runMigrations ? 'apply+migrations' : 'apply') : 'migrations-only');
 
@@ -110,35 +120,33 @@ if ($releaseVersion === null) {
 
 $configHashBefore = hash_file('sha256', $configPath);
 
-$filesToCopy = ($applyFiles || $previewOnly) && $sourceRoot !== null
-    ? collectFilesToCopy($sourceRoot, $installRoot, $report)
-    : [];
+$preview = ($applyFiles || $previewOnly) && $sourceRoot !== null
+    ? $releaseUpgrader->preview($sourceRoot)
+    : ['ok' => true, 'files' => [], 'skipped' => [], 'errors' => []];
+$filesToCopy = $preview['files'];
+$report['files_skipped'] = $preview['skipped'];
+if (!$preview['ok']) {
+    $report['ok'] = false;
+    $report['errors'] = array_merge($report['errors'], $preview['errors']);
+}
 
 if ($previewOnly) {
     $report['files_would_copy'] = count($filesToCopy);
     $report['next_steps'][] = 'Re-run with --apply to copy files.';
     $report['next_steps'][] = 'Then: --apply --migrations (or --migrations alone).';
     outputReport($report, $jsonOut);
-    exit(0);
+    exit($report['ok'] ? 0 : 1);
 }
 
 if ($applyFiles) {
-    foreach ($filesToCopy as $item) {
-    $dest = $item['dest'];
-    $src = $item['src'];
-    $destDir = dirname($dest);
-    if (!is_dir($destDir) && !mkdir($destDir, 0755, true) && !is_dir($destDir)) {
-        $report['ok'] = false;
-        $report['errors'][] = "Failed to create directory: {$destDir}";
-        continue;
-    }
-    if (!copy($src, $dest)) {
-        $report['ok'] = false;
-        $report['errors'][] = "Failed to copy: {$item['rel']}";
-        continue;
-    }
-    $report['files_copied'][] = $item['rel'];
-}
+    $backupRoot = $installRoot . '/storage/updates/backups/cli-'
+        . date('Ymd-His') . '-' . preg_replace('/[^0-9A-Za-z.-]/', '-', $currentVersion);
+    $applyResult = $releaseUpgrader->apply($sourceRoot, $backupRoot);
+    $report['ok'] = $applyResult['ok'];
+    $report['files_copied'] = $applyResult['files_copied'];
+    $report['files_skipped'] = $applyResult['files_skipped'];
+    $report['config_preserved'] = $applyResult['config_preserved'];
+    $report['errors'] = array_merge($report['errors'], $applyResult['errors']);
 }
 
 if ($applyFiles) {
@@ -205,6 +213,7 @@ function resolveSourceRoot(string $source): ?string
         if (!mkdir($tmp, 0755, true)) {
             return null;
         }
+        register_shutdown_function(static fn () => removeTemporaryDirectory($tmp));
         $zip = new ZipArchive();
         if ($zip->open($source) !== true) {
             return null;
@@ -216,114 +225,23 @@ function resolveSourceRoot(string $source): ?string
     return null;
 }
 
-function readReleaseVersion(string $root): ?string
+function removeTemporaryDirectory(string $directory): void
 {
-    $file = $root . '/version.php';
-    if (!is_file($file)) {
-        return null;
+    if (!is_dir($directory)) {
+        return;
     }
-    $data = include $file;
-    return is_array($data) ? (string) ($data['version'] ?? '') : null;
-}
-
-/**
- * @return list<array{rel: string, src: string, dest: string}>
- */
-function collectFilesToCopy(string $sourceRoot, string $installRoot, array &$report): array
-{
-    $skipInstallPhp = shouldSkipInstallPhp($installRoot);
-    $protected = buildProtectedRelativePaths();
-
-    $files = [];
-    $iterator = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($sourceRoot, FilesystemIterator::SKIP_DOTS)
-    );
-
-    foreach ($iterator as $fileInfo) {
-        if (!$fileInfo->isFile()) {
+    foreach (scandir($directory) ?: [] as $item) {
+        if ($item === '.' || $item === '..') {
             continue;
         }
-        $full = str_replace('\\', '/', $fileInfo->getPathname());
-        $rel = ltrim(substr($full, strlen(str_replace('\\', '/', $sourceRoot))), '/');
-
-        if (shouldSkipRelativePath($rel, $protected, $skipInstallPhp)) {
-            $report['files_skipped'][] = $rel;
-            continue;
-        }
-
-        $files[] = [
-            'rel' => $rel,
-            'src' => $fileInfo->getPathname(),
-            'dest' => $installRoot . '/' . str_replace('/', DIRECTORY_SEPARATOR, $rel),
-        ];
-    }
-
-    return $files;
-}
-
-/**
- * @return list<string>
- */
-function buildProtectedRelativePaths(): array
-{
-    return [
-        'config/config.php',
-        '.env',
-    ];
-}
-
-function shouldSkipRelativePath(string $rel, array $protected, bool $skipInstallPhp): bool
-{
-    $rel = str_replace('\\', '/', $rel);
-
-    foreach ($protected as $p) {
-        if ($rel === $p) {
-            return true;
+        $path = $directory . DIRECTORY_SEPARATOR . $item;
+        if (is_dir($path) && !is_link($path)) {
+            removeTemporaryDirectory($path);
+        } else {
+            @unlink($path);
         }
     }
-
-    if (str_starts_with($rel, 'storage/logs/')) {
-        return true;
-    }
-    if (str_starts_with($rel, 'storage/cache/')) {
-        return true;
-    }
-    if (str_starts_with($rel, 'storage/google_ads_configs/')) {
-        return true;
-    }
-
-    if ($skipInstallPhp && $rel === 'public/install.php') {
-        return true;
-    }
-
-    return false;
-}
-
-function shouldSkipInstallPhp(string $installRoot): bool
-{
-    $configPath = $installRoot . '/config/config.php';
-    if (!is_file($configPath)) {
-        return false;
-    }
-
-    $contents = file_get_contents($configPath);
-    if ($contents === false) {
-        return true;
-    }
-
-    $hasInstalled = str_contains($contents, "define('INSTALLED', true)")
-        || str_contains($contents, 'define("INSTALLED", true)');
-
-    if (!$hasInstalled) {
-        return false;
-    }
-
-    $host = strtolower($_SERVER['HTTP_HOST'] ?? 'cli');
-    if ($host === 'cli' || $host === 'localhost' || str_ends_with($host, '.local')) {
-        return false;
-    }
-
-    return true;
+    @rmdir($directory);
 }
 
 function outputReport(array $report, bool $json): void

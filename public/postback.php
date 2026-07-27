@@ -14,13 +14,15 @@ use SimpleKuma\Database\DbTimezone;
 use SimpleKuma\Tracking\ConversionTracker;
 
 // Get parameters (support both GET and POST)
-$clickId = $_GET['click_id'] ?? $_POST['click_id'] ?? null;
-$txid = $_GET['txid'] ?? $_POST['txid'] ?? null;
-$eventId = $_GET['event_id'] ?? $_POST['event_id'] ?? null;
-$value = isset($_GET['value']) ? (float)$_GET['value'] : (isset($_POST['value']) ? (float)$_POST['value'] : null);
-$currency = $_GET['currency'] ?? $_POST['currency'] ?? 'USD';
-$status = $_GET['status'] ?? $_POST['status'] ?? 'approved';
-$payout = isset($_GET['payout']) ? (float)$_GET['payout'] : (isset($_POST['payout']) ? (float)$_POST['payout'] : null);
+$params = array_merge($_GET, $_POST);
+
+$clickId = $params['click_id'] ?? null;
+$txid = $params['txid'] ?? null;
+$eventId = $params['event_id'] ?? null;
+$value = isset($params['value']) && $params['value'] !== '' ? (float)$params['value'] : null;
+$currency = $params['currency'] ?? 'USD';
+$status = $params['status'] ?? 'approved';
+$payout = isset($params['payout']) && $params['payout'] !== '' ? (float)$params['payout'] : null;
 
 // Validate required parameter
 if (!$clickId) {
@@ -43,9 +45,9 @@ if ($db->connect_error) {
 
 DbTimezone::init($db);
 
-// Track conversion
+// Track conversion (et / event / event_type resolved inside ConversionTracker)
 $tracker = new ConversionTracker($db);
-$result = $tracker->trackConversion($clickId, [
+$result = $tracker->trackConversion((string)$clickId, [
     'source' => 's2s',
     'txid' => $txid,
     'event_id' => $eventId,
@@ -53,6 +55,10 @@ $result = $tracker->trackConversion($clickId, [
     'currency' => $currency,
     'status' => $status,
     'payout' => $payout,
+    // Pass through alias keys for ConversionEventKey precedence
+    'et' => $params['et'] ?? null,
+    'event_type' => $params['event_type'] ?? null,
+    'event' => $params['event'] ?? null,
 ]);
 
 $db->close();
@@ -61,10 +67,12 @@ $db->close();
 header('Content-Type: application/json');
 if ($result['success']) {
     http_response_code(200);
-    echo json_encode(['status' => 'ok', 'message' => $result['message']]);
+    $payload = ['status' => 'ok', 'message' => $result['message']];
+    if (array_key_exists('event_key', $result)) {
+        $payload['event_key'] = $result['event_key'];
+    }
+    echo json_encode($payload);
 } else {
     http_response_code(400);
     echo json_encode(['error' => $result['message']]);
 }
-
-

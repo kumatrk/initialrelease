@@ -1303,7 +1303,58 @@ class Redirector
                 $ua,
                 $ip
             );
+
+            // Optional Meta PageView (non-blocking; failures never affect redirect)
+            $this->maybeQueueMetaPageView($campaignId, $clickId, $ip, $ua, $extraData);
         }
+
+    /**
+     * Fire Meta CAPI PageView after click insert when integration enables it.
+     * Prefer after response commit so redirect latency is unaffected.
+     */
+    private function maybeQueueMetaPageView(int $campaignId, string $clickId, string $ip, string $ua, array $extraData): void
+    {
+        try {
+            $sender = new MetaCapiPageViewSender($this->db);
+            $fbc = null;
+            $fbp = null;
+            if (!empty($extraData['all_params']['_fbc'])) {
+                $fbc = (string)$extraData['all_params']['_fbc'];
+            } elseif (!empty($extraData['traffic_source_tokens']['_fbc'])) {
+                $fbc = (string)$extraData['traffic_source_tokens']['_fbc'];
+            }
+            if (!empty($extraData['all_params']['_fbp'])) {
+                $fbp = (string)$extraData['all_params']['_fbp'];
+            } elseif (!empty($extraData['traffic_source_tokens']['_fbp'])) {
+                $fbp = (string)$extraData['traffic_source_tokens']['_fbp'];
+            }
+
+            // Defer until after response when possible (redirect already in flight / about to send)
+            if (function_exists('fastcgi_finish_request')) {
+                // Caller may still be building redirect; register shutdown so we never block Location header
+                register_shutdown_function(static function () use ($sender, $campaignId, $clickId, $ip, $ua, $fbc, $fbp): void {
+                    $sender->maybeSendForClick($campaignId, $clickId, [
+                        'ip' => $ip,
+                        'ua' => $ua,
+                        'fbc' => $fbc,
+                        'fbp' => $fbp,
+                    ]);
+                });
+                return;
+            }
+
+            register_shutdown_function(static function () use ($sender, $campaignId, $clickId, $ip, $ua, $fbc, $fbp): void {
+                $sender->maybeSendForClick($campaignId, $clickId, [
+                    'ip' => $ip,
+                    'ua' => $ua,
+                    'fbc' => $fbc,
+                    'fbp' => $fbp,
+                ]);
+            });
+        } catch (\Throwable $e) {
+            error_log('Redirector::maybeQueueMetaPageView: ' . $e->getMessage());
+        }
+    }
 
     /**
      * Append parameters to destination URL

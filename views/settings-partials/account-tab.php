@@ -133,5 +133,131 @@ $accountEmail = trim($_POST['email'] ?? ($currentUser['email'] ?? ''));
             </div>
             <button type="submit" class="btn btn-primary">Update password</button>
         </form>
+
+        <?php if (!empty($canEditLoginGate)): ?>
+        <h3 style="margin: 40px 0 16px 0; font-size: 18px; color: #3d5a26; padding-top: 24px; border-top: 1px solid #eee;">Login page privacy</h3>
+        <p style="color: #666; margin: 0 0 20px 0; font-size: 14px; max-width: 640px;">
+            Hide <code>login.php</code> behind a secret URL token so scanners cannot find the admin login.
+            This is an obscurity layer — keep using a strong password. Without the token, visitors are sent to your decoy URL (or Google if blank).
+        </p>
+
+        <?php if (!empty($loginGateRevealUrl)): ?>
+        <div style="background: #fff8e1; border: 1px solid #f0c36d; border-radius: 4px; padding: 14px 16px; margin-bottom: 20px; max-width: 640px;">
+            <div style="font-weight: 600; margin-bottom: 8px;">Your private login URL (copy now)</div>
+            <code style="display: block; word-break: break-all; font-size: 13px;"><?= htmlspecialchars($loginGateRevealUrl) ?></code>
+            <div style="font-size: 12px; color: #666; margin-top: 8px;">Bookmark this URL. The secret token cannot be shown again after you leave this page.</div>
+        </div>
+        <?php endif; ?>
+
+        <form method="POST" action="?page=settings&tab=account" id="login-gate-form" style="max-width: 640px;">
+            <?= \SimpleKuma\Auth\Csrf::field() ?>
+            <input type="hidden" name="action" value="update_login_gate">
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-weight: 600; margin-bottom: 8px;">URL parameter name</label>
+                <input type="text" name="login_gate_param" required
+                       value="<?= htmlspecialchars($loginGateParam ?? \SimpleKuma\Auth\LoginGate::DEFAULT_PARAM_NAME) ?>"
+                       placeholder="mv"
+                       pattern="[A-Za-z][A-Za-z0-9_]*"
+                       maxlength="32"
+                       style="width: 100%; max-width: 200px; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
+                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                    The query key in your private URL. Default <code>mv</code> → <code>login.php?mv=yourtoken</code>.
+                    Change both this and the token for full control (e.g. <code>login.php?x=MySecret99</code>).
+                </div>
+                <?php if (isset($errors['login_gate_param'])): ?>
+                    <div style="color: #d32f2f; font-size: 12px; margin-top: 4px;"><?= htmlspecialchars($errors['login_gate_param']) ?></div>
+                <?php endif; ?>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-weight: 600; margin-bottom: 8px;">Secret token</label>
+                <div style="position: relative; max-width: 400px;">
+                    <input type="text" name="login_gate_secret" id="login-gate-secret"
+                           value="<?= htmlspecialchars($loginGateTokenValue ?? '') ?>"
+                           autocomplete="off"
+                           autocorrect="off"
+                           autocapitalize="off"
+                           spellcheck="false"
+                           data-lpignore="true"
+                           data-1p-ignore="true"
+                           data-form-type="other"
+                           placeholder="<?= !empty($loginGateHasToken) ? 'Leave blank to keep current token' : 'e.g. mySecretToken99' ?>"
+                           style="width: 100%; padding: 10px 52px 10px 10px; border: 2px solid #ddd; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;">
+                    <button type="button" id="login-gate-secret-toggle"
+                            aria-label="Show token"
+                            title="Show token"
+                            style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 13px; color: #666; padding: 4px 6px;">
+                        Show
+                    </button>
+                </div>
+                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                    Letters, numbers, hyphens, underscores. Min 8 characters.
+                    You can fill this in and enable the gate in one save.
+                    Current format: <code>login.php?<?= htmlspecialchars($loginGateParam ?? \SimpleKuma\Auth\LoginGate::DEFAULT_PARAM_NAME) ?>=yourtoken</code>
+                </div>
+                <?php if (!empty($loginGateHasToken)): ?>
+                    <div style="font-size: 12px; color: #3d5a26; margin-top: 6px;">A token is already configured.</div>
+                    <label style="display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; cursor: pointer;">
+                        <input type="checkbox" name="login_gate_clear_token" value="1">
+                        Clear configured token (disables gate until you set a new one)
+                    </label>
+                <?php endif; ?>
+                <?php if (isset($errors['login_gate_token'])): ?>
+                    <div style="color: #d32f2f; font-size: 12px; margin-top: 4px;"><?= htmlspecialchars($errors['login_gate_token']) ?></div>
+                <?php endif; ?>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-weight: 600; margin-bottom: 8px;">Decoy redirect URL (optional)</label>
+                <input type="text" name="login_gate_redirect_url" inputmode="url"
+                       value="<?= htmlspecialchars($loginGateRedirectUrl ?? '') ?>"
+                       placeholder="Leave blank to send unauthorized visitors to Google"
+                       style="width: 100%; max-width: 480px; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
+                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                    Must be <code>http://</code> or <code>https://</code>. Blank = <?= htmlspecialchars(\SimpleKuma\Auth\LoginGate::FALLBACK_DECOY_URL) ?>
+                </div>
+                <?php if (isset($errors['login_gate_redirect_url'])): ?>
+                    <div style="color: #d32f2f; font-size: 12px; margin-top: 4px;"><?= htmlspecialchars($errors['login_gate_redirect_url']) ?></div>
+                <?php endif; ?>
+            </div>
+
+            <div style="margin-bottom: 20px; padding: 14px 16px; background: var(--bg-secondary, #f5f5f5); border-radius: 4px; max-width: 480px;">
+                <label style="display: flex; align-items: center; gap: 10px; font-weight: 600; cursor: pointer;">
+                    <input type="checkbox" name="login_gate_enabled" id="login-gate-enabled" value="1"
+                           <?= !empty($loginGateEnabled) ? 'checked' : '' ?>>
+                    Enable login gate
+                </label>
+                <div style="font-size: 12px; color: #666; margin-top: 8px;">
+                    Turn this on after (or while) setting the parameter and token above — one Save is enough.
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Save login privacy</button>
+        </form>
+        <script>
+        (function () {
+            var input = document.getElementById('login-gate-secret');
+            var btn = document.getElementById('login-gate-secret-toggle');
+            if (!input || !btn) return;
+
+            var masked = true;
+            function applyMask() {
+                input.style.webkitTextSecurity = masked ? 'disc' : 'none';
+                // Never switch to type=password — password managers clear it on this page
+                input.type = 'text';
+                btn.textContent = masked ? 'Show' : 'Hide';
+                btn.setAttribute('aria-label', masked ? 'Show token' : 'Hide token');
+                btn.title = masked ? 'Show token' : 'Hide token';
+            }
+            applyMask();
+            btn.addEventListener('click', function () {
+                masked = !masked;
+                applyMask();
+                input.focus();
+            });
+        })();
+        </script>
+        <?php endif; ?>
     </div>
 </div>

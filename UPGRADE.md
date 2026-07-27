@@ -8,6 +8,32 @@ Designed for operators, shell scripts, and AI agents (Hermes, Codex, etc.) with 
 
 ---
 
+## Preferred: one-click update from Kuma
+
+Administrators with **Update manage** permission can perform the complete upgrade from:
+
+**Kuma admin → Settings → Updates**
+
+1. Enable automatic update checking, or click **Check for updates**.
+2. Review the tagged version and release notes.
+3. Click **Update Now** and keep the page open until it finishes.
+
+Kuma downloads the public GitHub repository tree for the latest `v{version}` tag, preserves
+`config/config.php`, `.env`, all existing `storage/` data, existing GeoIP databases, and the
+installed production `public/install.php`, then overlays application files and runs only pending
+database migrations through `MigrationRunner`.
+
+The GitHub Release zip asset is not required for one-click upgrades. It remains the preferred
+fresh-install package because it contains large GeoIP databases omitted from git.
+
+Existing installations that predate the one-click updater need one final manual/CLI upgrade to
+the first release that contains it. Every later tagged release can be installed from Settings.
+
+Use the CLI procedure below if outbound GitHub requests, PHP Zip, filesystem permissions, or PHP
+execution limits prevent the web updater from completing.
+
+---
+
 ## For AI agents (copy this brief)
 
 **Goal:** Overlay v1.1.5.2 files onto an existing install. **Never** overwrite `config/config.php` or delete `storage/`. **Never** run `install.php` on production.
@@ -250,4 +276,4 @@ The upgrade script does not delete files; rollback is restore-from-backup.
 
 - **Target release:** 1.1.5.2
 - **Upgrade tool:** `scripts/apply-release-upgrade.php` (shipped in production zip)
-- **In-app auto-update UI:** not finished — use this runbook instead
+- **In-app update UI:** supported at Settings → Updates; this CLI runbook remains the fallback

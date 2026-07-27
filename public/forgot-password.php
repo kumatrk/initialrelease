@@ -21,6 +21,7 @@ $skAppVersion = is_array($skVersionData) ? (string) ($skVersionData['version'] ?
 
 use SimpleKuma\Auth\Auth;
 use SimpleKuma\Auth\Csrf;
+use SimpleKuma\Auth\LoginGate;
 use SimpleKuma\Services\EmailService;
 use SimpleKuma\Theme\ThemeRegistry;
 
@@ -33,6 +34,9 @@ if ($auth->isAuthenticated()) {
     header('Location: ' . APP_BASE_URL . '/index.php');
     exit;
 }
+
+$loginGate = new LoginGate();
+$loginGate->protectAuthPage($db);
 
 header('X-Robots-Tag: noindex, nofollow, noarchive, nosnippet', true);
 
@@ -120,7 +124,7 @@ $authLogoDefault = ThemeRegistry::logo(ThemeRegistry::DEFAULT_THEME);
     </script>
     <title>Forgot password</title>
     <link rel="icon" type="image/x-icon" href="<?= ASSETS_BASE_URL ?>/assets/images/favicon.ico">
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/themes.css">
+    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/themes.css?v=<?= rawurlencode($skAppVersion) ?>">
     <style>
         * {
             margin: 0;

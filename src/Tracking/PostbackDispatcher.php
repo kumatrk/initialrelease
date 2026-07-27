@@ -163,6 +163,12 @@ class PostbackDispatcher
         $minPayoutCheck = $this->db->query("SHOW COLUMNS FROM campaigns LIKE 'min_postback_payout'");
         $hasMinPayoutColumn = ($minPayoutCheck && $minPayoutCheck->num_rows > 0);
         $minPayoutSelect = $hasMinPayoutColumn ? 'cp.min_postback_payout,' : 'NULL as min_postback_payout,';
+
+        $mappingCheck = $this->db->query("SHOW COLUMNS FROM facebook_capi_integrations LIKE 'event_mapping_json'");
+        $hasMappingColumn = ($mappingCheck && $mappingCheck->num_rows > 0);
+        $mappingSelect = $hasMappingColumn
+            ? 'fci.event_mapping_json as fb_event_mapping_json,'
+            : 'NULL as fb_event_mapping_json,';
         
         // Build query based on whether traffic_source_id column exists
         if ($hasTrafficSourceId) {
@@ -196,6 +202,7 @@ class PostbackDispatcher
                     fci.access_token as fb_access_token,
                     fci.test_code as fb_test_code,
                     fci.event_type as fb_event_type,
+                    " . $mappingSelect . "
                     o.url as offer_url,
                     lp.url as landing_page_url
                 FROM conversions c
@@ -240,6 +247,7 @@ class PostbackDispatcher
                     fci.access_token as fb_access_token,
                     fci.test_code as fb_test_code,
                     fci.event_type as fb_event_type,
+                    " . $mappingSelect . "
                     o.url as offer_url,
                     lp.url as landing_page_url
                 FROM conversions c
@@ -350,22 +358,25 @@ class PostbackDispatcher
                 if ($tsPostbackConfig) {
                     // Override Facebook CAPI integration if specified for this traffic source group
                     if (!empty($tsPostbackConfig['facebook_capi_integration_id'])) {
-                        // Load the Facebook CAPI integration
-                        $fbIntegrationStmt = $this->db->prepare(
-                            "SELECT pixel_id, access_token, test_code, event_type 
-                             FROM facebook_capi_integrations 
-                             WHERE id = ?"
+                        $mappingColCheck = $this->db->query(
+                            "SHOW COLUMNS FROM facebook_capi_integrations LIKE 'event_mapping_json'"
                         );
+                        $hasMapCol = ($mappingColCheck && $mappingColCheck->num_rows > 0);
+                        $fbSelect = $hasMapCol
+                            ? "SELECT pixel_id, access_token, test_code, event_type, event_mapping_json FROM facebook_capi_integrations WHERE id = ?"
+                            : "SELECT pixel_id, access_token, test_code, event_type FROM facebook_capi_integrations WHERE id = ?";
+                        $fbIntegrationStmt = $this->db->prepare($fbSelect);
                         $fbIntegrationStmt->bind_param('i', $tsPostbackConfig['facebook_capi_integration_id']);
                         $fbIntegrationStmt->execute();
                         $fbIntegrationResult = $fbIntegrationStmt->get_result();
                         $fbIntegration = $fbIntegrationResult->fetch_assoc();
-                        
+
                         if ($fbIntegration) {
                             $data['fb_pixel_id'] = $fbIntegration['pixel_id'];
                             $data['fb_access_token'] = $fbIntegration['access_token'];
                             $data['fb_test_code'] = $fbIntegration['test_code'] ?? null;
                             $data['fb_event_type'] = $fbIntegration['event_type'] ?? 'Purchase';
+                            $data['fb_event_mapping_json'] = $fbIntegration['event_mapping_json'] ?? null;
                         }
                     }
                     
@@ -385,6 +396,7 @@ class PostbackDispatcher
                     'access_token' => $data['fb_access_token'],
                     'test_event_code' => $data['fb_test_code'] ?? null,
                     'event_type' => $data['fb_event_type'] ?? 'Purchase',
+                    'event_mapping_json' => $data['fb_event_mapping_json'] ?? null,
                 ];
             } else {
                 $data['facebook_capi_json'] = null;
@@ -701,16 +713,49 @@ class PostbackDispatcher
             $customData['currency'] = (strlen($currencyUpper) === 3) ? $currencyUpper : 'USD';
         }
         
-        // CRITICAL: Add order_id for identity consistency (matches CPVLab)
-        // order_id must be the same as event_id (click_id) for proper deduplication
-        // Meta uses order_id for commerce-style conversion identity
-        $customData['order_id'] = $conversion['click_id'];
-        
+        // CRITICAL: Add order_id for identity consistency
+        // Prefer txid / conv:{id} so multi-step funnels on one click do not collide
+        $customData['order_id'] = MetaCapiEventResolver::resolveOrderId($conversion);
+
         // Build event data matching Facebook SDK structure
-        
-        // Get event type from integration config, default to 'Purchase'
-        $eventType = $config['event_type'] ?? 'Purchase';
-        
+
+        $decodedMapping = MetaCapiEventResolver::decodeMapping($config['event_mapping_json'] ?? null);
+        if ($decodedMapping['error'] !== null) {
+            error_log(
+                "Facebook CAPI: {$decodedMapping['error']} for conversion {$conversion['id']}; using default event_type"
+            );
+        }
+        $eventKey = isset($conversion['event_key']) && $conversion['event_key'] !== ''
+            ? (string)$conversion['event_key']
+            : null;
+        if ($eventKey === null && !empty($conversion['source_json'])) {
+            $source = is_array($conversion['source_json'])
+                ? $conversion['source_json']
+                : (json_decode((string)$conversion['source_json'], true) ?: []);
+            if (!empty($source['event_key']) && is_string($source['event_key'])) {
+                $eventKey = ConversionEventKey::canonicalize($source['event_key']);
+            }
+        }
+        $resolved = MetaCapiEventResolver::resolveEventName(
+            $eventKey,
+            $decodedMapping['mapping'],
+            $config['event_type'] ?? 'Purchase'
+        );
+        if ($resolved['mapping_error'] !== null) {
+            error_log(
+                "Facebook CAPI: {$resolved['mapping_error']} for conversion {$conversion['id']}; using default"
+            );
+        }
+        $eventType = $resolved['event_name'];
+        $metaEventId = MetaCapiEventResolver::resolveMetaEventId($conversion);
+
+        error_log(
+            "Facebook CAPI resolve conversion_id={$conversion['id']} event_key="
+            . ($eventKey ?? 'null')
+            . " mapped=" . ($resolved['mapped'] ? '1' : '0')
+            . " event_name={$eventType} meta_event_id={$metaEventId}"
+        );
+
         // CRITICAL: Meta's Conversions API Requirements for Web Events (action_source = "website")
         // Reference: https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/server-event
         // REQUIRED parameters:
@@ -735,7 +780,7 @@ class PostbackDispatcher
             'data' => [[
                 'event_name' => $eventType,
                 'event_time' => $eventTime, // Unix timestamp of when conversion occurred
-                'event_id' => $conversion['click_id'], // Always use click_id for consistency with CPVLab (same as order_id)
+                'event_id' => $metaEventId,
                 'action_source' => 'website', // REQUIRED: Must be "website" for web events
                 'event_source_url' => $eventSourceUrl, // REQUIRED for web events: URL where event occurred (using offer/landing page domain origin for proper Meta attribution)
                 'user_data' => $userData, // Must include client_user_agent (REQUIRED) and client_ip_address (recommended)

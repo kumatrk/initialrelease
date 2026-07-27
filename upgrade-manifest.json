@@ -3,7 +3,7 @@
   "schema_version": 1,
   "release": {
     "version": "1.1.5.5",
-    "release_date": "2026-07-23",
+    "release_date": "2026-07-27",
     "channel": "stable"
   },
   "purpose": "Overlay this release onto an existing install without replacing config, storage, or database data.",
@@ -13,12 +13,18 @@
     "modes": ["preview", "apply", "migrations", "apply+migrations"],
     "json_output": true
   },
+  "web_updater": {
+    "location": "Kuma admin > Settings > Updates",
+    "source": "GitHub repository archive for the latest v{version} tag",
+    "repository": "kumatrk/initialrelease",
+    "release_zip_asset_required": false,
+    "runs_pending_migrations": true
+  },
   "preserved_always": [
     "config/config.php",
     ".env",
-    "storage/logs/",
-    "storage/cache/",
-    "storage/google_ads_configs/",
+    "storage/",
+    "existing GeoIP databases omitted from the public git tree",
     "database tables and rows (campaigns, clicks, conversions, users)"
   ],
   "skipped_on_production_when_installed": [
@@ -90,6 +96,18 @@
     {
       "file": "database/migrations/072_unseed_optional_traffic_sources.sql",
       "description": "Remove unused optional traffic source seeds; templates remain in UI"
+    },
+    {
+      "file": "database/migrations/080_create_stats_hidden_ips.sql",
+      "description": "Stats view IP exclusions"
+    },
+    {
+      "file": "database/migrations/081_add_stats_exclusion_flag.sql",
+      "description": "Persist exclude_from_stats on clicks for Meta/crawler bunk traffic"
+    },
+    {
+      "file": "database/migrations/082_custom_conversion_event_mapping.sql",
+      "description": "Conversion event_key + Meta CAPI event_mapping_json and send_pageview_on_click"
     }
   ],
   "agent_workflow": [

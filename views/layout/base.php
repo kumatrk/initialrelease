@@ -358,26 +358,9 @@ $dashboardChartsHidden = !empty($GLOBALS['dashboardChartsHidden']);
                             'update_type' => 'minor'
                         ];
                     } elseif ($updateChecker->isUpdateCheckEnabled()) {
-                        // Use cached result from database instead of making API call on every page load
-                        // This prevents blocking page loads with slow API calls
-                        $lastCheck = $updateChecker->getLastUpdateCheck();
-                        if ($lastCheck) {
-                            // Use cached result from database
-                            $updateInfo = [
-                                'success' => true,
-                                'current_version' => $lastCheck['current_version'] ?? $skAppVersion,
-                                'latest_version' => $lastCheck['latest_version'] ?? null,
-                                'update_available' => (bool)($lastCheck['update_available'] ?? false),
-                                'update_type' => $lastCheck['update_type'] ?? null,
-                                'changelog' => $lastCheck['changelog'] ?? '',
-                                'release_url' => $lastCheck['release_url'] ?? '',
-                                'checked_at' => strtotime($lastCheck['checked_at'] ?? 'now')
-                            ];
-                        } else {
-                            // No cached result, check in background (non-blocking)
-                            // For now, just return no update to avoid blocking
-                            $updateInfo = ['success' => false, 'update_available' => false];
-                        }
+                        // UpdateChecker caches successful checks for one hour, so only
+                        // the first admin request after expiry contacts GitHub.
+                        $updateInfo = $updateChecker->checkForUpdates();
                     } else {
                         $updateInfo = ['success' => false, 'update_available' => false];
                     }

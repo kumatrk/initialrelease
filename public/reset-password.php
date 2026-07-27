@@ -21,6 +21,7 @@ $skAppVersion = is_array($skVersionData) ? (string) ($skVersionData['version'] ?
 
 use SimpleKuma\Auth\Auth;
 use SimpleKuma\Auth\Csrf;
+use SimpleKuma\Auth\LoginGate;
 use SimpleKuma\Theme\ThemeRegistry;
 
 // Database connection
@@ -33,15 +34,13 @@ if ($auth->isAuthenticated()) {
     exit;
 }
 
-header('X-Robots-Tag: noindex, nofollow, noarchive, nosnippet', true);
-
 $error = '';
 $success = '';
 $token = $_GET['token'] ?? '';
 $tokenValid = false;
 $email = '';
 
-// Validate token
+// Validate password-reset token first (a valid reset link may bypass the login gate)
 if (!empty($token)) {
     $tokenData = $auth->validateResetToken($token);
     if ($tokenData) {
@@ -53,6 +52,17 @@ if (!empty($token)) {
 } else {
     $error = 'No reset token provided. Please check your email for the reset link.';
 }
+
+$loginGate = new LoginGate();
+if ($loginGate->isEnabled($db)) {
+    if ($tokenValid || $loginGate->validateAccess($db)) {
+        $loginGate->issuePassCookie();
+    } else {
+        $loginGate->enforceOrRedirect($db);
+    }
+}
+
+header('X-Robots-Tag: noindex, nofollow, noarchive, nosnippet', true);
 
 // Handle password reset
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $tokenValid) {
@@ -107,7 +117,7 @@ $authLogoDefault = ThemeRegistry::logo(ThemeRegistry::DEFAULT_THEME);
     </script>
     <title>Reset password</title>
     <link rel="icon" type="image/x-icon" href="<?= ASSETS_BASE_URL ?>/assets/images/favicon.ico">
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/themes.css">
+    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/themes.css?v=<?= rawurlencode($skAppVersion) ?>">
     <style>
         * {
             margin: 0;

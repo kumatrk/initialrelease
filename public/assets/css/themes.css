@@ -26,6 +26,16 @@ body.auth-page .login-header {
     background: var(--auth-header-bg);
 }
 
+body.auth-page .login-header .retro-text {
+    color: var(--auth-tagline-text, #31531f);
+    text-shadow: var(--auth-tagline-shadow, 0 1px 1px rgba(255, 255, 255, 0.75));
+}
+
+[data-theme-base="dark"] body.auth-page .login-header .retro-text {
+    color: #f5f1e8;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8), 0 0 3px rgba(200, 255, 200, 0.35);
+}
+
 .content-container input[type="date"],
 .content-container input[type="text"],
 .content-container input[type="email"],

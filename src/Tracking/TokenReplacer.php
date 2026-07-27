@@ -25,6 +25,7 @@ class TokenReplacer
      * - {currency} - Currency code
      * - {txid} - Transaction ID
      * - {event_id} - Event ID
+     * - {event_key} - Canonical inbound funnel event key (et), empty when unset
      * - {timestamp} - Conversion timestamp (Unix)
      * - {datetime} - Conversion datetime (Y-m-d H:i:s)
      * 
@@ -125,6 +126,7 @@ class TokenReplacer
             '{currency}' => $conversion['currency'] ?? 'USD',
             '{txid}' => $conversion['txid'] ?? '',
             '{event_id}' => $conversion['event_id'] ?? '',
+            '{event_key}' => $conversion['event_key'] ?? '',
             '{timestamp}' => isset($conversion['ts']) ? (string)strtotime($conversion['ts']) : (string)time(),
             '{datetime}' => $conversion['ts'] ?? date('Y-m-d H:i:s'),
             
@@ -231,6 +233,7 @@ class TokenReplacer
                 '{currency}' => 'Currency code (e.g., USD)',
                 '{txid}' => 'Transaction ID from affiliate network',
                 '{event_id}' => 'Event ID for deduplication',
+                '{event_key}' => 'Inbound funnel event key (from et=), empty when unset',
                 '{timestamp}' => 'Conversion timestamp (Unix)',
                 '{datetime}' => 'Conversion datetime (Y-m-d H:i:s)',
             ],

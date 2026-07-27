@@ -41,14 +41,18 @@ class ConversionTracker
             return ['success' => false, 'message' => 'Conversion outside attribution window'];
         }
 
+        $resolved = ConversionEventKey::resolveFromParams($data);
+        $eventKey = $resolved['event_key'];
+        $data['event_key'] = $eventKey;
+
         // Check for duplicate
-        if ($this->isDuplicate($clickId, $data['txid'] ?? null, $data['event_id'] ?? null)) {
+        if ($this->isDuplicate($clickId, $data['txid'] ?? null, $data['event_id'] ?? null, $eventKey)) {
             return ['success' => false, 'message' => 'Duplicate conversion'];
         }
 
         // Store conversion
         if ($this->storeConversion($clickId, $data)) {
-            return ['success' => true, 'message' => 'Conversion tracked'];
+            return ['success' => true, 'message' => 'Conversion tracked', 'event_key' => $eventKey];
         }
 
         return ['success' => false, 'message' => 'Failed to store conversion'];
@@ -84,8 +88,7 @@ class ConversionTracker
     {
         $clickTime = strtotime($click['ts']);
         $now = time();
-        
-        // Get attribution window from settings, fallback to default
+
         $windowDays = (int)($this->settings->get('attribution_window_days', self::DEFAULT_ATTRIBUTION_WINDOW_DAYS));
         $windowSeconds = $windowDays * 24 * 60 * 60;
 
@@ -93,51 +96,86 @@ class ConversionTracker
     }
 
     /**
-     * Check if conversion is duplicate
+     * Check if conversion is duplicate.
+     *
+     * Rules:
+     * - Same inbound event_id → duplicate
+     * - Same click + same txid + same event_key → duplicate
+     * - Same click + same txid + different event_key → allowed
+     * - No txid/event_id: same click + same event_key (or both null) → duplicate (legacy)
      */
-    private function isDuplicate(string $clickId, ?string $txid, ?string $eventId): bool
+    private function isDuplicate(string $clickId, ?string $txid, ?string $eventId, ?string $eventKey): bool
     {
-        // Check by event_id if provided
         if ($eventId) {
             $stmt = $this->db->prepare(
                 "SELECT COUNT(*) as count FROM conversions WHERE event_id = ?"
             );
             $stmt->bind_param('s', $eventId);
             $stmt->execute();
-            $result = $stmt->get_result();
-            $row = $result->fetch_assoc();
-            
-            if ($row['count'] > 0) {
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if ((int)($row['count'] ?? 0) > 0) {
                 return true;
             }
         }
 
-        // Check by (click_id, txid) if txid provided
+        $hasEventKeyColumn = $this->hasEventKeyColumn();
+
         if ($txid) {
-            $stmt = $this->db->prepare(
-                "SELECT COUNT(*) as count FROM conversions WHERE click_id = ? AND txid = ?"
-            );
-            $stmt->bind_param('ss', $clickId, $txid);
+            if ($hasEventKeyColumn) {
+                if ($eventKey === null) {
+                    $stmt = $this->db->prepare(
+                        "SELECT COUNT(*) as count FROM conversions
+                         WHERE click_id = ? AND txid = ? AND event_key IS NULL"
+                    );
+                    $stmt->bind_param('ss', $clickId, $txid);
+                } else {
+                    $stmt = $this->db->prepare(
+                        "SELECT COUNT(*) as count FROM conversions
+                         WHERE click_id = ? AND txid = ? AND event_key = ?"
+                    );
+                    $stmt->bind_param('sss', $clickId, $txid, $eventKey);
+                }
+            } else {
+                $stmt = $this->db->prepare(
+                    "SELECT COUNT(*) as count FROM conversions WHERE click_id = ? AND txid = ?"
+                );
+                $stmt->bind_param('ss', $clickId, $txid);
+            }
             $stmt->execute();
-            $result = $stmt->get_result();
-            $row = $result->fetch_assoc();
-            
-            if ($row['count'] > 0) {
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if ((int)($row['count'] ?? 0) > 0) {
                 return true;
             }
         }
 
-        // Check by click_id only if no txid or event_id
+        // No txid or event_id: preserve one-conversion-per-click for same event_key (legacy)
         if (!$txid && !$eventId) {
-            $stmt = $this->db->prepare(
-                "SELECT COUNT(*) as count FROM conversions WHERE click_id = ?"
-            );
-            $stmt->bind_param('s', $clickId);
+            if ($hasEventKeyColumn) {
+                if ($eventKey === null) {
+                    $stmt = $this->db->prepare(
+                        "SELECT COUNT(*) as count FROM conversions
+                         WHERE click_id = ? AND event_key IS NULL"
+                    );
+                    $stmt->bind_param('s', $clickId);
+                } else {
+                    $stmt = $this->db->prepare(
+                        "SELECT COUNT(*) as count FROM conversions
+                         WHERE click_id = ? AND event_key = ?"
+                    );
+                    $stmt->bind_param('ss', $clickId, $eventKey);
+                }
+            } else {
+                $stmt = $this->db->prepare(
+                    "SELECT COUNT(*) as count FROM conversions WHERE click_id = ?"
+                );
+                $stmt->bind_param('s', $clickId);
+            }
             $stmt->execute();
-            $result = $stmt->get_result();
-            $row = $result->fetch_assoc();
-            
-            if ($row['count'] > 0) {
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if ((int)($row['count'] ?? 0) > 0) {
                 return true;
             }
         }
@@ -150,46 +188,80 @@ class ConversionTracker
      */
     private function storeConversion(string $clickId, array $data): bool
     {
-        $stmt = $this->db->prepare(
-            "INSERT INTO conversions 
-            (click_id, txid, event_id, value, currency, status, ts, payout, source_json) 
-            VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?)"
-        );
-
         $txid = $data['txid'] ?? null;
         $eventId = $data['event_id'] ?? null;
+        $eventKey = $data['event_key'] ?? null;
         $value = $data['value'] ?? null;
         $currency = $data['currency'] ?? 'USD';
         $status = $data['status'] ?? 'pending';
         $payout = $data['payout'] ?? null;
-        // Same epoch clock as fbclid_first_seen_epoch_ms for accurate Meta CAPI elapsed time
         $data['conversion_epoch_ms'] = (int) round(microtime(true) * 1000);
         $sourceJson = json_encode($data);
 
-        $stmt->bind_param(
-            'sssdssds',
-            $clickId,
-            $txid,
-            $eventId,
-            $value,
-            $currency,
-            $status,
-            $payout,
-            $sourceJson
-        );
+        $hasEventKeyColumn = $this->hasEventKeyColumn();
+
+        if ($hasEventKeyColumn) {
+            $stmt = $this->db->prepare(
+                "INSERT INTO conversions
+                (click_id, txid, event_id, event_key, value, currency, status, ts, payout, source_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)"
+            );
+            $stmt->bind_param(
+                'ssssdssds',
+                $clickId,
+                $txid,
+                $eventId,
+                $eventKey,
+                $value,
+                $currency,
+                $status,
+                $payout,
+                $sourceJson
+            );
+        } else {
+            $stmt = $this->db->prepare(
+                "INSERT INTO conversions
+                (click_id, txid, event_id, value, currency, status, ts, payout, source_json)
+                VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?)"
+            );
+            $stmt->bind_param(
+                'sssdssds',
+                $clickId,
+                $txid,
+                $eventId,
+                $value,
+                $currency,
+                $status,
+                $payout,
+                $sourceJson
+            );
+        }
 
         $success = $stmt->execute();
 
-        // Fire postbacks asynchronously (in production, use queue)
         if ($success) {
             $conversionId = $stmt->insert_id;
+            $stmt->close();
             $this->firePostbacks($conversionId);
-            // On-write: update clicks_daily_summary (conversions, revenue) (plan: stats pre-aggregation Phase 3)
             $updater = new DailySummaryUpdater($this->db);
             $updater->upsertConversion($clickId, $payout, $value);
+        } else {
+            error_log('ConversionTracker: INSERT failed: ' . $stmt->error);
+            $stmt->close();
         }
 
         return $success;
+    }
+
+    private function hasEventKeyColumn(): bool
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+        $check = $this->db->query("SHOW COLUMNS FROM conversions LIKE 'event_key'");
+        $cached = ($check && $check->num_rows > 0);
+        return $cached;
     }
 
     /**
@@ -197,16 +269,12 @@ class ConversionTracker
      */
     private function firePostbacks(int $conversionId): void
     {
-        // In production, this should queue the job
-        // For MVP, we'll fire synchronously in background
         $dispatcher = new PostbackDispatcher($this->db);
-        
-        // Fire in background (simple approach)
+
         if (function_exists('fastcgi_finish_request')) {
             fastcgi_finish_request();
         }
-        
+
         $dispatcher->firePostbacks($conversionId);
     }
 }
-

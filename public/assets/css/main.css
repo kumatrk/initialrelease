@@ -73,7 +73,7 @@
     --badge-warning-text: #856404;
 
     --auth-page-bg: linear-gradient(135deg, #2d5016 0%, #4a7c2c 100%);
-    --auth-header-bg: transparent;
+    --auth-header-bg: var(--color-forest);
     --auth-container-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
 
     --chart-grid: rgba(0, 0, 0, 0.05);

@@ -5,629 +5,408 @@ declare(strict_types=1);
 namespace SimpleKuma\Update;
 
 use mysqli;
+use RuntimeException;
+use SimpleKuma\Database\MigrationRunner;
 use SimpleKuma\Settings\SettingsManager;
+use Throwable;
+use ZipArchive;
 
 /**
- * Update Installer
- * Handles downloading, validating, and applying updates
+ * Installs a versioned GitHub repository archive from the Kuma settings page.
  */
-class UpdateInstaller
+final class UpdateInstaller
 {
+    private const MAX_DOWNLOAD_BYTES = 536870912; // 512 MiB safety limit
+
     private mysqli $db;
     private SettingsManager $settings;
-    private UpdateValidator $validator;
     private string $projectRoot;
-    private const STAGING_DIR = 'updates/staging';
-    private const BACKUP_DIR = 'updates/backup';
-    private const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/';
 
-    public function __construct(mysqli $db, string $projectRoot = null)
+    public function __construct(mysqli $db, ?string $projectRoot = null)
     {
         $this->db = $db;
         $this->settings = new SettingsManager($db);
-        $this->validator = new UpdateValidator();
-        $this->projectRoot = $projectRoot ?: dirname(__DIR__, 2);
-        
-        // Ensure update directories exist
-        $this->ensureDirectoriesExist();
+        $resolved = realpath($projectRoot ?: dirname(__DIR__, 2));
+        if ($resolved === false) {
+            throw new RuntimeException('Could not resolve the Simple Kuma install root.');
+        }
+        $this->projectRoot = $resolved;
     }
 
     /**
-     * Ensure update directories exist
+     * @param array<string, mixed> $release Result returned by UpdateChecker::checkForUpdates()
+     * @return array{
+     *   success: bool,
+     *   log_id: int,
+     *   files_updated?: list<string>,
+     *   migrations_applied?: list<string>,
+     *   backup_location?: string,
+     *   errors?: list<string>
+     * }
      */
-    private function ensureDirectoriesExist(): void
+    public function install(array $release, string $currentVersion, ?int $adminUserId = null): array
     {
-        $stagingDir = $this->projectRoot . '/' . self::STAGING_DIR;
-        $backupDir = $this->projectRoot . '/' . self::BACKUP_DIR;
-        
-        if (!is_dir($stagingDir)) {
-            mkdir($stagingDir, 0755, true);
-        }
-        
-        if (!is_dir($backupDir)) {
-            mkdir($backupDir, 0755, true);
-        }
-    }
+        $targetVersion = trim((string) ($release['latest_version'] ?? ''));
+        $tagName = trim((string) ($release['tag_name'] ?? ''));
+        $zipballUrl = trim((string) ($release['zipball_url'] ?? ''));
+        $updateType = (string) ($release['update_type'] ?? 'patch');
 
-    /**
-     * Get the configured GitHub repository
-     */
-    private function getRepository(): string
-    {
-        $repo = $this->settings->get('update_repository', null);
-        return $repo ?: 'SimpleKuma/simplekuma';
-    }
-
-    /**
-     * Get the branch to use (default: main)
-     */
-    private function getBranch(): string
-    {
-        return 'main'; // Could be made configurable in the future
-    }
-
-    /**
-     * Create update log entry
-     */
-    private function createUpdateLog(string $versionFrom, string $versionTo, string $updateType, ?int $adminUserId = null): int
-    {
-        $stmt = $this->db->prepare("
-            INSERT INTO update_logs 
-            (version_from, version_to, update_type, started_at, status, files_updated, admin_user_id)
-            VALUES (?, ?, ?, NOW(), 'pending', '[]', ?)
-        ");
-        $stmt->bind_param('sssi', $versionFrom, $versionTo, $updateType, $adminUserId);
-        $stmt->execute();
-        
-        return (int)$this->db->insert_id;
-    }
-
-    /**
-     * Update log status
-     */
-    private function updateLogStatus(int $logId, string $status, ?string $errorLog = null): void
-    {
-        $stmt = $this->db->prepare("
-            UPDATE update_logs 
-            SET status = ?, error_log = ?, completed_at = NOW()
-            WHERE id = ?
-        ");
-        $stmt->bind_param('ssi', $status, $errorLog, $logId);
-        $stmt->execute();
-    }
-
-    /**
-     * Update log with files and execution time
-     */
-    private function updateLogDetails(int $logId, array $filesUpdated, ?array $migrationsApplied = null, ?int $executionTime = null, ?string $backupLocation = null): void
-    {
-        $filesJson = json_encode($filesUpdated);
-        $migrationsJson = $migrationsApplied ? json_encode($migrationsApplied) : null;
-        
-        $stmt = $this->db->prepare("
-            UPDATE update_logs 
-            SET files_updated = ?, migrations_applied = ?, execution_time = ?, backup_location = ?
-            WHERE id = ?
-        ");
-        $stmt->bind_param('ssiss', $filesJson, $migrationsJson, $executionTime, $backupLocation, $logId);
-        $stmt->execute();
-    }
-
-    /**
-     * Run pre-flight validation checks
-     */
-    public function runPreFlightChecks(array $manifest): array
-    {
-        $results = [
-            'php_version' => false,
-            'mysql_version' => false,
-            'disk_space' => false,
-            'staging_dir' => false,
-            'backup_dir' => false,
-            'file_permissions' => [],
-            'errors' => []
-        ];
-
-        // Check PHP version
-        if (isset($manifest['requirements']['php_min'])) {
-            $results['php_version'] = $this->validator->checkPHPVersion($manifest['requirements']['php_min']);
-            if (!$results['php_version']) {
-                $results['errors'][] = "PHP version " . PHP_VERSION . " is below required " . $manifest['requirements']['php_min'];
-            }
-        }
-
-        // Check MySQL version
-        if (isset($manifest['requirements']['mysql_min'])) {
-            $results['mysql_version'] = $this->validator->checkMySQLVersion($this->db, $manifest['requirements']['mysql_min']);
-            if (!$results['mysql_version']) {
-                $results['errors'][] = "MySQL version is below required " . $manifest['requirements']['mysql_min'];
-            }
-        }
-
-        // Calculate total size needed
-        $totalSize = 0;
-        if (isset($manifest['files']) && is_array($manifest['files'])) {
-            foreach ($manifest['files'] as $file) {
-                $totalSize += $file['size'] ?? 0;
-            }
-        }
-
-        // Check disk space
-        $results['disk_space'] = $this->validator->checkDiskSpace($this->projectRoot, $totalSize);
-        if (!$results['disk_space']) {
-            $results['errors'][] = "Insufficient disk space. Required: " . number_format($totalSize * 2) . " bytes";
-        }
-
-        // Check staging directory
-        $stagingPath = $this->projectRoot . '/' . self::STAGING_DIR;
-        $results['staging_dir'] = $this->validator->isDirectoryWritable($stagingPath);
-
-        // Check backup directory
-        $backupPath = $this->projectRoot . '/' . self::BACKUP_DIR;
-        $results['backup_dir'] = $this->validator->isDirectoryWritable($backupPath);
-
-        // Check file permissions for files to be updated
-        if (isset($manifest['files']) && is_array($manifest['files'])) {
-            foreach ($manifest['files'] as $file) {
-                $filePath = $this->projectRoot . '/' . $file['path'];
-                $writable = $this->validator->isFileWritable($filePath);
-                $results['file_permissions'][$file['path']] = $writable;
-                if (!$writable) {
-                    $results['errors'][] = "File not writable: {$file['path']}";
-                }
-            }
-        }
-
-        return $results;
-    }
-
-    /**
-     * Download a file from GitHub
-     */
-    private function downloadFile(string $filePath, string $targetPath): bool
-    {
-        $repo = $this->getRepository();
-        $branch = $this->getBranch();
-        $url = self::GITHUB_RAW_BASE . $repo . '/' . $branch . '/' . $filePath;
-
-        // Create target directory if needed
-        $targetDir = dirname($targetPath);
-        if (!is_dir($targetDir)) {
-            mkdir($targetDir, 0755, true);
-        }
-
-        $ch = curl_init();
-        curl_setopt_array($ch, [
-            CURLOPT_URL => $url,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_SSL_VERIFYHOST => 2,
-            CURLOPT_USERAGENT => 'SimpleKuma-UpdateInstaller/1.0',
-            CURLOPT_TIMEOUT => 30,
-            CURLOPT_CONNECTTIMEOUT => 10
-        ]);
-
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
-        curl_close($ch);
-
-        if ($error || $httpCode !== 200) {
-            error_log("Failed to download {$filePath}: HTTP {$httpCode} - {$error}");
-            return false;
-        }
-
-        // Write to temporary file first, then rename atomically
-        $tempPath = $targetPath . '.tmp';
-        if (file_put_contents($tempPath, $response) === false) {
-            return false;
-        }
-
-        return rename($tempPath, $targetPath);
-    }
-
-    /**
-     * Download and stage all files from manifest
-     */
-    public function downloadAndStageFiles(array $manifest, string $version): array
-    {
-        $stagingPath = $this->projectRoot . '/' . self::STAGING_DIR . '/' . $version;
-        
-        // Create staging directory
-        if (!is_dir($stagingPath)) {
-            mkdir($stagingPath, 0755, true);
-        }
-
-        $results = [
-            'success' => true,
-            'downloaded' => [],
-            'failed' => [],
-            'errors' => []
-        ];
-
-        if (!isset($manifest['files']) || !is_array($manifest['files'])) {
-            $results['success'] = false;
-            $results['errors'][] = 'No files specified in manifest';
-            return $results;
-        }
-
-        foreach ($manifest['files'] as $file) {
-            $filePath = $file['path'];
-            $targetPath = $stagingPath . '/' . $filePath;
-
-            // Download file
-            if (!$this->downloadFile($filePath, $targetPath)) {
-                $results['failed'][] = $filePath;
-                $results['errors'][] = "Failed to download: {$filePath}";
-                $results['success'] = false;
-                continue;
-            }
-
-            // Verify hash
-            if (!$this->validator->verifyFileHash($targetPath, $file['hash'])) {
-                unlink($targetPath); // Remove invalid file
-                $results['failed'][] = $filePath;
-                $results['errors'][] = "Hash mismatch for: {$filePath}";
-                $results['success'] = false;
-                continue;
-            }
-
-            $results['downloaded'][] = $filePath;
-        }
-
-        return $results;
-    }
-
-    /**
-     * Create backup of files to be updated
-     */
-    public function createBackup(string $versionFrom, array $files): string
-    {
-        $backupPath = $this->projectRoot . '/' . self::BACKUP_DIR . '/' . $versionFrom;
-        
-        // Create backup directory
-        if (!is_dir($backupPath)) {
-            mkdir($backupPath, 0755, true);
-        }
-
-        foreach ($files as $filePath) {
-            $sourcePath = $this->projectRoot . '/' . $filePath;
-            $backupFilePath = $backupPath . '/' . $filePath;
-
-            if (file_exists($sourcePath)) {
-                // Create directory structure in backup
-                $backupDir = dirname($backupFilePath);
-                if (!is_dir($backupDir)) {
-                    mkdir($backupDir, 0755, true);
-                }
-
-                // Copy file to backup
-                copy($sourcePath, $backupFilePath);
-            }
-        }
-
-        return $backupPath;
-    }
-
-    /**
-     * Apply staged files to production
-     */
-    public function applyFiles(string $version, array $files): array
-    {
-        $stagingPath = $this->projectRoot . '/' . self::STAGING_DIR . '/' . $version;
-        $results = [
-            'success' => true,
-            'applied' => [],
-            'failed' => [],
-            'errors' => []
-        ];
-
-        foreach ($files as $filePath) {
-            $stagedPath = $stagingPath . '/' . $filePath;
-            $targetPath = $this->projectRoot . '/' . $filePath;
-
-            if (!file_exists($stagedPath)) {
-                $results['failed'][] = $filePath;
-                $results['errors'][] = "Staged file not found: {$filePath}";
-                $results['success'] = false;
-                continue;
-            }
-
-            // Create target directory if needed
-            $targetDir = dirname($targetPath);
-            if (!is_dir($targetDir)) {
-                mkdir($targetDir, 0755, true);
-            }
-
-            // Copy file atomically
-            $tempPath = $targetPath . '.tmp';
-            if (!copy($stagedPath, $tempPath)) {
-                $results['failed'][] = $filePath;
-                $results['errors'][] = "Failed to copy staged file: {$filePath}";
-                $results['success'] = false;
-                continue;
-            }
-
-            // Atomic rename
-            if (!rename($tempPath, $targetPath)) {
-                unlink($tempPath);
-                $results['failed'][] = $filePath;
-                $results['errors'][] = "Failed to apply file: {$filePath}";
-                $results['success'] = false;
-                continue;
-            }
-
-            $results['applied'][] = $filePath;
-        }
-
-        return $results;
-    }
-
-    /**
-     * Run migrations
-     */
-    public function runMigrations(array $migrations): array
-    {
-        $results = [
-            'success' => true,
-            'applied' => [],
-            'failed' => [],
-            'errors' => []
-        ];
-
-        $migrationsPath = $this->projectRoot . '/database/migrations';
-
-        foreach ($migrations as $migrationFile) {
-            $migrationPath = $migrationsPath . '/' . $migrationFile;
-
-            if (!file_exists($migrationPath)) {
-                $results['failed'][] = $migrationFile;
-                $results['errors'][] = "Migration file not found: {$migrationFile}";
-                $results['success'] = false;
-                continue;
-            }
-
-            // Validate migration SQL
-            $sql = file_get_contents($migrationPath);
-            $validationErrors = $this->validator->validateMigrationSQL($sql);
-            if (!empty($validationErrors)) {
-                $results['failed'][] = $migrationFile;
-                $results['errors'] = array_merge($results['errors'], $validationErrors);
-                $results['success'] = false;
-                continue;
-            }
-
-            // Execute migration in transaction
-            $this->db->begin_transaction();
-            try {
-                // Split SQL by semicolons and execute
-                $statements = array_filter(array_map('trim', explode(';', $sql)));
-                foreach ($statements as $statement) {
-                    if (empty($statement)) {
-                        continue;
-                    }
-                    if (!$this->db->query($statement)) {
-                        throw new \Exception("Migration failed: " . $this->db->error);
-                    }
-                }
-                $this->db->commit();
-                $results['applied'][] = $migrationFile;
-            } catch (\Exception $e) {
-                $this->db->rollback();
-                $results['failed'][] = $migrationFile;
-                $results['errors'][] = $e->getMessage();
-                $results['success'] = false;
-            }
-        }
-
-        return $results;
-    }
-
-    /**
-     * Install update from manifest
-     */
-    public function install(array $manifest, string $currentVersion, ?int $adminUserId = null): array
-    {
-        $startTime = time();
-        $targetVersion = $manifest['version'];
-        $updateType = $manifest['update_type'] ?? 'patch';
-
-        // Create update log
+        $this->validateReleaseInput($targetVersion, $tagName, $zipballUrl, $currentVersion);
         $logId = $this->createUpdateLog($currentVersion, $targetVersion, $updateType, $adminUserId);
+        $startedAt = time();
+        $workspace = $this->projectRoot . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR
+            . 'updates' . DIRECTORY_SEPARATOR . 'staging' . DIRECTORY_SEPARATOR
+            . $targetVersion . '-' . bin2hex(random_bytes(5));
+        $archivePath = $workspace . DIRECTORY_SEPARATOR . 'update.zip';
+        $extractPath = $workspace . DIRECTORY_SEPARATOR . 'extracted';
+        $backupPath = $this->projectRoot . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR
+            . 'updates' . DIRECTORY_SEPARATOR . 'backups' . DIRECTORY_SEPARATOR
+            . date('Ymd-His') . '-' . $currentVersion . '-to-' . $targetVersion;
 
         try {
-            // Update status to in_progress
             $this->updateLogStatus($logId, 'in_progress');
+            $this->runPreflight($workspace);
+            $this->downloadArchive($zipballUrl, $archivePath);
+            $this->extractArchive($archivePath, $extractPath);
 
-            // Run pre-flight checks
-            $preFlightResults = $this->runPreFlightChecks($manifest);
-            if (!empty($preFlightResults['errors'])) {
-                $errorMsg = implode('; ', $preFlightResults['errors']);
-                $this->updateLogStatus($logId, 'failed', $errorMsg);
-                return [
-                    'success' => false,
-                    'log_id' => $logId,
-                    'errors' => $preFlightResults['errors']
-                ];
+            $sourceRoot = ReleaseUpgrader::locateSourceRoot($extractPath);
+            if ($sourceRoot === null) {
+                throw new RuntimeException('The GitHub archive does not contain a valid Simple Kuma release tree.');
             }
 
-            // Download and stage files
-            $downloadResults = $this->downloadAndStageFiles($manifest, $targetVersion);
-            if (!$downloadResults['success']) {
-                $errorMsg = implode('; ', $downloadResults['errors']);
-                $this->updateLogStatus($logId, 'failed', $errorMsg);
-                return [
-                    'success' => false,
-                    'log_id' => $logId,
-                    'errors' => $downloadResults['errors']
-                ];
+            $archiveVersion = ReleaseUpgrader::readVersion($sourceRoot);
+            if ($archiveVersion !== $targetVersion) {
+                throw new RuntimeException(
+                    "The downloaded tree reports version {$archiveVersion}; expected {$targetVersion} from tag {$tagName}."
+                );
             }
 
-            // Create backup
-            $filePaths = array_column($manifest['files'] ?? [], 'path');
-            $backupLocation = $this->createBackup($currentVersion, $filePaths);
-
-            // Apply files
-            $applyResults = $this->applyFiles($targetVersion, $filePaths);
-            if (!$applyResults['success']) {
-                // Rollback: restore from backup
-                $this->rollbackFromBackup($backupLocation, $filePaths);
-                $errorMsg = implode('; ', $applyResults['errors']);
-                $this->updateLogStatus($logId, 'failed', $errorMsg);
-                return [
-                    'success' => false,
-                    'log_id' => $logId,
-                    'errors' => $applyResults['errors']
-                ];
+            $upgrader = new ReleaseUpgrader($this->projectRoot);
+            $preview = $upgrader->preview($sourceRoot);
+            if (!$preview['ok']) {
+                throw new RuntimeException(implode(' ', $preview['errors']));
             }
 
-            // Run migrations
-            $migrationsApplied = [];
-            if (!empty($manifest['migrations'])) {
-                $migrationResults = $this->runMigrations($manifest['migrations']);
-                $migrationsApplied = $migrationResults['applied'];
-                if (!$migrationResults['success']) {
-                    // Rollback files
-                    $this->rollbackFromBackup($backupLocation, $filePaths);
-                    $errorMsg = implode('; ', $migrationResults['errors']);
-                    $this->updateLogStatus($logId, 'failed', $errorMsg);
-                    return [
-                        'success' => false,
-                        'log_id' => $logId,
-                        'errors' => $migrationResults['errors']
-                    ];
-                }
+            $this->copyConfigBackup($backupPath);
+            $applyResult = $upgrader->apply($sourceRoot, $backupPath . DIRECTORY_SEPARATOR . 'files');
+            if (!$applyResult['ok']) {
+                throw new RuntimeException(implode(' ', $applyResult['errors']));
             }
+            $this->updateLogDetails(
+                $logId,
+                $applyResult['files_copied'],
+                [],
+                time() - $startedAt,
+                $backupPath
+            );
 
-            // Update version
-            $this->settings->set('app_version', $targetVersion);
+            // The updated migration files are now on disk. MigrationRunner is
+            // the only supported executor and records every applied migration.
+            $runner = new MigrationRunner($this->db);
+            if (!$runner->run()) {
+                $errors = $runner->getErrors();
+                throw new RuntimeException(
+                    'Application files were updated, but database migrations stopped: '
+                    . implode(' ', $errors)
+                    . ' Re-run Update database from this page after correcting the database error.'
+                );
+            }
+            $migrationsApplied = $runner->getAppliedMigrations();
 
-            // Update log with success
-            $executionTime = time() - $startTime;
-            $this->updateLogDetails($logId, $applyResults['applied'], $migrationsApplied, $executionTime, $backupLocation);
+            if (!$this->settings->set('app_version', $targetVersion)) {
+                throw new RuntimeException('The update completed, but app_version could not be synchronized.');
+            }
+            $this->settings->set('update_check_cache', '');
+            $this->settings->set('update_check_cache_time', '0');
+
+            $executionTime = time() - $startedAt;
+            $this->updateLogDetails(
+                $logId,
+                $applyResult['files_copied'],
+                $migrationsApplied,
+                $executionTime,
+                $backupPath
+            );
             $this->updateLogStatus($logId, 'success');
-            // Mark rollback as available
-            $this->db->query("UPDATE update_logs SET rollback_available = TRUE WHERE id = {$logId}");
 
             return [
                 'success' => true,
                 'log_id' => $logId,
-                'files_updated' => $applyResults['applied'],
+                'files_updated' => $applyResult['files_copied'],
                 'migrations_applied' => $migrationsApplied,
-                'backup_location' => $backupLocation
+                'backup_location' => $backupPath,
             ];
-
-        } catch (\Exception $e) {
-            $errorMsg = $e->getMessage();
-            $this->updateLogStatus($logId, 'failed', $errorMsg);
+        } catch (Throwable $e) {
+            $this->updateLogStatus($logId, 'failed', $e->getMessage());
             return [
                 'success' => false,
                 'log_id' => $logId,
-                'errors' => [$errorMsg]
+                'errors' => [$e->getMessage()],
             ];
+        } finally {
+            $this->removeDirectory($workspace);
         }
     }
 
     /**
-     * Rollback from backup
-     */
-    private function rollbackFromBackup(string $backupPath, array $files): void
-    {
-        foreach ($files as $filePath) {
-            $backupFilePath = $backupPath . '/' . $filePath;
-            $targetPath = $this->projectRoot . '/' . $filePath;
-
-            if (file_exists($backupFilePath)) {
-                // Create target directory if needed
-                $targetDir = dirname($targetPath);
-                if (!is_dir($targetDir)) {
-                    mkdir($targetDir, 0755, true);
-                }
-
-                // Restore file
-                copy($backupFilePath, $targetPath);
-            } elseif (file_exists($targetPath)) {
-                // File didn't exist in backup, remove it
-                unlink($targetPath);
-            }
-        }
-    }
-
-    /**
-     * Perform rollback for a specific update log entry
-     */
-    public function rollback(int $logId): array
-    {
-        // Get update log
-        $stmt = $this->db->prepare("SELECT * FROM update_logs WHERE id = ? AND rollback_available = TRUE");
-        $stmt->bind_param('i', $logId);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $log = $result->fetch_assoc();
-
-        if (!$log) {
-            return [
-                'success' => false,
-                'errors' => ['Update log not found or rollback not available']
-            ];
-        }
-
-        $backupPath = $log['backup_location'];
-        $filesUpdated = json_decode($log['files_updated'], true) ?? [];
-
-        if (empty($backupPath) || !is_dir($backupPath)) {
-            return [
-                'success' => false,
-                'errors' => ['Backup directory not found']
-            ];
-        }
-
-        try {
-            // Restore files from backup
-            $this->rollbackFromBackup($backupPath, $filesUpdated);
-
-            // Restore version
-            $this->settings->set('app_version', $log['version_from']);
-
-            // Update log status
-            $this->updateLogStatus($logId, 'rolled_back');
-
-            return [
-                'success' => true,
-                'message' => 'Rollback completed successfully'
-            ];
-
-        } catch (\Exception $e) {
-            return [
-                'success' => false,
-                'errors' => [$e->getMessage()]
-            ];
-        }
-    }
-
-    /**
-     * Get update history
+     * @return list<array<string, mixed>>
      */
     public function getUpdateHistory(int $limit = 10): array
     {
-        $stmt = $this->db->prepare("
-            SELECT ul.*, u.username 
-            FROM update_logs ul
-            LEFT JOIN users u ON ul.admin_user_id = u.id
-            ORDER BY ul.started_at DESC
-            LIMIT ?
-        ");
+        $stmt = $this->db->prepare(
+            'SELECT ul.*, u.username
+             FROM update_logs ul
+             LEFT JOIN users u ON ul.admin_user_id = u.id
+             ORDER BY ul.started_at DESC
+             LIMIT ?'
+        );
+        if ($stmt === false) {
+            return [];
+        }
         $stmt->bind_param('i', $limit);
         $stmt->execute();
         $result = $stmt->get_result();
-        
-        $history = [];
-        while ($row = $result->fetch_assoc()) {
-            $history[] = $row;
+
+        return $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
+    }
+
+    private function validateReleaseInput(
+        string $targetVersion,
+        string $tagName,
+        string $zipballUrl,
+        string $currentVersion
+    ): void {
+        if (preg_match('/^\d+\.\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?$/', $targetVersion) !== 1) {
+            throw new RuntimeException('The target update version is invalid.');
         }
-        
-        return $history;
+        if (strcasecmp($tagName, 'v' . $targetVersion) !== 0) {
+            throw new RuntimeException('The update tag does not match the target version.');
+        }
+        if (version_compare($currentVersion, $targetVersion, '>=')) {
+            throw new RuntimeException('The selected update is not newer than the installed version.');
+        }
+
+        $parts = parse_url($zipballUrl);
+        if (!is_array($parts)
+            || strtolower((string) ($parts['scheme'] ?? '')) !== 'https'
+            || strtolower((string) ($parts['host'] ?? '')) !== 'api.github.com') {
+            throw new RuntimeException('The update archive URL is not a trusted GitHub API URL.');
+        }
+    }
+
+    private function runPreflight(string $workspace): void
+    {
+        if (!extension_loaded('curl')) {
+            throw new RuntimeException('The PHP cURL extension is required for one-click updates.');
+        }
+        if (!class_exists(ZipArchive::class)) {
+            throw new RuntimeException('The PHP Zip extension is required for one-click updates.');
+        }
+        if (!is_writable($this->projectRoot)) {
+            throw new RuntimeException('The Simple Kuma install directory is not writable by PHP.');
+        }
+
+        if (!is_dir($workspace) && !mkdir($workspace, 0755, true) && !is_dir($workspace)) {
+            throw new RuntimeException('Could not create the temporary update workspace under storage/updates.');
+        }
+        if (!is_writable($workspace)) {
+            throw new RuntimeException('The temporary update workspace is not writable.');
+        }
+    }
+
+    private function downloadArchive(string $url, string $destination): void
+    {
+        $handle = fopen($destination, 'wb');
+        if ($handle === false) {
+            throw new RuntimeException('Could not create the temporary update archive.');
+        }
+
+        $downloaded = 0;
+        $ch = curl_init();
+        curl_setopt_array($ch, [
+            CURLOPT_URL => $url,
+            CURLOPT_FILE => $handle,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_USERAGENT => 'SimpleKuma-OneClickUpdater/1.0',
+            CURLOPT_HTTPHEADER => ['Accept: application/vnd.github+json'],
+            CURLOPT_CONNECTTIMEOUT => 15,
+            CURLOPT_TIMEOUT => 300,
+            CURLOPT_NOPROGRESS => false,
+            CURLOPT_PROGRESSFUNCTION => static function (
+                mixed $curl,
+                float $downloadTotal,
+                float $downloadNow,
+                float $uploadTotal,
+                float $uploadNow
+            ) use (&$downloaded): int {
+                $downloaded = (int) $downloadNow;
+                return $downloadNow > self::MAX_DOWNLOAD_BYTES ? 1 : 0;
+            },
+        ]);
+
+        $ok = curl_exec($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+        fclose($handle);
+
+        if ($ok !== true || $httpCode !== 200) {
+            @unlink($destination);
+            $detail = $downloaded > self::MAX_DOWNLOAD_BYTES
+                ? 'Archive exceeded the 512 MiB safety limit.'
+                : ($curlError !== '' ? $curlError : "GitHub returned HTTP {$httpCode}.");
+            throw new RuntimeException('Could not download the update archive: ' . $detail);
+        }
+        if (!is_file($destination) || filesize($destination) === 0) {
+            throw new RuntimeException('GitHub returned an empty update archive.');
+        }
+
+        $freeSpace = @disk_free_space(dirname($destination));
+        $archiveSize = filesize($destination) ?: 0;
+        if (is_float($freeSpace) && $freeSpace < ($archiveSize * 3)) {
+            throw new RuntimeException('There is not enough free disk space to extract and back up this update.');
+        }
+    }
+
+    private function extractArchive(string $archivePath, string $extractPath): void
+    {
+        if (!mkdir($extractPath, 0755, true) && !is_dir($extractPath)) {
+            throw new RuntimeException('Could not create the update extraction directory.');
+        }
+
+        $zip = new ZipArchive();
+        if ($zip->open($archivePath) !== true) {
+            throw new RuntimeException('The downloaded update is not a readable ZIP archive.');
+        }
+
+        for ($index = 0; $index < $zip->numFiles; $index++) {
+            $entry = (string) $zip->getNameIndex($index);
+            $normalized = str_replace('\\', '/', $entry);
+            if ($normalized === ''
+                || str_contains($normalized, "\0")
+                || str_starts_with($normalized, '/')
+                || preg_match('#(^|/)\.\.(/|$)#', $normalized) === 1
+                || preg_match('#^[A-Za-z]:/#', $normalized) === 1) {
+                $zip->close();
+                throw new RuntimeException('The update archive contains an unsafe file path.');
+            }
+
+            $operations = 0;
+            $attributes = 0;
+            if ($zip->getExternalAttributesIndex($index, $operations, $attributes)
+                && (($attributes >> 16) & 0170000) === 0120000) {
+                $zip->close();
+                throw new RuntimeException('The update archive contains a symbolic link.');
+            }
+        }
+
+        if (!$zip->extractTo($extractPath)) {
+            $zip->close();
+            throw new RuntimeException('Could not extract the update archive.');
+        }
+        $zip->close();
+    }
+
+    private function copyConfigBackup(string $backupPath): void
+    {
+        $configSource = $this->projectRoot . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'config.php';
+        $configBackup = $backupPath . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'config.php';
+        if (!is_dir(dirname($configBackup))
+            && !mkdir(dirname($configBackup), 0755, true)
+            && !is_dir(dirname($configBackup))) {
+            throw new RuntimeException('Could not create the configuration backup directory.');
+        }
+        if (!copy($configSource, $configBackup)) {
+            throw new RuntimeException('Could not back up config/config.php.');
+        }
+    }
+
+    private function createUpdateLog(
+        string $versionFrom,
+        string $versionTo,
+        string $updateType,
+        ?int $adminUserId
+    ): int {
+        $stmt = $this->db->prepare(
+            "INSERT INTO update_logs
+             (version_from, version_to, update_type, started_at, status, files_updated, admin_user_id)
+             VALUES (?, ?, ?, NOW(), 'pending', '[]', ?)"
+        );
+        if ($stmt === false) {
+            throw new RuntimeException('The update log table is unavailable. Apply pending database migrations first.');
+        }
+        $stmt->bind_param('sssi', $versionFrom, $versionTo, $updateType, $adminUserId);
+        if (!$stmt->execute()) {
+            throw new RuntimeException('Could not create the update log: ' . $stmt->error);
+        }
+
+        return (int) $this->db->insert_id;
+    }
+
+    private function updateLogStatus(int $logId, string $status, ?string $error = null): void
+    {
+        $completedSql = in_array($status, ['success', 'failed', 'rolled_back'], true)
+            ? ', completed_at = NOW()'
+            : '';
+        $stmt = $this->db->prepare(
+            "UPDATE update_logs SET status = ?, error_log = ?{$completedSql} WHERE id = ?"
+        );
+        if ($stmt === false) {
+            return;
+        }
+        $stmt->bind_param('ssi', $status, $error, $logId);
+        $stmt->execute();
+    }
+
+    /**
+     * @param list<string> $filesUpdated
+     * @param list<string> $migrationsApplied
+     */
+    private function updateLogDetails(
+        int $logId,
+        array $filesUpdated,
+        array $migrationsApplied,
+        int $executionTime,
+        string $backupLocation
+    ): void {
+        $filesJson = json_encode($filesUpdated, JSON_UNESCAPED_SLASHES);
+        $migrationsJson = json_encode($migrationsApplied, JSON_UNESCAPED_SLASHES);
+        $stmt = $this->db->prepare(
+            'UPDATE update_logs
+             SET files_updated = ?, migrations_applied = ?, execution_time = ?, backup_location = ?,
+                 rollback_available = FALSE
+             WHERE id = ?'
+        );
+        if ($stmt === false) {
+            return;
+        }
+        $stmt->bind_param('ssisi', $filesJson, $migrationsJson, $executionTime, $backupLocation, $logId);
+        $stmt->execute();
+    }
+
+    private function removeDirectory(string $directory): void
+    {
+        if (!is_dir($directory)) {
+            return;
+        }
+
+        $items = scandir($directory);
+        if ($items === false) {
+            return;
+        }
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+            $path = $directory . DIRECTORY_SEPARATOR . $item;
+            if (is_dir($path) && !is_link($path)) {
+                $this->removeDirectory($path);
+            } else {
+                @unlink($path);
+            }
+        }
+        @rmdir($directory);
     }
 }
-
