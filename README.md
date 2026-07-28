@@ -8,7 +8,8 @@ Built with **PHP + MySQL**, designed to run on shared hosting or a VPS, with a s
 |--|--|
 | **Website** | [https://simplekuma.com](https://simplekuma.com) |
 | **YouTube** | [https://www.youtube.com/@simplekumtracking](https://www.youtube.com/@simplekumtracking) — setup guides, updates, walkthroughs |
-| **Releases** | [GitHub Releases](https://github.com/kumatrk/initialrelease/releases) (install from the production zip) |
+| **Download** | [Simple Kuma Download](https://github.com/kumatrk/initialrelease/releases/latest) (permanent link) · [direct zip](https://github.com/kumatrk/initialrelease/releases/latest/download/simplekuma-download.zip) |
+| **Releases** | [GitHub Releases](https://github.com/kumatrk/initialrelease/releases) |
 | **License** | [AGPL-3.0](LICENSE) |
 | **Current version** | See [version.php](version.php) · changelog in [release-notes.md](release-notes.md) |
 
@@ -98,7 +99,7 @@ Authorization: Bearer YOUR_API_KEY
 
 ## Quick start (production zip)
 
-1. Download the latest **`simplekuma-v*.zip`** from [Releases](https://github.com/kumatrk/initialrelease/releases).
+1. Download **`simplekuma-download.zip`** from the permanent [Simple Kuma Download](https://github.com/kumatrk/initialrelease/releases/latest) page (or use the [direct zip link](https://github.com/kumatrk/initialrelease/releases/latest/download/simplekuma-download.zip)).
 2. Extract on your server and set the **document root to `public/`**.
 3. Create an empty MySQL / MariaDB database.
 4. Open `https://your-domain/install.php` and complete the wizard (requirements → DB → admin → migrations).
