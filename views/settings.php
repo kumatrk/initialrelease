@@ -5310,7 +5310,7 @@ $currentUser['pass_hash'] = $userRow['pass_hash'];
                               action="?page=settings&tab=updates"
                               id="application-update-form"
                               style="margin: 0;"
-                              onsubmit="if (!confirm('Install Kuma <?= htmlspecialchars((string)$lastUpdateCheck['latest_version']) ?> now?\n\nKuma will download the tagged GitHub source, preserve config and stored data, overlay application files, and run pending database migrations. Do not close this page until it finishes.')) return false; document.getElementById('application-update-button').disabled = true; document.getElementById('application-update-status').style.display = 'inline';">
+                              onsubmit="if (!confirm('Install Kuma <?= htmlspecialchars((string)$lastUpdateCheck['latest_version']) ?> now?\n\nKuma will download the permanent Simple Kuma Download release from GitHub, preserve config and stored data, overlay application files, and run pending database migrations. Do not close this page until it finishes.')) return false; document.getElementById('application-update-button').disabled = true; document.getElementById('application-update-status').style.display = 'inline';">
                             <input type="hidden" name="action" value="start_update">
                             <?= Csrf::field() ?>
                             <button type="submit" class="btn" id="application-update-button" style="padding: 12px 24px; background: #f57c00; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">

@@ -2,7 +2,7 @@
   "schema": "simplekuma-upgrade-manifest",
   "schema_version": 1,
   "release": {
-    "version": "1.1.5.6",
+    "version": "1.1.5.7",
     "release_date": "2026-07-28",
     "channel": "stable"
   },
@@ -15,8 +15,11 @@
   },
   "web_updater": {
     "location": "Kuma admin > Settings > Updates",
-    "source": "GitHub repository archive for the latest v{version} tag",
+    "source": "GitHub zipball for the permanent evergreen tag latest (Simple Kuma Download); remote version read from version.php",
     "repository": "kumatrk/initialrelease",
+    "evergreen_tag": "latest",
+    "evergreen_release_title": "Simple Kuma Download",
+    "stable_download_url": "https://github.com/kumatrk/initialrelease/releases/latest/download/simplekuma-download.zip",
     "release_zip_asset_required": false,
     "runs_pending_migrations": true
   },

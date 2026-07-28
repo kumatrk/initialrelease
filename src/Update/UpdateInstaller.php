@@ -12,7 +12,8 @@ use Throwable;
 use ZipArchive;
 
 /**
- * Installs a versioned GitHub repository archive from the Kuma settings page.
+ * Installs a GitHub repository archive from the Kuma settings page.
+ * Prefers the evergreen "latest" tag (Simple Kuma Download); version comes from version.php.
  */
 final class UpdateInstaller
 {
@@ -179,8 +180,12 @@ final class UpdateInstaller
         if (preg_match('/^\d+\.\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?$/', $targetVersion) !== 1) {
             throw new RuntimeException('The target update version is invalid.');
         }
-        if (strcasecmp($tagName, 'v' . $targetVersion) !== 0) {
-            throw new RuntimeException('The update tag does not match the target version.');
+        $isEvergreen = strcasecmp($tagName, UpdateChecker::EVERGREEN_TAG) === 0;
+        $isVersionTag = strcasecmp($tagName, 'v' . $targetVersion) === 0;
+        if (!$isEvergreen && !$isVersionTag) {
+            throw new RuntimeException(
+                'The update tag must be "' . UpdateChecker::EVERGREEN_TAG . '" or v' . $targetVersion . '.'
+            );
         }
         if (version_compare($currentVersion, $targetVersion, '>=')) {
             throw new RuntimeException('The selected update is not newer than the installed version.');

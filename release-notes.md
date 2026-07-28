@@ -1,4 +1,14 @@
-# Simple Kuma Tracker Version 1.1.5.6
+# Simple Kuma Tracker Version 1.1.5.7
+
+## Changes in 1.1.5.7
+
+### Permanent download + one-click update target
+- Public download is now a single evergreen GitHub Release: **Simple Kuma Download** (`latest` tag)
+- Stable links that never change between versions:
+  - Page: `https://github.com/kumatrk/initialrelease/releases/latest`
+  - Zip: `https://github.com/kumatrk/initialrelease/releases/latest/download/simplekuma-download.zip`
+- One-click updater watches that same `latest` release; “is there a newer build?” is decided by comparing local `version.php` to remote `version.php` on the `latest` tag
+- Historical `v{version}` tags are still created for git history; forum/YouTube links should use the permanent URLs above
 
 ## Changes in 1.1.5.6
 

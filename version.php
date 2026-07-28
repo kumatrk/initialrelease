@@ -5,7 +5,7 @@
  */
 
 return [
-    'version' => '1.1.5.6',
+    'version' => '1.1.5.7',
     'release_date' => '2026-07-28',
     'channel' => 'stable'
 ];

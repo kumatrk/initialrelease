@@ -9,7 +9,10 @@ use SimpleKuma\Settings\SettingsManager;
 
 /**
  * Update Checker
- * Checks for available updates from GitHub repository
+ *
+ * Watches the permanent evergreen GitHub Release/tag "latest"
+ * ("Simple Kuma Download"). Remote version comes from version.php on that
+ * ref — not from SemVer tag names — so forum/YouTube links never change.
  */
 class UpdateChecker
 {
@@ -18,6 +21,10 @@ class UpdateChecker
     private const GITHUB_REPO_DEFAULT = 'kumatrk/initialrelease';
     private const GITHUB_API_BASE = 'https://api.github.com/repos/';
     private const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/';
+    /** Permanent tag + Release used for public download + one-click updates */
+    public const EVERGREEN_TAG = 'latest';
+    public const EVERGREEN_RELEASE_TITLE = 'Simple Kuma Download';
+    public const EVERGREEN_ASSET_NAME = 'simplekuma-download.zip';
     private const CACHE_DURATION = 3600; // 1 hour cache
 
     public function __construct(mysqli $db)
@@ -39,6 +46,14 @@ class UpdateChecker
         return preg_match('#^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$#', $repo) === 1
             ? $repo
             : self::GITHUB_REPO_DEFAULT;
+    }
+
+    /**
+     * Stable public download page (never changes between versions).
+     */
+    public function getEvergreenReleaseUrl(): string
+    {
+        return 'https://github.com/' . $this->getRepository() . '/releases/latest';
     }
 
     /**
@@ -95,20 +110,21 @@ class UpdateChecker
         }
 
         try {
-            // Fetch latest release from GitHub
             $latestRelease = $this->fetchLatestRelease();
             
             if (!$latestRelease || !isset($latestRelease['tag_name'])) {
                 return [
                     'success' => false,
-                    'message' => 'No versioned GitHub tag was found. Releases must use tags such as v1.2.3.4.',
+                    'message' => 'No evergreen GitHub release was found. Expected tag "' . self::EVERGREEN_TAG . '" (Simple Kuma Download).',
                     'update_available' => false
                 ];
             }
 
-            $latestVersion = self::extractVersionFromTag($latestRelease['tag_name']);
-            if ($latestVersion === null) {
-                throw new \RuntimeException('The latest GitHub tag is not a supported version tag.');
+            $latestVersion = isset($latestRelease['_resolved_version'])
+                ? (string) $latestRelease['_resolved_version']
+                : (self::extractVersionFromTag((string) $latestRelease['tag_name']) ?? '');
+            if ($latestVersion === '' || !$this->isValidVersion($latestVersion)) {
+                throw new \RuntimeException('Could not read a valid version.php from the evergreen GitHub release.');
             }
             $updateAvailable = $this->compareVersions($currentVersion, $latestVersion) < 0;
             $updateType = $this->determineUpdateType($currentVersion, $latestVersion);
@@ -117,13 +133,13 @@ class UpdateChecker
                 'success' => true,
                 'current_version' => $currentVersion,
                 'latest_version' => $latestVersion,
-                'tag_name' => $latestRelease['tag_name'],
+                'tag_name' => (string) $latestRelease['tag_name'],
                 'zipball_url' => $latestRelease['zipball_url']
-                    ?? (self::GITHUB_API_BASE . $this->getRepository() . '/zipball/' . rawurlencode($latestRelease['tag_name'])),
+                    ?? (self::GITHUB_API_BASE . $this->getRepository() . '/zipball/' . rawurlencode((string) $latestRelease['tag_name'])),
                 'update_available' => $updateAvailable,
                 'update_type' => $updateType,
                 'changelog' => $latestRelease['body'] ?? '',
-                'release_url' => $latestRelease['html_url'] ?? '',
+                'release_url' => $latestRelease['html_url'] ?? $this->getEvergreenReleaseUrl(),
                 'published_at' => $latestRelease['published_at'] ?? null,
                 'checked_at' => time()
             ];
@@ -152,14 +168,73 @@ class UpdateChecker
     }
 
     /**
-     * Fetch latest release from GitHub API
+     * Resolve the evergreen release (preferred) or fall back to highest v* tag.
+     *
+     * @return array<string, mixed>|null
      */
     private function fetchLatestRelease(): ?array
     {
         $repo = $this->getRepository();
+        $evergreen = $this->fetchEvergreenRelease($repo);
+        if ($evergreen !== null) {
+            return $evergreen;
+        }
+
+        // Legacy fallback for older public trees that only have v* tags
+        return $this->fetchHighestSemverRelease($repo);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchEvergreenRelease(string $repo): ?array
+    {
+        $tag = self::EVERGREEN_TAG;
+        $remoteVersion = $this->fetchRemotePackageVersion($repo, $tag);
+        if ($remoteVersion === null) {
+            return null;
+        }
+
+        $release = null;
+        try {
+            $release = $this->fetchGitHubObject(
+                self::GITHUB_API_BASE . $repo . '/releases/tags/' . rawurlencode($tag)
+            );
+        } catch (\Exception $e) {
+            // Tag may exist without a Release object yet
+            error_log('Evergreen release lookup: ' . $e->getMessage());
+        }
+
+        if (is_array($release) && empty($release['draft'])) {
+            $release['tag_name'] = $tag;
+            $release['zipball_url'] = $release['zipball_url']
+                ?? (self::GITHUB_API_BASE . $repo . '/zipball/' . rawurlencode($tag));
+            $release['_resolved_version'] = $remoteVersion;
+            return $release;
+        }
+
+        return [
+            'tag_name' => $tag,
+            'zipball_url' => self::GITHUB_API_BASE . $repo . '/zipball/' . rawurlencode($tag),
+            'html_url' => 'https://github.com/' . $repo . '/releases/tag/' . rawurlencode($tag),
+            'body' => '',
+            'published_at' => null,
+            '_resolved_version' => $remoteVersion,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchHighestSemverRelease(string $repo): ?array
+    {
         $candidates = [];
 
-        $releases = $this->fetchGitHubJson(self::GITHUB_API_BASE . $repo . '/releases?per_page=30');
+        try {
+            $releases = $this->fetchGitHubList(self::GITHUB_API_BASE . $repo . '/releases?per_page=30');
+        } catch (\Exception $e) {
+            $releases = [];
+        }
         foreach ($releases as $release) {
             if (!is_array($release) || !empty($release['draft']) || !empty($release['prerelease'])) {
                 continue;
@@ -167,12 +242,15 @@ class UpdateChecker
             $version = self::extractVersionFromTag((string) ($release['tag_name'] ?? ''));
             if ($version !== null) {
                 $candidates[$version] = $release;
+                $candidates[$version]['_resolved_version'] = $version;
             }
         }
 
-        // A versioned Git tag is sufficient for an update; a GitHub Release
-        // and uploaded release asset are not required.
-        $tags = $this->fetchGitHubJson(self::GITHUB_API_BASE . $repo . '/tags?per_page=100');
+        try {
+            $tags = $this->fetchGitHubList(self::GITHUB_API_BASE . $repo . '/tags?per_page=100');
+        } catch (\Exception $e) {
+            $tags = [];
+        }
         foreach ($tags as $tag) {
             if (!is_array($tag)) {
                 continue;
@@ -188,6 +266,7 @@ class UpdateChecker
                 'html_url' => 'https://github.com/' . $repo . '/tree/' . rawurlencode($tagName),
                 'body' => '',
                 'published_at' => null,
+                '_resolved_version' => $version,
             ];
         }
 
@@ -198,7 +277,77 @@ class UpdateChecker
         return end($candidates) ?: null;
     }
 
-    private function fetchGitHubJson(string $url): array
+    /**
+     * Read package version from version.php at a git ref (evergreen tag or branch).
+     */
+    private function fetchRemotePackageVersion(string $repo, string $ref): ?string
+    {
+        $url = self::GITHUB_RAW_BASE . $repo . '/' . rawurlencode($ref) . '/version.php';
+        $ch = curl_init();
+        curl_setopt_array($ch, [
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_USERAGENT => 'SimpleKuma-UpdateChecker/1.0',
+            CURLOPT_TIMEOUT => 10,
+            CURLOPT_CONNECTTIMEOUT => 5,
+        ]);
+        $response = curl_exec($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($httpCode !== 200 || !is_string($response) || $response === '') {
+            return null;
+        }
+
+        return self::parseVersionFromPhpSource($response);
+    }
+
+    /**
+     * Parse `'version' => 'x.y.z'` from a version.php source string.
+     */
+    public static function parseVersionFromPhpSource(string $phpSource): ?string
+    {
+        if (preg_match("/['\"]version['\"]\\s*=>\\s*['\"]([^'\"]+)['\"]/", $phpSource, $matches) !== 1) {
+            return null;
+        }
+        $version = trim($matches[1]);
+        return preg_match('/^\\d+\\.\\d+\\.\\d+(?:\\.\\d+)?(?:-[0-9A-Za-z.-]+)?$/', $version) === 1
+            ? $version
+            : null;
+    }
+
+    /**
+     * @return list<mixed>
+     */
+    private function fetchGitHubList(string $url): array
+    {
+        $data = $this->fetchGitHubDecoded($url);
+        if (!is_array($data) || $this->isAssocArray($data)) {
+            throw new \Exception('Invalid response from GitHub: expected a JSON array.');
+        }
+        return $data;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function fetchGitHubObject(string $url): array
+    {
+        $data = $this->fetchGitHubDecoded($url);
+        if (!is_array($data) || !$this->isAssocArray($data)) {
+            throw new \Exception('Invalid response from GitHub: expected a JSON object.');
+        }
+        /** @var array<string, mixed> $data */
+        return $data;
+    }
+
+    /**
+     * @return mixed
+     */
+    private function fetchGitHubDecoded(string $url)
     {
         $ch = curl_init();
         curl_setopt_array($ch, [
@@ -228,20 +377,20 @@ class UpdateChecker
         if ($httpCode !== 200) {
             $errorMsg = "HTTP $httpCode";
             if ($httpCode === 404) {
-                $errorMsg = "Repository not found or no releases available. Please check the repository name: $repo";
+                $errorMsg = 'Repository or release not found (HTTP 404).';
             } elseif ($httpCode === 403) {
-                $errorMsg = "GitHub API rate limit exceeded or access denied. Please try again later.";
+                $errorMsg = 'GitHub API rate limit exceeded or access denied. Please try again later.';
             } else {
-                $errorData = json_decode($response, true);
+                $errorData = json_decode((string) $response, true);
                 if (isset($errorData['message'])) {
-                    $errorMsg .= " - " . $errorData['message'];
+                    $errorMsg .= ' - ' . $errorData['message'];
                 }
             }
             error_log("Update check failed: $errorMsg");
             throw new \Exception($errorMsg);
         }
 
-        $data = json_decode($response, true);
+        $data = json_decode((string) $response, true);
         
         if (json_last_error() !== JSON_ERROR_NONE) {
             $jsonError = json_last_error_msg();
@@ -249,11 +398,18 @@ class UpdateChecker
             throw new \Exception("Invalid response from GitHub: $jsonError");
         }
 
-        if (!is_array($data)) {
-            throw new \Exception('Invalid response from GitHub: expected a JSON array.');
-        }
-
         return $data;
+    }
+
+    /**
+     * @param array<mixed> $arr
+     */
+    private function isAssocArray(array $arr): bool
+    {
+        if ($arr === []) {
+            return false;
+        }
+        return array_keys($arr) !== range(0, count($arr) - 1);
     }
 
     /**
@@ -438,11 +594,11 @@ class UpdateChecker
     private function fetchRawFile(string $filename): ?string
     {
         $repo = $this->getRepository();
-        // Try main branch first, then master as fallback
-        $branches = ['main', 'master'];
+        // Prefer evergreen tag, then main/master
+        $refs = [self::EVERGREEN_TAG, 'main', 'master'];
         
-        foreach ($branches as $branch) {
-            $url = self::GITHUB_RAW_BASE . $repo . '/' . $branch . '/' . $filename;
+        foreach ($refs as $ref) {
+            $url = self::GITHUB_RAW_BASE . $repo . '/' . rawurlencode($ref) . '/' . $filename;
             
             $ch = curl_init();
             curl_setopt_array($ch, [
@@ -551,4 +707,3 @@ class UpdateChecker
         return null;
     }
 }
-
