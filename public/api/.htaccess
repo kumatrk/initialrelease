@@ -1,0 +1,6 @@
+# Google Ads Data Manager requires the HTTPS import URL path to end in .csv
+# Maps /api/google-conversions.csv → google-conversions.php (query string preserved)
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^google-conversions\.csv$ google-conversions.php [L,QSA]
+</IfModule>

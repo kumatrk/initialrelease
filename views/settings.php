@@ -3007,7 +3007,8 @@ $currentUser['pass_hash'] = $userRow['pass_hash'];
                 </div>
             <?php else: ?>
                 <?php 
-                $apiBaseUrl = APP_BASE_URL . '/api/google-conversions.php';
+                // Data Manager requires path ending in .csv (rewrites to google-conversions.php)
+                $apiBaseUrl = APP_BASE_URL . '/api/google-conversions.csv';
                 ?>
                 <!-- Google Ads Table (Desktop) -->
                 <div class="table-wrapper desktop-only" style="overflow-x: auto;">
@@ -3254,32 +3255,30 @@ $currentUser['pass_hash'] = $userRow['pass_hash'];
                                 Google Ads Conversion Script URL
                             </h3>
                             <p style="margin: 0 0 12px 0; color: #333; font-size: 14px; line-height: 1.5;">
-                                Copy this URL and paste it into your Google Ads account under <strong>Tools & Settings → Conversions → Upload</strong>:
+                                Copy this URL and paste it into Google Ads <strong>Data Manager → Connect to HTTPS</strong>. The path ends in <code>.csv</code> (required by Google); auth uses the <code>key</code> query param.
                             </p>
                             <div style="background: #fff; padding: 12px; border: 1px solid #4caf50; border-radius: 4px; margin-bottom: 12px;">
                                 <code id="ga-conversion-url" style="font-size: 12px; color: #2e7d32; word-break: break-all; font-family: 'Courier New', monospace; display: block;">
-                                    <?= htmlspecialchars(APP_BASE_URL . '/api/google-conversions.php?key=' . urlencode($editingGoogleAdsIntegration['conversion_key']) . '&camp=google') ?>
+                                    <?= htmlspecialchars(APP_BASE_URL . '/api/google-conversions.csv?key=' . urlencode($editingGoogleAdsIntegration['conversion_key']) . '&camp=google') ?>
                                 </code>
-                                <button type="button" onclick="copyToClipboard('<?= htmlspecialchars(APP_BASE_URL . '/api/google-conversions.php?key=' . urlencode($editingGoogleAdsIntegration['conversion_key']) . '&camp=google') ?>', this)" 
+                                <button type="button" onclick="copyToClipboard('<?= htmlspecialchars(APP_BASE_URL . '/api/google-conversions.csv?key=' . urlencode($editingGoogleAdsIntegration['conversion_key']) . '&camp=google') ?>', this)" 
                                         style="margin-top: 8px; padding: 6px 16px; background: #4caf50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;">
                                     📋 Copy Data Manager URL
                                 </button>
                                 <div style="margin-top: 10px; font-size: 12px; color: #555;">
                                     Legacy gclid-only schedule URL (add <code>&amp;format=legacy</code>):
                                     <code style="display:block; word-break:break-all; margin-top:4px;">
-                                        <?= htmlspecialchars(APP_BASE_URL . '/api/google-conversions.php?key=' . urlencode($editingGoogleAdsIntegration['conversion_key']) . '&camp=google&format=legacy') ?>
+                                        <?= htmlspecialchars(APP_BASE_URL . '/api/google-conversions.csv?key=' . urlencode($editingGoogleAdsIntegration['conversion_key']) . '&camp=google&format=legacy') ?>
                                     </code>
                                 </div>
                             </div>
                             <div style="font-size: 12px; color: #666; padding: 8px; background: rgba(255,255,255,0.7); border-radius: 4px;">
                                 <strong>Setup Instructions:</strong><br>
-                                1. Go to Google Ads → Tools & Settings → Conversions<br>
-                                2. Click "+" to create a new conversion action<br>
-                                3. Select "Import" → "Other data sources or CRMs"<br>
-                                4. Choose "Upload" and select "Scheduled imports"<br>
-                                5. Paste the URL above as the data source URL<br>
-                                6. Set import frequency to "Daily" or "Hourly"<br>
-                                7. Save and activate the import
+                                1. In Google Ads Data Manager, choose <strong>Connect to HTTPS</strong><br>
+                                2. Paste the URL above (must end with <code>.csv</code> before <code>?</code>)<br>
+                                3. Enter any Username and Password (Google requires both fields; Kuma auth is the <code>key</code> in the URL)<br>
+                                4. Continue to map fields and save the schedule<br>
+                                5. Set import frequency to Daily or Hourly
                             </div>
                         </div>
                         <?php endif; ?>

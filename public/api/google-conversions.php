@@ -6,6 +6,10 @@ declare(strict_types=1);
  * Simple KUMA - Google Ads Conversions API Endpoint
  * CSV for scheduled imports / Data Manager HTTP connectors.
  *
+ * Data Manager URL (path must end in .csv):
+ *   /api/google-conversions.csv?key=...&camp=google
+ * Apache rewrites that path here; do not put .csv on query params.
+ *
  * Formats:
  *   format=datamanager (default) — GCLID, GBRAID, WBRAID as separate columns
  *   format=legacy — Google Click ID column (gclid-oriented schedules)

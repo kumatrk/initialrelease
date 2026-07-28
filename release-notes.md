@@ -1,10 +1,11 @@
-# Simple Kuma Tracker Version 1.1.5.5
+# Simple Kuma Tracker Version 1.1.5.6
 
-## Unreleased
+## Changes in 1.1.5.6
 
-- Settings → Updates can check versioned `v{version}` tags in `kumatrk/initialrelease`, download the tagged repository tree, safely overlay application files, and run pending database migrations in one operation
-- One-click updates preserve `config/config.php`, `.env`, all runtime `storage/` data, existing GeoIP databases, and the locked production installer
-- The CLI release upgrader now shares the same protected-path and backup logic as the web updater
+### Google Ads Data Manager CSV URL
+- Conversion import URL now uses `/api/google-conversions.csv` so Google Data Manager accepts the HTTPS source (path must end in `.csv`)
+- Apache rewrites `.csv` to the existing `google-conversions.php` endpoint; query params (`key`, `camp`, etc.) unchanged
+- Settings → Integrations copies the `.csv` URL and documents that Username/Password fields can be any values (auth is the `key` query param)
 
 ## Changes in 1.1.5.5
 

@@ -57,6 +57,11 @@
     RewriteCond %{REQUEST_URI} ^/.*api/v1(/.*)?$
     RewriteRule ^api/v1(/.*)?$ public/api/v1/index.php [L,QSA]
 
+    # Google Ads Data Manager requires path ending in .csv/.tsv
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteCond %{REQUEST_URI} ^/.*api/google-conversions\.csv$
+    RewriteRule ^api/google-conversions\.csv$ public/api/google-conversions.php [L,QSA]
+
     # CRITICAL: Redirect /index.php to /public/index.php BEFORE PHP executes
     # This must be FIRST to catch index.php before server blocks it
     RewriteCond %{REQUEST_URI} ^/index\.php$ [NC]
