@@ -5100,13 +5100,16 @@ $currentUser['pass_hash'] = $userRow['pass_hash'];
     $updateChecker = new \SimpleKuma\Update\UpdateChecker($db);
     $currentVersion = $updateChecker->getCurrentVersion();
     $updateCheckEnabled = $updateChecker->isUpdateCheckEnabled();
-    if ($updateCheckEnabled) {
-        // Cached for one hour; only the first admin request after expiry contacts GitHub.
+    $canManageAppUpdate = $permission
+        && $permission->hasPermission(Permission::PERM_UPDATE_MANAGE);
+    // Opening Updates is intentional: admins get a fresh GitHub check (bypass 1h cache).
+    // Read-only / check-only — never installs. Banner elsewhere still uses the 1h cache.
+    if ($canManageAppUpdate) {
+        $updateChecker->checkForUpdates(true, true);
+    } elseif ($updateCheckEnabled) {
         $updateChecker->checkForUpdates();
     }
     $lastUpdateCheck = $updateChecker->getLastUpdateCheck();
-    $canManageAppUpdate = $permission
-        && $permission->hasPermission(Permission::PERM_UPDATE_MANAGE);
 
     $migrationRunner = new MigrationRunner($db);
     $dbMigrationStatus = $migrationRunner->getStatus();
@@ -5592,107 +5595,206 @@ php composer.phar install --no-dev --optimize-autoloader</pre>
     </div>
 
 <?php elseif ($activeTab === 'about'): ?>
-    <!-- About Kuma Tab -->
-    <div style="max-width: 900px; margin: 0 auto;">
-        <!-- Main Content -->
-        <div class="card" style="margin-bottom: 24px;">
-            <div class="card-body" style="padding: 40px;">
-                <div class="about-creator-grid" style="display: grid; grid-template-columns: 1fr 2fr; gap: 40px; align-items: start; margin-bottom: 32px;">
-                    <!-- Image Section -->
-                    <div class="about-creator-image" style="position: relative;">
-                        <img src="<?= ASSETS_BASE_URL ?>/assets/images/quintyfresh.jpg" 
-                             alt="QuintyFresh (Josh) - Developer" 
-                             style="width: 100%; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); border: 3px solid #3d5a26;">
-                        <div style="position: absolute; bottom: -10px; right: -10px; background: #3d5a26; color: white; padding: 8px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);">
-                            QuintyFresh
-                        </div>
-                    </div>
-                    
-                    <!-- Text Section -->
+    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/settings-about.css?v=5">
+
+    <div class="settings-about">
+        <header class="about-intro">
+            <span class="about-intro-kicker">The Kuma Spirit</span>
+            <h2>Team work makes<br>the <span>dream work</span></h2>
+            <p>
+                Simple KUMA is creator-led and community-powered. This page recognizes the people
+                whose code, ideas, and commitment have made a major impact on the project.
+            </p>
+        </header>
+
+        <div class="about-people-grid">
+            <section class="about-panel about-panel--creator" aria-labelledby="about-creator-title">
+                <div class="about-panel-heading">
                     <div>
-                        <h2 style="font-size: 32px; color: #3d5a26; margin: 0 0 16px 0; font-weight: 700;">Meet the Creator</h2>
-                        <div style="font-size: 18px; line-height: 1.8; color: #444;">
-                            <p style="margin: 0 0 20px 0;">
-                                Hey, I'm <strong style="color: #3d5a26;">QuintyFresh (Josh)</strong>, the developer behind Simple KUMA.
-                            </p>
-                            <p style="margin: 0 0 20px 0;">
-                                As many of you know, it has been a goal of mine to build a standalone FREE self hosted tracker for quite some time. With no profit motivation in mind. Why you ask?
-                            </p>
-                            <p style="margin: 0 0 20px 0;">
-                                I have been in affiliate marketing for over 10 years, and I constantly look around for the counter culture. People who do stuff because its FUN and rebellious. Where have they all gone? I built Kuma with this spirit.
-                            </p>
-                            <p style="margin: 0 0 20px 0;">
-                                It's free because I say it is. I need no other reasons.
-                            </p>
-                            <p style="margin: 20px 0 0 0; font-style: italic; color: #558b2f;">
-                                Let's sprinkle a little chaos on things. Everything needs a little good chaos every now and then.
-                            </p>
-                        </div>
+                        <h3 id="about-creator-title">Meet the Creator</h3>
+                        <p>The original bear behind Simple KUMA.</p>
                     </div>
+                    <span class="about-heading-icon" aria-hidden="true">♟</span>
                 </div>
 
-                <!-- Philosophy Section -->
-                <div style="background: linear-gradient(135deg, #f5f5f5 0%, #e8f5e9 100%); padding: 32px; border-radius: 12px; border-left: 5px solid #3d5a26; margin-bottom: 32px;">
-                    <h3 style="font-size: 24px; color: #3d5a26; margin: 0 0 16px 0; display: flex; align-items: center; gap: 12px;">
-                        <span style="font-size: 32px;">⚡</span>
-                        The Philosophy
-                    </h3>
-                    <p style="font-size: 16px; line-height: 1.8; color: #555; margin: 0;">
-                        Kuma is not meant to be the worlds most powerful tracker. I never wanted that. What I did want with this project was to create one of EASIEST and simplest trackers without any of the fluff or usual BS. No event costs, license costs, cloud hosted costs, etc. If you want an enterprise tracker, that's great, go get one. Kuma is what I designed it to be. Simple, self hosted, no super user backdoors or access, pick your own server, and most important ITS 100% FREE! Make 20 installations if you want. Go nuts.
+                <div class="about-profile">
+                    <div class="about-profile-photo-wrap">
+                        <img
+                            class="about-profile-photo"
+                            src="<?= ASSETS_BASE_URL ?>/assets/images/quintyfresh.jpg"
+                            alt="QuintyFresh (Josh), creator of Simple KUMA"
+                        >
+                        <span class="about-profile-badge">QuintyFresh</span>
+                    </div>
+
+                    <div class="about-profile-copy">
+                        <p>
+                            Hey, I'm <strong>QuintyFresh (Josh)</strong>, the developer behind Simple KUMA.
+                            I set out to build a standalone, self-hosted tracker with no profit motive
+                            and no unnecessary barriers.
+                        </p>
+                        <p>
+                            After more than 10 years in affiliate marketing, I wanted to bring back
+                            some counter-culture energy: people building useful things because it is
+                            fun, rebellious, and worth doing.
+                        </p>
+                        <p>It's free because I say it is. I need no other reason.</p>
+
+                        <blockquote class="about-quote">
+                            Let's sprinkle a little chaos on things. Everything needs a little good
+                            chaos every now and then.
+                        </blockquote>
+                    </div>
+                </div>
+            </section>
+
+            <section class="about-panel about-panel--club" aria-labelledby="kuma-club-title">
+                <div class="about-panel-heading">
+                    <div>
+                        <h3 id="kuma-club-title">The Kuma Club</h3>
+                        <p>Major code and idea contributors who help move Kuma forward.</p>
+                    </div>
+                    <span class="about-heading-icon" aria-hidden="true">♛</span>
+                </div>
+
+                <div class="kuma-club-list">
+                    <article class="kuma-member">
+                        <img
+                            class="kuma-member-photo"
+                            src="<?= ASSETS_BASE_URL ?>/assets/images/l1ght.png"
+                            alt="L1Ght"
+                        >
+                        <div>
+                            <span class="kuma-member-kicker">Founding Kuma Club member</span>
+                            <a
+                                class="kuma-member-name"
+                                href="https://afflift.com/f/members/l1ght.19997/"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                L1Ght <span aria-hidden="true">↗</span>
+                            </a>
+                            <p class="kuma-member-role">Code &amp; Ideas Contributor</p>
+                            <p class="kuma-member-patched">Patched In: July 29, 2026</p>
+                            <p class="kuma-member-description">
+                                Recognized for major contributions, sharp ideas, and helping shape
+                                Simple KUMA into a stronger tracker for everyone.
+                            </p>
+                        </div>
+                    </article>
+                </div>
+
+                <p class="kuma-club-note">
+                    <span aria-hidden="true">✦</span>
+                    The Kuma Club is reserved for community members whose lasting contributions
+                    have made a meaningful difference to the project.
+                </p>
+            </section>
+        </div>
+
+        <section class="about-values" aria-labelledby="about-values-title">
+            <div class="about-values-overview">
+                <div class="about-section-heading">
+                    <h3 id="about-values-title">Why we keep building</h3>
+                    <p>
+                        Simple KUMA is more than just a tracker. It is a passion project driven by
+                        a simple belief: tracking should be free, simple, self-hosted, and yours.
                     </p>
                 </div>
 
-                <!-- Features Highlight -->
-                <div class="about-features-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-bottom: 32px;">
-                    <div style="text-align: center; padding: 24px; background: linear-gradient(135deg, #f9f9f9 0%, #ffffff 100%); border-radius: 12px; border: 2px solid #e0e0e0; box-shadow: 0 4px 12px rgba(0,0,0,0.08); transition: transform 0.3s ease, box-shadow 0.3s ease;" onmouseover="this.style.transform='translateY(-5px)'; this.style.boxShadow='0 8px 20px rgba(61, 90, 38, 0.15)'" onmouseout="this.style.transform=''; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.08)'">
-                        <div class="about-feature-image">
-                            <img src="<?= ASSETS_BASE_URL ?>/assets/images/josh1.gif" 
-                                 alt="100% Free" 
-                                 style="width: 100%; height: 100%; border-radius: 8px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(61, 90, 38, 0.2));">
+                <div class="about-value-summary">
+                    <article>
+                        <span aria-hidden="true">💯</span>
+                        <div>
+                            <h4>100% Free</h4>
+                            <p>Always has been, always will be.</p>
                         </div>
-                        <div style="font-size: 36px; margin-bottom: 12px;">💯</div>
-                        <h4 style="color: #3d5a26; margin: 0 0 8px 0; font-size: 18px; font-weight: 600;">100% Free</h4>
-                        <p style="color: #666; margin: 0; font-size: 14px; line-height: 1.5;">Always has been, always will be</p>
-                    </div>
-                    <div style="text-align: center; padding: 24px; background: linear-gradient(135deg, #f9f9f9 0%, #ffffff 100%); border-radius: 12px; border: 2px solid #e0e0e0; box-shadow: 0 4px 12px rgba(0,0,0,0.08); transition: transform 0.3s ease, box-shadow 0.3s ease;" onmouseover="this.style.transform='translateY(-5px)'; this.style.boxShadow='0 8px 20px rgba(61, 90, 38, 0.15)'" onmouseout="this.style.transform=''; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.08)'">
-                        <div class="about-feature-image">
-                            <img src="<?= ASSETS_BASE_URL ?>/assets/images/josh3.gif" 
-                                 alt="Built for Simplicity" 
-                                 style="width: 100%; height: 100%; border-radius: 8px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(61, 90, 38, 0.2));">
+                    </article>
+                    <article>
+                        <span aria-hidden="true">🚀</span>
+                        <div>
+                            <h4>Built for Simplicity</h4>
+                            <p>Simplicity is the best weapon.</p>
                         </div>
-                        <div style="font-size: 36px; margin-bottom: 12px;">🚀</div>
-                        <h4 style="color: #3d5a26; margin: 0 0 8px 0; font-size: 18px; font-weight: 600;">Built for Simplicity</h4>
-                        <p style="color: #666; margin: 0; font-size: 14px; line-height: 1.5;">Simplicity is the best weapon</p>
-                    </div>
-                    <div style="text-align: center; padding: 24px; background: linear-gradient(135deg, #f9f9f9 0%, #ffffff 100%); border-radius: 12px; border: 2px solid #e0e0e0; box-shadow: 0 4px 12px rgba(0,0,0,0.08); transition: transform 0.3s ease, box-shadow 0.3s ease;" onmouseover="this.style.transform='translateY(-5px)'; this.style.boxShadow='0 8px 20px rgba(61, 90, 38, 0.15)'" onmouseout="this.style.transform=''; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.08)'">
-                        <div class="about-feature-image">
-                            <img src="<?= ASSETS_BASE_URL ?>/assets/images/josh2.gif" 
-                                 alt="Community Driven" 
-                                 style="width: 100%; height: 100%; border-radius: 8px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(61, 90, 38, 0.2));">
+                    </article>
+                    <article>
+                        <span aria-hidden="true">🤝</span>
+                        <div>
+                            <h4>Community Driven</h4>
+                            <p>Built by rebels, for rebels.</p>
                         </div>
-                        <div style="font-size: 36px; margin-bottom: 12px;">🤝</div>
-                        <h4 style="color: #3d5a26; margin: 0 0 8px 0; font-size: 18px; font-weight: 600;">Community Driven</h4>
-                        <p style="color: #666; margin: 0; font-size: 14px; line-height: 1.5;">Built by rebels, for rebels</p>
-                    </div>
-                </div>
-
-                <!-- Footer Message -->
-                <div style="text-align: center; padding: 32px; background: #3d5a26; color: white; border-radius: 12px;">
-                    <p style="font-size: 22px; margin: 0 0 24px 0; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">
-                        A big inspiration to why Sumple Kuma was built.
-                    </p>
-                    <div style="margin: 0 auto 32px; max-width: 800px; position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.3);">
-                        <iframe style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" 
-                                src="https://www.youtube.com/embed/kYfNvmF0Bqw" 
-                                frameborder="0" 
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                                allowfullscreen>
-                        </iframe>
-                    </div>
+                    </article>
                 </div>
             </div>
-        </div>
+
+            <div class="about-values-divider" aria-hidden="true"><span>✦</span></div>
+
+            <div class="about-values-grid">
+                <article class="about-value-card">
+                    <div class="about-value-image">
+                        <img
+                            src="<?= ASSETS_BASE_URL ?>/assets/images/josh1.gif"
+                            alt="Celebrating that Simple KUMA is 100% free"
+                        >
+                    </div>
+                    <div class="about-value-copy">
+                        <span aria-hidden="true">💯</span>
+                        <h4>100% Free</h4>
+                        <p>Always has been, always will be.</p>
+                    </div>
+                </article>
+
+                <article class="about-value-card">
+                    <div class="about-value-image">
+                        <img
+                            src="<?= ASSETS_BASE_URL ?>/assets/images/josh3.gif"
+                            alt="Simple KUMA built for simplicity"
+                        >
+                    </div>
+                    <div class="about-value-copy">
+                        <span aria-hidden="true">🚀</span>
+                        <h4>Built for Simplicity</h4>
+                        <p>Simplicity is the best weapon.</p>
+                    </div>
+                </article>
+
+                <article class="about-value-card">
+                    <div class="about-value-image">
+                        <img
+                            src="<?= ASSETS_BASE_URL ?>/assets/images/josh2.gif"
+                            alt="Simple KUMA's community-driven spirit"
+                        >
+                    </div>
+                    <div class="about-value-copy">
+                        <span aria-hidden="true">🤝</span>
+                        <h4>Community Driven</h4>
+                        <p>Built by rebels, for rebels.</p>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section class="about-inspiration" aria-labelledby="about-inspiration-title">
+            <div class="about-inspiration-copy">
+                <span class="about-eyebrow">One of the sparks</span>
+                <h3 id="about-inspiration-title">A big inspiration behind Simple KUMA</h3>
+                <p>
+                    Steve Jobs on creating for the joy of making something meaningful and putting
+                    a little dent in the universe.
+                </p>
+            </div>
+            <div class="about-video">
+                <iframe
+                    src="https://www.youtube.com/embed/kYfNvmF0Bqw"
+                    title="Steve Jobs interview: a Simple KUMA inspiration"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    referrerpolicy="strict-origin-when-cross-origin"
+                    allowfullscreen
+                ></iframe>
+            </div>
+        </section>
     </div>
+
 <?php endif; ?>
 
 

@@ -1,4 +1,12 @@
-# Simple Kuma Tracker Version 1.1.5.7
+# Simple Kuma Tracker Version 1.1.5.8
+
+## Changes in 1.1.5.8
+
+### About page + Kuma Club
+- Settings → About redesigned with a theme-aware hero banner (light and dark artwork)
+- Creator stays on the left; **The Kuma Club** on the right recognizes major code and idea contributors
+- First Kuma Club member: **L1Ght** (linked AffLift profile, avatar, Patched In: July 29, 2026)
+- Mid section compacted into a single values panel with GIF cards; Steve Jobs inspiration video retained below
 
 ## Changes in 1.1.5.7
 
@@ -7,7 +15,7 @@
 - Stable links that never change between versions:
   - Page: `https://github.com/kumatrk/initialrelease/releases/latest`
   - Zip: `https://github.com/kumatrk/initialrelease/releases/latest/download/simplekuma-download.zip`
-- One-click updater watches that same `latest` release; “is there a newer build?” is decided by comparing local `version.php` to remote `version.php` on the `latest` tag
+- One-click updater watches that same `latest` release; "is there a newer build?" is decided by comparing local `version.php` to remote `version.php` on the `latest` tag
 - Historical `v{version}` tags are still created for git history; forum/YouTube links should use the permanent URLs above
 
 ## Changes in 1.1.5.6
