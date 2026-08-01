@@ -306,6 +306,7 @@ class RequirementsChecker
                 'matomo/device-detector' => 'DeviceDetector\\DeviceDetector',
                 'phpmailer/phpmailer' => 'PHPMailer\\PHPMailer\\PHPMailer',
                 'geoip2/geoip2' => 'GeoIp2\\Database\\Reader',
+                'jaybizzle/crawler-detect' => 'Jaybizzle\\CrawlerDetect\\CrawlerDetect',
             ];
 
             $allPresent = true;

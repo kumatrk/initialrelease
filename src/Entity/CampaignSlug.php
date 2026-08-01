@@ -188,7 +188,9 @@ class CampaignSlug
         $stmt->bind_param('iss', $campaignId, $slug, $slugLabel);
 
         if ($stmt->execute()) {
-            return $stmt->insert_id;
+            $newId = (int) $stmt->insert_id;
+            \SimpleKuma\Edge\EdgeCampaignSync::hookAfterSave($this->db, $campaignId);
+            return $newId > 0 ? $newId : null;
         }
 
         return null;
@@ -244,7 +246,15 @@ class CampaignSlug
         $stmt = $this->db->prepare("UPDATE campaign_slugs SET slug = ?, slug_label = ? WHERE id = ?");
         $stmt->bind_param('ssi', $slug, $slugLabel, $id);
 
-        return $stmt->execute();
+        $ok = $stmt->execute();
+        if ($ok) {
+            $oldSlug = (string) ($existing['slug'] ?? '');
+            if ($oldSlug !== '' && $oldSlug !== $slug) {
+                \SimpleKuma\Edge\EdgeCampaignSync::hookBeforeDelete($this->db, '', [$oldSlug]);
+            }
+            \SimpleKuma\Edge\EdgeCampaignSync::hookAfterSave($this->db, $campaignId);
+        }
+        return $ok;
     }
 
     /**
@@ -254,10 +264,22 @@ class CampaignSlug
      */
     public function delete(int $id): bool
     {
+        $existing = $this->getById($id);
         $stmt = $this->db->prepare("DELETE FROM campaign_slugs WHERE id = ?");
         $stmt->bind_param('i', $id);
 
-        return $stmt->execute();
+        $ok = $stmt->execute();
+        if ($ok && $existing) {
+            $oldSlug = (string) ($existing['slug'] ?? '');
+            $campaignId = (int) ($existing['campaign_id'] ?? 0);
+            if ($oldSlug !== '') {
+                \SimpleKuma\Edge\EdgeCampaignSync::hookBeforeDelete($this->db, '', [$oldSlug]);
+            }
+            if ($campaignId > 0) {
+                \SimpleKuma\Edge\EdgeCampaignSync::hookAfterSave($this->db, $campaignId);
+            }
+        }
+        return $ok;
     }
 
     /**

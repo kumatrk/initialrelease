@@ -83,6 +83,7 @@ if (($action === 'clone' && $id) && ($_SERVER['REQUEST_METHOD'] === 'GET' || $_S
             'tracking_domain_id' => $originalCampaign['tracking_domain_id'],
             'referrer_mode' => $originalCampaign['referrer_mode'] ?? $originalCampaign['cloaking_mode'] ?? '',
             'redirectless_tracking' => !empty($originalCampaign['redirectless_tracking']),
+            'edge_enabled' => !empty($originalCampaign['edge_enabled']),
             'pass_through' => $originalCampaign['pass_through_json'] ?? [],
             'facebook_capi_integration_id' => $originalCampaign['facebook_capi_integration_id'],
             'facebook_marketing_integration_id' => $originalCampaign['facebook_marketing_integration_id'] ?? null,
@@ -403,6 +404,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'tracking_domain_id' => !empty($_POST['tracking_domain_id']) ? (int)$_POST['tracking_domain_id'] : null,
             'referrer_mode' => $_POST['referrer_mode'] ?? $_POST['cloaking_mode'] ?? '',
             'redirectless_tracking' => false, // Removed checkbox - now just informational
+            'edge_enabled' => !empty($_POST['edge_enabled']),
             'pass_through' => [], // Will implement in detail later
             'facebook_capi_integration_id' => TrafficSourceReleaseHelper::resolveFacebookIntegrationId(
                 $tsData,
@@ -2158,6 +2160,48 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                     <option value="noreferrer" <?= $editReferrerMode === 'noreferrer' ? 'selected' : '' ?>>No referrer header</option>
                                     <option value="double" <?= $editReferrerMode === 'double' ? 'selected' : '' ?>>Bear hop (two-step)</option>
                                 </select>
+                            </div>
+                        </div>
+
+                        <?php
+                        $editCampaignSafe = is_array($editCampaign) ? $editCampaign : [];
+                        $editEdgeEnabled = !empty($editCampaignSafe['edge_enabled']);
+                        $edgeEligibility = \SimpleKuma\Edge\EdgeEligibility::evaluate(array_merge($editCampaignSafe, [
+                            'edge_enabled' => true,
+                            'status' => $editCampaignSafe['status'] ?? 'active',
+                            'referrer_mode' => $editReferrerMode,
+                            'redirectless_tracking' => !empty($editCampaignSafe['redirectless_tracking']),
+                        ]));
+                        $edgeSyncedAt = $editCampaignSafe['edge_synced_at'] ?? null;
+                        $edgeSyncError = $editCampaignSafe['edge_sync_error'] ?? null;
+                        ?>
+                        <div style="margin-bottom: 20px; padding: 14px 16px; background: #f7faf4; border: 1px solid #c5d4b0; border-radius: 6px;">
+                            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                                <input type="checkbox" name="edge_enabled" value="1" <?= $editEdgeEnabled ? 'checked' : '' ?>
+                                       style="margin-top: 3px; width: 16px; height: 16px;">
+                                <span>
+                                    <strong style="display: block; color: #333; margin-bottom: 4px;">Edge redirect (Cloudflare Worker)</strong>
+                                    <span style="font-size: 13px; color: #555; line-height: 1.4;">
+                                        Serve redirects from Cloudflare’s edge for much lower latency worldwide.
+                                        Requires Edge Redirect setup under Settings. Phase 1 supports standard 302 only (no referrer privacy modes).
+                                    </span>
+                                </span>
+                            </label>
+                            <?php if ($action === 'edit' && $editEdgeEnabled): ?>
+                                <div style="margin-top: 10px; font-size: 12px; color: #555;">
+                                    <?php if (!$edgeEligibility['eligible']): ?>
+                                        <div style="color: #b45309;">Not eligible while enabled: <?= htmlspecialchars((string) $edgeEligibility['reason']) ?></div>
+                                    <?php elseif ($edgeSyncError): ?>
+                                        <div style="color: #b91c1c;">Last sync error: <?= htmlspecialchars((string) $edgeSyncError) ?></div>
+                                    <?php elseif ($edgeSyncedAt): ?>
+                                        <div style="color: #3d5a26;">Last synced to edge: <?= htmlspecialchars((string) $edgeSyncedAt) ?> UTC</div>
+                                    <?php else: ?>
+                                        <div>Waiting for first edge sync…</div>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
+                            <div style="margin-top: 8px; font-size: 12px;">
+                                <a href="?page=settings&tab=edge-redirect" style="color: #3d5a26;">Configure Edge Redirect →</a>
                             </div>
                         </div>
 

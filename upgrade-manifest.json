@@ -2,8 +2,8 @@
   "schema": "simplekuma-upgrade-manifest",
   "schema_version": 1,
   "release": {
-    "version": "1.1.5.8",
-    "release_date": "2026-07-29",
+    "version": "1.1.5.9",
+    "release_date": "2026-08-01",
     "channel": "stable"
   },
   "purpose": "Overlay this release onto an existing install without replacing config, storage, or database data.",
@@ -111,6 +111,10 @@
     {
       "file": "database/migrations/082_custom_conversion_event_mapping.sql",
       "description": "Conversion event_key + Meta CAPI event_mapping_json and send_pageview_on_click"
+    },
+    {
+      "file": "database/migrations/083_add_campaign_edge_enabled.sql",
+      "description": "Campaign edge_enabled flag + edge sync metadata for Cloudflare Worker redirects"
     }
   ],
   "agent_workflow": [

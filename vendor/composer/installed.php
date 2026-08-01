@@ -3,11 +3,11 @@
         'name' => 'simplekuma/tracker',
         'pretty_version' => 'dev-master',
         'version' => 'dev-master',
-        'reference' => '945d87dc687e50eec205b91e3246bda3d9058535',
+        'reference' => '7779abdf4321fe712fc84dc62c395ef1f1c5d47b',
         'type' => 'project',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
-        'dev' => false,
+        'dev' => true,
     ),
     'versions' => array(
         'brick/math' => array(
@@ -151,6 +151,15 @@
             'reference' => '1cf3c4a20befd7d788cf0a088c5348146e136aa2',
             'type' => 'library',
             'install_path' => __DIR__ . '/../ip2location/ip2location-php',
+            'aliases' => array(),
+            'dev_requirement' => false,
+        ),
+        'jaybizzle/crawler-detect' => array(
+            'pretty_version' => 'v1.4.1',
+            'version' => '1.4.1.0',
+            'reference' => '770e00e5bcd35054871a6f790f380123cc3b8b0c',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/../jaybizzle/crawler-detect',
             'aliases' => array(),
             'dev_requirement' => false,
         ),
@@ -319,7 +328,7 @@
         'simplekuma/tracker' => array(
             'pretty_version' => 'dev-master',
             'version' => 'dev-master',
-            'reference' => '945d87dc687e50eec205b91e3246bda3d9058535',
+            'reference' => '7779abdf4321fe712fc84dc62c395ef1f1c5d47b',
             'type' => 'project',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),

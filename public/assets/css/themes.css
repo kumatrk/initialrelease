@@ -1570,22 +1570,26 @@ body.auth-page .login-header .retro-text {
     border-color: var(--color-gray-300) !important;
 }
 
-/* ─── Settings tabs scrollbar ─── */
-[data-theme-base="dark"] .settings-tabs-wrapper {
-    scrollbar-color: var(--color-bark) var(--color-gray-100);
+/* ─── Settings nested layout (rail + mobile select) ─── */
+[data-theme-base="dark"] .settings-layout {
+    --settings-accent: var(--color-forest-light);
+    --settings-accent-strong: var(--color-forest-light);
+    --settings-border: var(--color-gray-300);
+    --settings-surface: var(--surface);
+    --settings-surface-soft: var(--surface-raised);
+    --settings-text: var(--text-primary);
+    --settings-muted: var(--text-muted);
+    --settings-active-bg: color-mix(in srgb, var(--color-forest-light) 14%, var(--surface));
 }
 
-[data-theme-base="dark"] .settings-tabs-wrapper::-webkit-scrollbar-track {
-    background: var(--color-gray-100);
+[data-theme-base="dark"] .settings-rail__item.is-active {
+    color: var(--color-forest-light);
 }
 
-[data-theme-base="dark"] .settings-tabs-wrapper a[href*="page=settings"] {
-    color: var(--color-gray-600) !important;
-}
-
-[data-theme-base="dark"] .settings-tabs-wrapper a[href*="page=settings"][style*="color: #3d5a26"],
-[data-theme-base="dark"] .settings-tabs-wrapper a[href*="page=settings"][style*="color:#3d5a26"] {
-    color: var(--color-forest-light) !important;
+[data-theme-base="dark"] .settings-mobile-select {
+    background: var(--surface-raised);
+    border-color: var(--color-gray-300);
+    color: var(--text-primary);
 }
 
 /* ─── Click Lookup result cards ─── */

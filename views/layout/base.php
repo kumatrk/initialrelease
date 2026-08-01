@@ -66,6 +66,7 @@ $dashboardChartsHidden = !empty($GLOBALS['dashboardChartsHidden']);
     <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/mobile-billing.css">
     <!-- MOBILE SETTINGS STYLES - To remove mobile styles, delete the line below and delete public/assets/css/mobile-settings.css -->
     <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/mobile-settings.css">
+    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/settings-layout.css?v=1">
 </head>
 <body>
     <div class="app-wrapper">
@@ -329,69 +330,60 @@ $dashboardChartsHidden = !empty($GLOBALS['dashboardChartsHidden']);
                 </div>
             </nav>
             
-            <!-- Update Notification Banner -->
+            <!-- Update Notification Banner (cache-only on render; GitHub refresh is async) -->
             <?php
-            // Check for updates if enabled (only on admin pages, not tracking endpoints)
             $currentPage = $GLOBALS['currentPage'] ?? '';
             $showUpdateCheck = !empty($currentPage) && $currentPage !== 'tracking';
+            $updateBannerShown = false;
+            $scheduleLazyUpdateCheck = false;
             if ($showUpdateCheck) {
                 try {
                     require_once __DIR__ . '/../../src/Update/UpdateChecker.php';
-                    // Always create a fresh database connection for update check
-                    // This avoids issues with closed connections from the main request
                     $updateDb = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
                     if ($updateDb->connect_error) {
-                        throw new \Exception("Database connection failed: " . $updateDb->connect_error);
+                        throw new \Exception('Database connection failed: ' . $updateDb->connect_error);
                     }
                     $updateChecker = new \SimpleKuma\Update\UpdateChecker($updateDb);
-                    
-                    // TEST MODE: Force show notification banner (remove this after testing)
-                    $testMode = false; // Set to false to disable test mode
-                    
-                    if ($testMode) {
-                        // Show test notification banner
-                        $updateInfo = [
-                            'success' => true,
-                            'update_available' => true,
-                            'current_version' => $skAppVersion,
-                            'latest_version' => '1.2.3',
-                            'update_type' => 'minor'
-                        ];
-                    } elseif ($updateChecker->isUpdateCheckEnabled()) {
-                        // UpdateChecker caches successful checks for one hour, so only
-                        // the first admin request after expiry contacts GitHub.
-                        $updateInfo = $updateChecker->checkForUpdates();
-                    } else {
-                        $updateInfo = ['success' => false, 'update_available' => false];
-                    }
-                    
-                    if ($updateInfo['success'] && $updateInfo['update_available']) {
-                        $updateType = $updateInfo['update_type'] ?? 'patch';
-                        $typeColors = [
-                            'major' => '#d32f2f',
-                            'minor' => '#f57c00',
-                            'patch' => '#1976d2',
-                            'hotfix' => '#c62828'
-                        ];
-                        $typeColor = $typeColors[$updateType] ?? '#1976d2';
-                        ?>
+
+                    if ($updateChecker->isUpdateCheckEnabled()) {
+                        // Never call GitHub during page render — use cache only.
+                        // Stale cache still shows a known "update available" banner;
+                        // a background fetch refreshes when the hour cache expires.
+                        $updateInfo = $updateChecker->getCachedResult(true);
+                        $scheduleLazyUpdateCheck = !$updateChecker->isCacheFresh();
+
+                        if (
+                            is_array($updateInfo)
+                            && !empty($updateInfo['success'])
+                            && !empty($updateInfo['update_available'])
+                        ) {
+                            $updateType = $updateInfo['update_type'] ?? 'patch';
+                            $typeColors = [
+                                'major' => '#d32f2f',
+                                'minor' => '#f57c00',
+                                'patch' => '#1976d2',
+                                'hotfix' => '#c62828',
+                            ];
+                            $typeColor = $typeColors[$updateType] ?? '#1976d2';
+                            $updateBannerShown = true;
+                            ?>
                         <div id="update-notification-banner" style="background: linear-gradient(135deg, <?= $typeColor ?> 0%, <?= $typeColor ?>dd 100%); color: #ffffff; padding: 16px 24px; margin: 0; border-bottom: 2px solid rgba(255,255,255,0.2); box-shadow: 0 2px 8px rgba(0,0,0,0.1); position: relative; z-index: 100;">
                             <div style="display: flex; align-items: center; justify-content: space-between; max-width: 1400px; margin: 0 auto; flex-wrap: wrap; gap: 16px;">
                                 <div style="display: flex; align-items: center; gap: 16px; flex: 1; min-width: 200px;">
                                     <span style="font-size: 28px;">🔔</span>
                                     <div>
                                         <strong style="font-size: 18px; display: block; margin-bottom: 4px;">Update Available</strong>
-                                        <span style="font-size: 15px; opacity: 0.95;">Kuma <?= htmlspecialchars($updateInfo['latest_version']) ?> is available (you're on <?= htmlspecialchars($updateInfo['current_version']) ?>)</span>
+                                        <span style="font-size: 15px; opacity: 0.95;">Kuma <?= htmlspecialchars((string) $updateInfo['latest_version']) ?> is available (you're on <?= htmlspecialchars((string) $updateInfo['current_version']) ?>)</span>
                                     </div>
                                 </div>
                                 <div style="display: flex; align-items: center; gap: 12px;">
-                                    <a href="?page=settings&tab=updates" 
+                                    <a href="?page=settings&tab=updates"
                                        style="padding: 10px 20px; background: rgba(255,255,255,0.2); color: #ffffff; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; text-decoration: none; font-size: 15px; font-weight: 600; transition: all 0.2s; white-space: nowrap;"
                                        onmouseover="this.style.background='rgba(255,255,255,0.3)'; this.style.borderColor='rgba(255,255,255,0.5)'"
                                        onmouseout="this.style.background='rgba(255,255,255,0.2)'; this.style.borderColor='rgba(255,255,255,0.3)'">
                                         View Details
                                     </a>
-                                    <button onclick="document.getElementById('update-notification-banner').style.display='none'; localStorage.setItem('update_notification_dismissed_<?= htmlspecialchars($updateInfo['latest_version']) ?>', 'true');" 
+                                    <button type="button" onclick="document.getElementById('update-notification-banner').style.display='none'; localStorage.setItem('update_notification_dismissed_<?= htmlspecialchars((string) $updateInfo['latest_version']) ?>', 'true');"
                                             style="padding: 10px 14px; background: transparent; color: #ffffff; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; cursor: pointer; font-size: 22px; line-height: 1; transition: all 0.2s;"
                                             onmouseover="this.style.background='rgba(255,255,255,0.2)'"
                                             onmouseout="this.style.background='transparent'"
@@ -402,31 +394,96 @@ $dashboardChartsHidden = !empty($GLOBALS['dashboardChartsHidden']);
                             </div>
                         </div>
                         <script>
-                        // In test mode, always show the banner and clear any previous dismissals
-                        <?php if ($testMode): ?>
-                        // Clear all update notification dismissals for testing
-                        Object.keys(localStorage).forEach(key => {
-                            if (key.startsWith('update_notification_dismissed_')) {
-                                localStorage.removeItem(key);
-                            }
-                        });
-                        // Ensure banner is visible
-                        document.getElementById('update-notification-banner').style.display = '';
-                        <?php else: ?>
-                        // Check if user previously dismissed this version (only in non-test mode)
-                        if (localStorage.getItem('update_notification_dismissed_<?= htmlspecialchars($updateInfo['latest_version']) ?>') === 'true') {
+                        if (localStorage.getItem('update_notification_dismissed_<?= htmlspecialchars((string) $updateInfo['latest_version']) ?>') === 'true') {
                             document.getElementById('update-notification-banner').style.display = 'none';
                         }
-                        <?php endif; ?>
                         </script>
-                        <?php
+                            <?php
+                        }
                     }
+                    $updateDb->close();
                 } catch (\Exception $e) {
-                    // Silently fail - don't break the page if update check fails
-                    error_log("Update check error: " . $e->getMessage());
+                    error_log('Update check error: ' . $e->getMessage());
                 }
             }
-            ?>
+
+            if ($scheduleLazyUpdateCheck && !$updateBannerShown):
+                $lazyUpdateCheckUrl = APP_BASE_URL . '/api-check-updates.php';
+                ?>
+            <div id="update-notification-slot"></div>
+            <script>
+            (function () {
+                var apiUrl = <?= json_encode($lazyUpdateCheckUrl, JSON_THROW_ON_ERROR) ?>;
+                var typeColors = { major: '#d32f2f', minor: '#f57c00', patch: '#1976d2', hotfix: '#c62828' };
+
+                function showBanner(info) {
+                    if (!info || !info.update_available || !info.latest_version) return;
+                    if (localStorage.getItem('update_notification_dismissed_' + info.latest_version) === 'true') return;
+                    if (document.getElementById('update-notification-banner')) return;
+
+                    var color = typeColors[info.update_type] || '#1976d2';
+                    var slot = document.getElementById('update-notification-slot');
+                    if (!slot) return;
+
+                    var latest = String(info.latest_version);
+                    var current = String(info.current_version || <?= json_encode($skAppVersion, JSON_THROW_ON_ERROR) ?>);
+                    var esc = function (s) {
+                        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+                    };
+
+                    slot.outerHTML =
+                        '<div id="update-notification-banner" style="background: linear-gradient(135deg, ' + color + ' 0%, ' + color + 'dd 100%); color: #ffffff; padding: 16px 24px; margin: 0; border-bottom: 2px solid rgba(255,255,255,0.2); box-shadow: 0 2px 8px rgba(0,0,0,0.1); position: relative; z-index: 100;">' +
+                        '<div style="display: flex; align-items: center; justify-content: space-between; max-width: 1400px; margin: 0 auto; flex-wrap: wrap; gap: 16px;">' +
+                        '<div style="display: flex; align-items: center; gap: 16px; flex: 1; min-width: 200px;">' +
+                        '<span style="font-size: 28px;">🔔</span><div>' +
+                        '<strong style="font-size: 18px; display: block; margin-bottom: 4px;">Update Available</strong>' +
+                        '<span style="font-size: 15px; opacity: 0.95;">Kuma ' + esc(latest) + ' is available (you\'re on ' + esc(current) + ')</span>' +
+                        '</div></div>' +
+                        '<div style="display: flex; align-items: center; gap: 12px;">' +
+                        '<a href="?page=settings&tab=updates" style="padding: 10px 20px; background: rgba(255,255,255,0.2); color: #ffffff; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; text-decoration: none; font-size: 15px; font-weight: 600; white-space: nowrap;">View Details</a>' +
+                        '<button type="button" id="update-notification-dismiss" style="padding: 10px 14px; background: transparent; color: #ffffff; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; cursor: pointer; font-size: 22px; line-height: 1;" title="Dismiss">×</button>' +
+                        '</div></div></div>';
+
+                    var dismissBtn = document.getElementById('update-notification-dismiss');
+                    if (dismissBtn) {
+                        dismissBtn.addEventListener('click', function () {
+                            var banner = document.getElementById('update-notification-banner');
+                            if (banner) banner.style.display = 'none';
+                            localStorage.setItem('update_notification_dismissed_' + latest, 'true');
+                        });
+                    }
+                }
+
+                function runCheck() {
+                    fetch(apiUrl, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                        .then(function (r) { return r.json(); })
+                        .then(showBanner)
+                        .catch(function () { /* ignore */ });
+                }
+
+                if ('requestIdleCallback' in window) {
+                    requestIdleCallback(runCheck, { timeout: 4000 });
+                } else {
+                    setTimeout(runCheck, 1500);
+                }
+            })();
+            </script>
+            <?php elseif ($scheduleLazyUpdateCheck): ?>
+            <script>
+            (function () {
+                var apiUrl = <?= json_encode(APP_BASE_URL . '/api-check-updates.php', JSON_THROW_ON_ERROR) ?>;
+                function runCheck() {
+                    fetch(apiUrl, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                        .catch(function () { /* ignore */ });
+                }
+                if ('requestIdleCallback' in window) {
+                    requestIdleCallback(runCheck, { timeout: 4000 });
+                } else {
+                    setTimeout(runCheck, 1500);
+                }
+            })();
+            </script>
+            <?php endif; ?>
             
             <!-- Content Container -->
             <div class="content-container">

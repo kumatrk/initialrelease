@@ -1,0 +1,168 @@
+/**
+ * Settings → Edge Redirect tab
+ * Uses semantic theme tokens so light/dark both work.
+ */
+.settings-edge-redirect {
+    --edge-surface: var(--surface);
+    --edge-surface-soft: var(--surface-raised);
+    --edge-border: var(--border-color);
+    --edge-text: var(--text-primary);
+    --edge-muted: var(--text-muted);
+    --edge-accent: var(--color-forest-dark);
+    --edge-ok: var(--color-forest-dark);
+    --edge-warn: #d97706;
+    --edge-callout-bg: color-mix(in srgb, var(--color-bark) 14%, var(--surface));
+    --edge-callout-border: color-mix(in srgb, var(--color-bark) 45%, var(--border-color));
+    --edge-callout-text: var(--text-primary);
+    max-width: 900px;
+    color: var(--edge-text);
+}
+
+[data-theme="dark"] .settings-edge-redirect {
+    --edge-warn: #f0b429;
+    --edge-callout-bg: color-mix(in srgb, var(--color-bark) 18%, var(--surface-raised));
+    --edge-callout-border: color-mix(in srgb, var(--color-bark) 40%, var(--border-color));
+}
+
+.settings-edge-redirect h2 {
+    margin-top: 0;
+    color: var(--edge-accent);
+}
+
+.settings-edge-redirect__intro {
+    color: var(--edge-muted);
+    line-height: 1.5;
+    margin-bottom: 20px;
+}
+
+.settings-edge-redirect__stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.settings-edge-redirect__stat {
+    padding: 12px 14px;
+    background: var(--edge-surface-soft);
+    border-radius: 6px;
+    border: 1px solid var(--edge-border);
+}
+
+.settings-edge-redirect__stat-label {
+    font-size: 12px;
+    color: var(--edge-muted);
+    margin-bottom: 4px;
+}
+
+.settings-edge-redirect__stat-value {
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--edge-text);
+}
+
+.settings-edge-redirect__stat-value.is-muted {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--edge-muted);
+}
+
+.settings-edge-redirect__stat-value.is-ok {
+    color: var(--edge-ok);
+}
+
+.settings-edge-redirect__stat-value.is-warn {
+    color: var(--edge-warn);
+}
+
+.settings-edge-redirect__health-note {
+    font-size: 13px;
+    color: var(--edge-muted);
+    margin-top: -8px;
+}
+
+.settings-edge-redirect__form {
+    margin-bottom: 28px;
+}
+
+.settings-edge-redirect__fields {
+    display: grid;
+    gap: 14px;
+}
+
+.settings-edge-redirect label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--edge-text);
+}
+
+.settings-edge-redirect input[type="text"],
+.settings-edge-redirect input[type="password"],
+.settings-edge-redirect input[type="url"] {
+    width: 100%;
+    padding: 10px;
+    border: 2px solid var(--input-border);
+    border-radius: 4px;
+    background: var(--input-bg);
+    color: var(--input-text);
+    box-sizing: border-box;
+}
+
+.settings-edge-redirect input::placeholder {
+    color: var(--input-placeholder);
+}
+
+.settings-edge-redirect__hint {
+    font-size: 12px;
+    color: var(--edge-muted);
+    margin-top: 4px;
+}
+
+.settings-edge-redirect__hint code {
+    font-size: 11px;
+    word-break: break-all;
+}
+
+.settings-edge-redirect__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 28px;
+}
+
+.settings-edge-redirect__actions form {
+    margin: 0;
+}
+
+.settings-edge-redirect__callout {
+    padding: 16px;
+    background: var(--edge-callout-bg);
+    border: 1px solid var(--edge-callout-border);
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--edge-callout-text);
+}
+
+.settings-edge-redirect__callout ol {
+    margin: 8px 0 0 18px;
+    padding: 0;
+}
+
+.settings-edge-redirect__callout li + li {
+    margin-top: 10px;
+}
+
+.settings-edge-redirect__callout-note {
+    margin: 14px 0 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--edge-callout-border);
+    color: var(--edge-muted);
+}
+
+.settings-edge-redirect__meta {
+    margin-top: 16px;
+    font-size: 12px;
+    color: var(--edge-muted);
+}

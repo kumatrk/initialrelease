@@ -49,6 +49,7 @@ class CampaignFormParser
             'tracking_domain_id' => !empty($post['tracking_domain_id']) ? (int)$post['tracking_domain_id'] : null,
             'referrer_mode' => $post['referrer_mode'] ?? $post['cloaking_mode'] ?? '',
             'redirectless_tracking' => false,
+            'edge_enabled' => !empty($post['edge_enabled']),
             'pass_through' => [],
             'facebook_capi_integration_id' => TrafficSourceReleaseHelper::resolveFacebookIntegrationId(
                 $tsData,
@@ -154,6 +155,7 @@ class CampaignFormParser
             'tracking_domain_id' => !empty($input['tracking_domain_id']) ? (int)$input['tracking_domain_id'] : null,
             'referrer_mode' => $input['referrer_mode'] ?? $input['cloaking_mode'] ?? '',
             'redirectless_tracking' => false,
+            'edge_enabled' => !empty($input['edge_enabled']),
             'pass_through' => [],
             'facebook_capi_integration_id' => TrafficSourceReleaseHelper::resolveFacebookIntegrationId(
                 $tsData,

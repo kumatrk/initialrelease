@@ -6,6 +6,7 @@ namespace SimpleKuma\Entity;
 
 use mysqli;
 use SimpleKuma\Campaign\CampaignRotationReference;
+use SimpleKuma\Edge\EdgeCampaignSync;
 
 /**
  * Landing Page Entity
@@ -59,7 +60,11 @@ class LandingPage
         );
 
         $stmt->bind_param('sssi', $data['name'], $data['url'], $data['notes'], $id);
-        return $stmt->execute();
+        $ok = $stmt->execute();
+        if ($ok) {
+            EdgeCampaignSync::hookLandingPageChanged($this->db, $id);
+        }
+        return $ok;
     }
 
     /**
@@ -83,7 +88,11 @@ class LandingPage
 
         $stmt = $this->db->prepare("DELETE FROM landing_pages WHERE id = ?");
         $stmt->bind_param('i', $id);
-        return $stmt->execute();
+        $ok = $stmt->execute();
+        if ($ok) {
+            EdgeCampaignSync::hookLandingPageChanged($this->db, $id);
+        }
+        return $ok;
     }
 
     public function validate(array $data): array

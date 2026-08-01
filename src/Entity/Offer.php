@@ -6,6 +6,7 @@ namespace SimpleKuma\Entity;
 
 use mysqli;
 use SimpleKuma\Campaign\CampaignRotationReference;
+use SimpleKuma\Edge\EdgeCampaignSync;
 
 /**
  * Offer Entity
@@ -146,7 +147,11 @@ class Offer
             $id
         );
 
-        return $stmt->execute();
+        $ok = $stmt->execute();
+        if ($ok) {
+            EdgeCampaignSync::hookOfferChanged($this->db, $id);
+        }
+        return $ok;
     }
 
     /**
@@ -170,7 +175,11 @@ class Offer
 
         $stmt = $this->db->prepare("DELETE FROM offers WHERE id = ?");
         $stmt->bind_param('i', $id);
-        return $stmt->execute();
+        $ok = $stmt->execute();
+        if ($ok) {
+            EdgeCampaignSync::hookOfferChanged($this->db, $id);
+        }
+        return $ok;
     }
 
     public function validate(array $data): array

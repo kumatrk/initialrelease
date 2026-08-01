@@ -473,6 +473,13 @@ class RedirectlessTracker
             'landing_page_id' => $landingPageId,
             'cookies' => [] // Store Facebook cookies for CAPI postbacks
         ];
+
+        $botDetection = \SimpleKuma\Enrichment\BotDetector::detect(
+            $ua,
+            $deviceData,
+            $this->getBotDetectionOptions()
+        );
+        $extraData['bot'] = \SimpleKuma\Enrichment\BotDetector::toExtraJson($botDetection);
         
         // Capture Facebook cookies (_fbc and _fbp) for Conversions API
         // Meta's best practice: Use _fbc cookie directly if available
@@ -690,6 +697,28 @@ class RedirectlessTracker
         }
         
         return $ip; // Return as-is if unable to anonymize
+    }
+
+    /**
+     * @return array{enabled: bool, exclude_known: bool, exclude_suspected: bool, check_headers: bool}
+     */
+    private function getBotDetectionOptions(): array
+    {
+        $defaults = [
+            'bot_detection_enabled' => '1',
+            'bot_exclude_known_from_stats' => '1',
+            'bot_exclude_suspected_from_stats' => '0',
+        ];
+        $vals = $this->settings !== null
+            ? $this->settings->getMany(array_keys($defaults), $defaults)
+            : $defaults;
+
+        return [
+            'enabled' => ($vals['bot_detection_enabled'] ?? '1') === '1',
+            'exclude_known' => ($vals['bot_exclude_known_from_stats'] ?? '1') === '1',
+            'exclude_suspected' => ($vals['bot_exclude_suspected_from_stats'] ?? '0') === '1',
+            'check_headers' => false,
+        ];
     }
 }
 

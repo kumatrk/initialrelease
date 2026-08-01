@@ -1,4 +1,26 @@
-# Simple Kuma Tracker Version 1.1.5.8
+# Simple Kuma Tracker Version 1.1.5.9
+
+## Changes in 1.1.5.9
+
+### Settings UI overhaul
+- Settings navigation redesigned for faster tab discovery and clearer mobile layout
+- New settings layout/CSS so related options (tracking, bots, edge, about, updates) are easier to find
+
+### About page — contributors & open source
+- Settings → About highlights **The Kuma Club** for major code and idea contributors
+- Open-source credits section for libraries we ship (including Crawler-Detect and Matomo DeviceDetector) with links to their repos
+
+### Bot detection
+- Click ingest detects known crawlers/bots (Matomo DeviceDetector + JayBizzle Crawler-Detect)
+- Settings toggles to enable detection and optionally exclude known/suspected bots from stats
+- Known bots are stored for audit but can be omitted from reports without slowing redirects
+
+### Cloudflare Edge Redirect (Phase 1)
+- Optional Cloudflare Worker redirects eligible campaigns at the edge with async click ingest back to origin
+- Settings → Edge Redirect: deploy Worker, sync campaign KV snapshots, health check, rotate ingest secret, disable (removes route + clears KV)
+- Per-campaign **Edge redirect** toggle; migration **083** (`edge_enabled` + sync metadata)
+- Phase 1 stays on origin for redirectless, cloaking/referrer modes, offer caps, and advanced URL `{tokens}`
+- Worker mirrors origin param allowlists (`pass_to_lp` / `pass_to_offer`), slug attribution, and HMAC-secured ingest
 
 ## Changes in 1.1.5.8
 

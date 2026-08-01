@@ -103,8 +103,8 @@ class UpdateChecker
         
         // Check cache first (unless bypassing)
         if (!$bypassCache) {
-            $cached = $this->getCachedUpdateInfo();
-            if ($cached && (time() - $cached['checked_at']) < self::CACHE_DURATION) {
+            $cached = $this->getCachedResult(false);
+            if ($cached !== null) {
                 return $cached;
             }
         }
@@ -465,28 +465,42 @@ class UpdateChecker
     }
 
     /**
+     * Whether the last successful cache is still within CACHE_DURATION.
+     */
+    public function isCacheFresh(): bool
+    {
+        $cacheTime = (int) $this->settings->get('update_check_cache_time', '0');
+        return $cacheTime > 0 && (time() - $cacheTime) < self::CACHE_DURATION;
+    }
+
+    /**
+     * Read cached update info without contacting GitHub.
+     *
+     * @param bool $allowStale If true, return cache even after CACHE_DURATION expires
+     * @return array<string, mixed>|null
+     */
+    public function getCachedResult(bool $allowStale = false): ?array
+    {
+        $cache = $this->settings->get('update_check_cache', null);
+        if ($cache === null || $cache === '') {
+            return null;
+        }
+
+        if (!$allowStale && !$this->isCacheFresh()) {
+            return null;
+        }
+
+        $data = json_decode((string) $cache, true);
+        return is_array($data) ? $data : null;
+    }
+
+    /**
      * Cache update info in settings
      */
     private function cacheUpdateInfo(array $info): void
     {
         $this->settings->set('update_check_cache', json_encode($info));
         $this->settings->set('update_check_cache_time', (string)time());
-    }
-
-    /**
-     * Get cached update info
-     */
-    private function getCachedUpdateInfo(): ?array
-    {
-        $cache = $this->settings->get('update_check_cache', null);
-        $cacheTime = $this->settings->get('update_check_cache_time', '0');
-        
-        if (!$cache || (time() - (int)$cacheTime) >= self::CACHE_DURATION) {
-            return null;
-        }
-
-        $data = json_decode($cache, true);
-        return $data ?: null;
     }
 
     /**

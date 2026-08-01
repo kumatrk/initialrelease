@@ -136,6 +136,9 @@ class CampaignStatsExpressions
     /**
      * PHP write-path mirror of excludeInvalidClickWhere / validClickCase.
      *
+     * Also honors write-time bot classification in extra_json.bot (set by BotDetector)
+     * so DailySummaryUpdater skips aggregates without re-running UA detection.
+     *
      * @param array<string, mixed>|null $extraData
      */
     public static function shouldExcludeClickFromStats(
@@ -146,6 +149,14 @@ class CampaignStatsExpressions
         if (self::isFacebookCrawlerUa($ua)) {
             return true;
         }
+
+        // Write-time bot flag (known bots / optional suspected) — no re-detection
+        if (is_array($extraData) && isset($extraData['bot']) && is_array($extraData['bot'])) {
+            if (!empty($extraData['bot']['exclude_from_stats'])) {
+                return true;
+            }
+        }
+
         if ($trafficSourceId !== self::FACEBOOK_TRAFFIC_SOURCE_ID) {
             return false;
         }

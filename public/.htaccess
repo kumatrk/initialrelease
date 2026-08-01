@@ -70,6 +70,9 @@
     # Google Ads Data Manager requires path ending in .csv/.tsv
     # (query-string tricks like &camp=google.csv break camp= filtering)
     RewriteRule ^api/google-conversions\.csv$ api/google-conversions.php [L,QSA]
+
+    # Edge Redirect Worker async click ingest
+    RewriteRule ^api/edge-click/?$ api/edge-click.php [L,QSA]
     
     # Route everything else to index.php (only if file doesn't exist)
     RewriteCond %{REQUEST_FILENAME} !-f

@@ -279,6 +279,12 @@ if (isset($_GET['success'])) {
         'db_migrations_applied' => 'Database updated successfully',
         'db_up_to_date' => 'Database schema is already up to date',
         'login_gate_saved' => 'Login page privacy settings saved.',
+        'edge_settings_saved' => 'Edge Redirect settings saved',
+        'edge_deployed' => 'Edge Redirect Worker deployed successfully',
+        'edge_disabled' => 'Edge Redirect disabled',
+        'edge_health_ok' => 'Edge health check passed',
+        'edge_synced' => 'Campaigns synced to Cloudflare KV',
+        'edge_secret_rotated' => 'Ingest secret rotated — redeploy the Worker to push the new secret',
     ];
     $success = $successMap[$_GET['success']] ?? '';
     if ($_GET['success'] === 'login_gate_saved' && !empty($_SESSION['login_gate_url_reveal'])) {
@@ -535,6 +541,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'fb_capi_test_code' => $_POST['fb_capi_test_code'] ?? '',
             'log_retention_days' => $_POST['log_retention_days'] ?? '0',
             'ip_anonymization' => isset($_POST['ip_anonymization']) ? '1' : '0',
+            'bot_detection_enabled' => isset($_POST['bot_detection_enabled']) ? '1' : '0',
+            'bot_exclude_known_from_stats' => isset($_POST['bot_exclude_known_from_stats']) ? '1' : '0',
+            'bot_exclude_suspected_from_stats' => isset($_POST['bot_exclude_suspected_from_stats']) ? '1' : '0',
             'archive_after_days' => $_POST['archive_after_days'] ?? '365',
         ];
 
@@ -542,6 +551,88 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $success = 'Settings saved successfully';
         } else {
             $errors['general'] = 'Failed to save settings';
+        }
+    } elseif ($action === 'save_edge_redirect_settings') {
+        $canEdit = $permission && $permission->hasPermission(Permission::PERM_SETTINGS_EDIT);
+        if (!$canEdit) {
+            $errors['general'] = 'You do not have permission to edit settings.';
+        } else {
+            $edgeSettings = new \SimpleKuma\Edge\EdgeSettings($db);
+            $sm = $edgeSettings->settingsManager();
+            $sm->set(\SimpleKuma\Edge\EdgeSettings::KEY_CF_ACCOUNT_ID, trim((string) ($_POST['cf_account_id'] ?? '')));
+            $sm->set(\SimpleKuma\Edge\EdgeSettings::KEY_CF_ZONE_ID, trim((string) ($_POST['cf_zone_id'] ?? '')));
+            $sm->set(\SimpleKuma\Edge\EdgeSettings::KEY_CF_WORKER_NAME, trim((string) ($_POST['cf_worker_name'] ?? '')) ?: \SimpleKuma\Edge\EdgeSettings::DEFAULT_WORKER_NAME);
+            $sm->set(\SimpleKuma\Edge\EdgeSettings::KEY_CF_ROUTE_PATTERN, trim((string) ($_POST['cf_route_pattern'] ?? '')));
+            $sm->set(\SimpleKuma\Edge\EdgeSettings::KEY_ORIGIN_BASE_URL, rtrim(trim((string) ($_POST['origin_base_url'] ?? '')), '/'));
+
+            $apiToken = trim((string) ($_POST['cf_api_token'] ?? ''));
+            if ($apiToken !== '') {
+                $edgeSettings->setApiToken($apiToken);
+            }
+
+            $edgeSettings->ensureIngestSecret();
+            header('Location: ?page=settings&tab=edge-redirect&success=edge_settings_saved');
+            exit;
+        }
+    } elseif ($action === 'deploy_edge_worker') {
+        $canEdit = $permission && $permission->hasPermission(Permission::PERM_SETTINGS_EDIT);
+        if (!$canEdit) {
+            $errors['general'] = 'You do not have permission to deploy the Edge Worker.';
+        } else {
+            $deployer = new \SimpleKuma\Edge\EdgeDeployer($db);
+            $result = $deployer->deploy();
+            if ($result['ok']) {
+                header('Location: ?page=settings&tab=edge-redirect&success=edge_deployed');
+                exit;
+            }
+            $errors['general'] = $result['message'];
+        }
+    } elseif ($action === 'edge_health_check') {
+        $canEdit = $permission && $permission->hasPermission(Permission::PERM_SETTINGS_EDIT);
+        if (!$canEdit) {
+            $errors['general'] = 'You do not have permission to run health checks.';
+        } else {
+            $deployer = new \SimpleKuma\Edge\EdgeDeployer($db);
+            $result = $deployer->healthCheck();
+            if ($result['ok']) {
+                header('Location: ?page=settings&tab=edge-redirect&success=edge_health_ok');
+                exit;
+            }
+            $errors['general'] = $result['message'];
+        }
+    } elseif ($action === 'disable_edge_redirect') {
+        $canEdit = $permission && $permission->hasPermission(Permission::PERM_SETTINGS_EDIT);
+        if (!$canEdit) {
+            $errors['general'] = 'You do not have permission to disable Edge Redirect.';
+        } else {
+            $deployer = new \SimpleKuma\Edge\EdgeDeployer($db);
+            $deployer->disable();
+            header('Location: ?page=settings&tab=edge-redirect&success=edge_disabled');
+            exit;
+        }
+    } elseif ($action === 'sync_edge_campaigns') {
+        $canEdit = $permission && $permission->hasPermission(Permission::PERM_SETTINGS_EDIT);
+        if (!$canEdit) {
+            $errors['general'] = 'You do not have permission to sync campaigns.';
+        } else {
+            $sync = new \SimpleKuma\Edge\EdgeCampaignSync($db);
+            $summary = $sync->syncAllEligible();
+            if (!empty($summary['errors'])) {
+                $errors['general'] = 'Sync finished with errors: ' . implode('; ', array_slice($summary['errors'], 0, 5));
+            } else {
+                header('Location: ?page=settings&tab=edge-redirect&success=edge_synced');
+                exit;
+            }
+        }
+    } elseif ($action === 'rotate_edge_ingest_secret') {
+        $canEdit = $permission && $permission->hasPermission(Permission::PERM_SETTINGS_EDIT);
+        if (!$canEdit) {
+            $errors['general'] = 'You do not have permission to rotate the ingest secret.';
+        } else {
+            $edgeSettings = new \SimpleKuma\Edge\EdgeSettings($db);
+            $edgeSettings->rotateIngestSecret();
+            header('Location: ?page=settings&tab=edge-redirect&success=edge_secret_rotated');
+            exit;
         }
     } elseif ($action === 'save_update_settings') {
         $canManageUpdates = $permission && $permission->hasPermission(Permission::PERM_UPDATE_MANAGE);
@@ -2084,77 +2175,54 @@ $currentUser['pass_hash'] = $userRow['pass_hash'];
 </div>
 <?php endif; ?>
 
-<!-- Tabs -->
-<style>
-.settings-tabs-wrapper {
-    scrollbar-width: thin;
-    scrollbar-color: #8b6f47 #f5f1e8;
-}
-.settings-tabs-wrapper::-webkit-scrollbar {
-    height: 8px;
-}
-.settings-tabs-wrapper::-webkit-scrollbar-track {
-    background: #f5f1e8;
-    border-radius: 4px;
-}
-.settings-tabs-wrapper::-webkit-scrollbar-thumb {
-    background: #8b6f47;
-    border-radius: 4px;
-}
-.settings-tabs-wrapper::-webkit-scrollbar-thumb:hover {
-    background: #6d5636;
-}
-</style>
-<div style="border-bottom: 2px solid #8b6f47; margin-bottom: 24px;">
-    <div class="settings-tabs-wrapper" style="display: flex; align-items: center; gap: 0; overflow-x: auto; -webkit-overflow-scrolling: touch;">
-        <a href="?page=settings&tab=account"
-           style="padding: 12px 24px; text-decoration: none; border-bottom: 3px solid <?= $activeTab === 'account' ? '#3d5a26' : 'transparent' ?>; color: <?= $activeTab === 'account' ? '#3d5a26' : '#666' ?>; font-weight: <?= $activeTab === 'account' ? '600' : 'normal' ?>; display: inline-flex; align-items: center; white-space: nowrap;">
-            Account
-        </a>
-        <a href="?page=settings&tab=domains" 
-           style="padding: 12px 24px; text-decoration: none; border-bottom: 3px solid <?= $activeTab === 'domains' ? '#3d5a26' : 'transparent' ?>; color: <?= $activeTab === 'domains' ? '#3d5a26' : '#666' ?>; font-weight: <?= $activeTab === 'domains' ? '600' : 'normal' ?>; display: inline-flex; align-items: center; white-space: nowrap;">
-            Domains
-        </a>
-        <a href="?page=settings&tab=integrations" 
-           style="padding: 12px 24px; text-decoration: none; border-bottom: 3px solid <?= $activeTab === 'integrations' ? '#3d5a26' : 'transparent' ?>; color: <?= $activeTab === 'integrations' ? '#3d5a26' : '#666' ?>; font-weight: <?= $activeTab === 'integrations' ? '600' : 'normal' ?>; display: inline-flex; align-items: center; white-space: nowrap;">
-            Integrations
-        </a>
-        <a href="?page=settings&tab=api-costs" 
-           style="padding: 12px 24px; text-decoration: none; border-bottom: 3px solid <?= $activeTab === 'api-costs' ? '#3d5a26' : 'transparent' ?>; color: <?= $activeTab === 'api-costs' ? '#3d5a26' : '#666' ?>; font-weight: <?= $activeTab === 'api-costs' ? '600' : 'normal' ?>; display: inline-flex; align-items: center; white-space: nowrap;">
-            API Cost Updates
-        </a>
-        <a href="?page=settings&tab=privacy" 
-           style="padding: 12px 24px; text-decoration: none; border-bottom: 3px solid <?= $activeTab === 'privacy' ? '#3d5a26' : 'transparent' ?>; color: <?= $activeTab === 'privacy' ? '#3d5a26' : '#666' ?>; font-weight: <?= $activeTab === 'privacy' ? '600' : 'normal' ?>; display: inline-flex; align-items: center; white-space: nowrap;">
-            Data Retention
-        </a>
-        <a href="?page=settings&tab=groups" 
-           style="padding: 12px 24px; text-decoration: none; border-bottom: 3px solid <?= $activeTab === 'groups' ? '#3d5a26' : 'transparent' ?>; color: <?= $activeTab === 'groups' ? '#3d5a26' : '#666' ?>; font-weight: <?= $activeTab === 'groups' ? '600' : 'normal' ?>; display: inline-flex; align-items: center; white-space: nowrap;">
-            Campaign Groups
-        </a>
-        <a href="?page=settings&tab=data" 
-           style="padding: 12px 24px; text-decoration: none; border-bottom: 3px solid <?= $activeTab === 'data' ? '#3d5a26' : 'transparent' ?>; color: <?= $activeTab === 'data' ? '#3d5a26' : '#666' ?>; font-weight: <?= $activeTab === 'data' ? '600' : 'normal' ?>; display: inline-flex; align-items: center; white-space: nowrap;">
-            Data Management
-        </a>
-        <?php if (!SingleAdminMode::isEnabled() && $permission && $permission->hasPermission(Permission::PERM_USER_MANAGE)): ?>
-        <a href="?page=settings&tab=users" 
-           style="padding: 12px 24px; text-decoration: none; border-bottom: 3px solid <?= $activeTab === 'users' ? '#3d5a26' : 'transparent' ?>; color: <?= $activeTab === 'users' ? '#3d5a26' : '#666' ?>; font-weight: <?= $activeTab === 'users' ? '600' : 'normal' ?>; display: inline-flex; align-items: center; white-space: nowrap;">
-            Users
-        </a>
-        <?php endif; ?>
-        <a href="?page=settings&tab=geoip" 
-           style="padding: 12px 24px; text-decoration: none; border-bottom: 3px solid <?= $activeTab === 'geoip' ? '#3d5a26' : 'transparent' ?>; color: <?= $activeTab === 'geoip' ? '#3d5a26' : '#666' ?>; font-weight: <?= $activeTab === 'geoip' ? '600' : 'normal' ?>; display: inline-flex; align-items: center; white-space: nowrap;">
-            Geolocation
-        </a>
-        <a href="?page=settings&tab=updates" 
-           style="padding: 12px 24px; text-decoration: none; border-bottom: 3px solid <?= $activeTab === 'updates' ? '#3d5a26' : 'transparent' ?>; color: <?= $activeTab === 'updates' ? '#3d5a26' : '#666' ?>; font-weight: <?= $activeTab === 'updates' ? '600' : 'normal' ?>; display: inline-flex; align-items: center; white-space: nowrap;">
-            Updates
-        </a>
-        <a href="?page=settings&tab=about" 
-           style="padding: 12px 24px; text-decoration: none; border-bottom: 3px solid <?= $activeTab === 'about' ? '#3d5a26' : 'transparent' ?>; color: <?= $activeTab === 'about' ? '#3d5a26' : '#666' ?>; font-weight: <?= $activeTab === 'about' ? '600' : 'normal' ?>; display: inline-flex; align-items: center; white-space: nowrap;">
-            About Kuma
-        </a>
+<?php
+$showUsersTab = !SingleAdminMode::isEnabled()
+    && $permission
+    && $permission->hasPermission(Permission::PERM_USER_MANAGE);
+
+$settingsTabs = [
+    ['slug' => 'account', 'label' => 'Account'],
+    ['slug' => 'domains', 'label' => 'Domains'],
+    ['slug' => 'integrations', 'label' => 'Integrations'],
+    ['slug' => 'api-costs', 'label' => 'API Cost Updates'],
+    ['slug' => 'privacy', 'label' => 'Data Retention'],
+    ['slug' => 'groups', 'label' => 'Campaign Groups'],
+    ['slug' => 'data', 'label' => 'Data Management'],
+    ['slug' => 'users', 'label' => 'Users', 'visible' => $showUsersTab],
+    ['slug' => 'geoip', 'label' => 'Geolocation'],
+    ['slug' => 'edge-redirect', 'label' => 'Edge Redirect'],
+    ['slug' => 'updates', 'label' => 'Updates'],
+    ['slug' => 'about', 'label' => 'About Kuma'],
+];
+$settingsTabs = array_values(array_filter(
+    $settingsTabs,
+    static fn(array $tab): bool => $tab['visible'] ?? true
+));
+?>
+
+<div class="settings-layout">
+    <div class="settings-mobile-nav">
+        <label for="settings-section-select" class="settings-mobile-nav__label">Section</label>
+        <select id="settings-section-select" class="settings-mobile-select" aria-label="Settings section">
+            <?php foreach ($settingsTabs as $tab): ?>
+                <option value="?page=settings&amp;tab=<?= htmlspecialchars($tab['slug']) ?>"
+                    <?= $activeTab === $tab['slug'] ? 'selected' : '' ?>>
+                    <?= htmlspecialchars($tab['label']) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
     </div>
-</div>
+
+    <nav class="settings-rail" aria-label="Settings sections">
+        <?php foreach ($settingsTabs as $tab): ?>
+            <a href="?page=settings&amp;tab=<?= htmlspecialchars($tab['slug']) ?>"
+               class="settings-rail__item<?= $activeTab === $tab['slug'] ? ' is-active' : '' ?>">
+                <?= htmlspecialchars($tab['label']) ?>
+            </a>
+        <?php endforeach; ?>
+    </nav>
+
+    <div class="settings-content">
 
 <?php if ($activeTab === 'account'): ?>
     <?php
@@ -4478,6 +4546,47 @@ $currentUser['pass_hash'] = $userRow['pass_hash'];
                     </div>
 
                     <div style="margin-bottom: 32px;">
+                        <h3 style="margin: 0 0 16px 0; color: #3d5a26; font-size: 18px; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px;">Bot Detection</h3>
+                        <p style="font-size: 13px; color: #666; margin: 0 0 16px 0;">
+                            Detects known crawlers and bots on click write (Matomo DeviceDetector + Crawler-Detect).
+                            Known bots are stored but excluded from reports via the existing stats flag — redirects and dashboards stay fast.
+                        </p>
+                        <div style="margin-bottom: 16px;">
+                            <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                <input type="checkbox" name="bot_detection_enabled"
+                                       <?= ($allSettings['bot_detection_enabled'] ?? '1') === '1' ? 'checked' : '' ?>
+                                       style="width: 20px; height: 20px;">
+                                <span style="font-weight: 600;">Enable bot detection</span>
+                            </label>
+                            <div style="font-size: 12px; color: #666; margin-top: 8px; margin-left: 32px;">
+                                Classify bots at click time. When off, only legacy Meta crawler / invalid Facebook ad-id rules apply.
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 16px;">
+                            <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                <input type="checkbox" name="bot_exclude_known_from_stats"
+                                       <?= ($allSettings['bot_exclude_known_from_stats'] ?? '1') === '1' ? 'checked' : '' ?>
+                                       style="width: 20px; height: 20px;">
+                                <span style="font-weight: 600;">Exclude known bots from stats</span>
+                            </label>
+                            <div style="font-size: 12px; color: #666; margin-top: 8px; margin-left: 32px;">
+                                Recommended. Keeps Googlebot, preview bots, SEO crawlers, etc. out of click / LP / revenue totals.
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                                <input type="checkbox" name="bot_exclude_suspected_from_stats"
+                                       <?= ($allSettings['bot_exclude_suspected_from_stats'] ?? '0') === '1' ? 'checked' : '' ?>
+                                       style="width: 20px; height: 20px;">
+                                <span style="font-weight: 600;">Exclude suspected bots from stats</span>
+                            </label>
+                            <div style="font-size: 12px; color: #666; margin-top: 8px; margin-left: 32px;">
+                                Off by default to avoid false positives. Only enable if you accept possible undercounting.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 32px;">
                         <h3 style="margin: 0 0 16px 0; color: #3d5a26; font-size: 18px; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px;">Retention Policies</h3>
                         
                         <div style="margin-bottom: 24px;">
@@ -5103,7 +5212,7 @@ $currentUser['pass_hash'] = $userRow['pass_hash'];
     $canManageAppUpdate = $permission
         && $permission->hasPermission(Permission::PERM_UPDATE_MANAGE);
     // Opening Updates is intentional: admins get a fresh GitHub check (bypass 1h cache).
-    // Read-only / check-only — never installs. Banner elsewhere still uses the 1h cache.
+    // Read-only / check-only — never installs. Admin layout banner uses cache + async refresh.
     if ($canManageAppUpdate) {
         $updateChecker->checkForUpdates(true, true);
     } elseif ($updateCheckEnabled) {
@@ -5594,8 +5703,197 @@ php composer.phar install --no-dev --optimize-autoloader</pre>
         </div>
     </div>
 
+<?php elseif ($activeTab === 'edge-redirect'): ?>
+    <?php
+    $edgeSettings = new \SimpleKuma\Edge\EdgeSettings($db);
+    $edgeStatus = $edgeSettings->statusSnapshot();
+    $canEditEdge = $permission && $permission->hasPermission(Permission::PERM_SETTINGS_EDIT);
+    $defaultOrigin = defined('BASE_URL') ? rtrim((string) BASE_URL, '/') : '';
+    $statusValueClass = $edgeStatus['enabled'] ? 'is-ok' : 'is-muted';
+    $healthValueClass = !$edgeStatus['last_health_at']
+        ? 'is-muted'
+        : ($edgeStatus['last_health_ok'] ? 'is-ok' : 'is-warn');
+    $healthLabel = $edgeStatus['last_health_at']
+        ? ($edgeStatus['last_health_ok'] ? 'OK' : 'Issue')
+        : 'Not checked';
+    ?>
+    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/settings-edge-redirect.css?v=2">
+
+    <div class="card settings-edge-redirect">
+        <h2>Edge Redirect Engine</h2>
+        <p class="settings-edge-redirect__intro">
+            Run campaign redirects on Cloudflare Workers so visitors hit the nearest edge POP instead of your origin.
+            Typical savings: hundreds of milliseconds worldwide (often ~500 ms → ~100 ms). Analytics post back asynchronously to Simple Kuma.
+        </p>
+
+        <div class="settings-edge-redirect__stats">
+            <div class="settings-edge-redirect__stat">
+                <div class="settings-edge-redirect__stat-label">Status</div>
+                <div class="settings-edge-redirect__stat-value <?= $statusValueClass ?>">
+                    <?= $edgeStatus['enabled'] ? 'Enabled' : 'Disabled' ?>
+                </div>
+            </div>
+            <div class="settings-edge-redirect__stat">
+                <div class="settings-edge-redirect__stat-label">Health</div>
+                <div class="settings-edge-redirect__stat-value <?= $healthValueClass ?>">
+                    <?= htmlspecialchars($healthLabel) ?>
+                </div>
+            </div>
+            <div class="settings-edge-redirect__stat">
+                <div class="settings-edge-redirect__stat-label">Last deploy</div>
+                <div class="settings-edge-redirect__stat-value is-muted"><?= htmlspecialchars((string) ($edgeStatus['last_deploy_at'] ?: '—')) ?></div>
+            </div>
+            <div class="settings-edge-redirect__stat">
+                <div class="settings-edge-redirect__stat-label">Last campaign sync</div>
+                <div class="settings-edge-redirect__stat-value is-muted"><?= htmlspecialchars((string) ($edgeStatus['last_campaign_sync_at'] ?: '—')) ?></div>
+            </div>
+        </div>
+
+        <?php if (!empty($edgeStatus['last_health_message'])): ?>
+            <p class="settings-edge-redirect__health-note">Last health: <?= htmlspecialchars((string) $edgeStatus['last_health_message']) ?></p>
+        <?php endif; ?>
+
+        <form method="POST" action="?page=settings&tab=edge-redirect" class="settings-edge-redirect__form">
+            <?= Csrf::field() ?>
+            <input type="hidden" name="action" value="save_edge_redirect_settings">
+
+            <h3 style="margin-bottom: 12px;">Cloudflare connection</h3>
+            <div class="settings-edge-redirect__fields">
+                <div>
+                    <label for="edge_cf_account_id">Account ID</label>
+                    <input type="text" id="edge_cf_account_id" name="cf_account_id" value="<?= htmlspecialchars($edgeStatus['account_id']) ?>"
+                           <?= !$canEditEdge ? 'readonly' : '' ?>
+                           placeholder="Cloudflare account ID" autocomplete="off">
+                </div>
+                <div>
+                    <label for="edge_cf_api_token">API token</label>
+                    <input type="password" id="edge_cf_api_token" name="cf_api_token" value=""
+                           <?= !$canEditEdge ? 'readonly' : '' ?>
+                           placeholder="<?= $edgeStatus['has_api_token'] ? 'Leave blank to keep current (' . htmlspecialchars($edgeStatus['api_token_masked']) . ')' : 'Workers Scripts Edit, Account Settings Read, Workers KV Storage Edit, Zone Workers Routes Edit' ?>"
+                           autocomplete="new-password">
+                    <div class="settings-edge-redirect__hint">Stored encrypted. Create a token with Workers + KV permissions.</div>
+                </div>
+                <div>
+                    <label for="edge_cf_zone_id">Zone ID (optional, for routes)</label>
+                    <input type="text" id="edge_cf_zone_id" name="cf_zone_id" value="<?= htmlspecialchars($edgeStatus['zone_id']) ?>"
+                           <?= !$canEditEdge ? 'readonly' : '' ?>
+                           placeholder="Zone ID for your tracking domain">
+                </div>
+                <div>
+                    <label for="edge_cf_route_pattern">Route pattern</label>
+                    <input type="text" id="edge_cf_route_pattern" name="cf_route_pattern" value="<?= htmlspecialchars($edgeStatus['route_pattern']) ?>"
+                           <?= !$canEditEdge ? 'readonly' : '' ?>
+                           placeholder="track.example.com/*">
+                    <div class="settings-edge-redirect__hint">Attach the Worker to your proxied tracking hostname.</div>
+                </div>
+                <div>
+                    <label for="edge_cf_worker_name">Worker name</label>
+                    <input type="text" id="edge_cf_worker_name" name="cf_worker_name" value="<?= htmlspecialchars($edgeStatus['worker_name']) ?>"
+                           <?= !$canEditEdge ? 'readonly' : '' ?>>
+                </div>
+                <div>
+                    <label for="edge_origin_base_url">Origin base URL</label>
+                    <input type="url" id="edge_origin_base_url" name="origin_base_url" value="<?= htmlspecialchars($edgeStatus['origin_base_url'] ?: $defaultOrigin) ?>"
+                           <?= !$canEditEdge ? 'readonly' : '' ?>
+                           placeholder="https://tracker.example.com">
+                    <div class="settings-edge-redirect__hint">
+                        Used for async ingest (<code><?= htmlspecialchars($edgeStatus['ingest_url'] ?: ($defaultOrigin . '/api/edge-click')) ?></code>)
+                        and origin fallback when a campaign is not on the edge.
+                    </div>
+                </div>
+            </div>
+
+            <?php if ($canEditEdge): ?>
+            <div style="margin-top: 18px;">
+                <button type="submit" class="btn btn-primary">Save connection</button>
+            </div>
+            <?php endif; ?>
+        </form>
+
+        <?php if ($canEditEdge): ?>
+        <div class="settings-edge-redirect__actions">
+            <form method="POST" action="?page=settings&tab=edge-redirect">
+                <?= Csrf::field() ?>
+                <input type="hidden" name="action" value="deploy_edge_worker">
+                <button type="submit" class="btn btn-primary">Deploy / Update Worker</button>
+            </form>
+            <form method="POST" action="?page=settings&tab=edge-redirect">
+                <?= Csrf::field() ?>
+                <input type="hidden" name="action" value="edge_health_check">
+                <button type="submit" class="btn btn-secondary">Health check</button>
+            </form>
+            <form method="POST" action="?page=settings&tab=edge-redirect">
+                <?= Csrf::field() ?>
+                <input type="hidden" name="action" value="sync_edge_campaigns">
+                <button type="submit" class="btn btn-secondary">Sync all campaigns</button>
+            </form>
+            <form method="POST" action="?page=settings&tab=edge-redirect">
+                <?= Csrf::field() ?>
+                <input type="hidden" name="action" value="rotate_edge_ingest_secret">
+                <button type="submit" class="btn btn-secondary" onclick="return confirm('Rotate ingest secret? You must redeploy the Worker afterward.');">Rotate ingest secret</button>
+            </form>
+            <form method="POST" action="?page=settings&tab=edge-redirect">
+                <?= Csrf::field() ?>
+                <input type="hidden" name="action" value="disable_edge_redirect">
+                <button type="submit" class="btn btn-secondary" onclick="return confirm('Disable Edge Redirect in Simple Kuma?');">Disable Edge Redirect</button>
+            </form>
+        </div>
+        <?php endif; ?>
+
+        <div class="settings-edge-redirect__callout">
+            <strong>Setup guide</strong>
+            <ol>
+                <li>
+                    <strong>Add your tracking domain to Cloudflare.</strong>
+                    Create or import the zone for the hostname you use in campaigns (for example <code>track.example.com</code>).
+                    DNS must be <em>Proxied</em> (orange cloud). Gray-cloud / DNS-only will skip the Worker and hit origin as usual.
+                </li>
+                <li>
+                    <strong>Point that hostname at your Simple Kuma server.</strong>
+                    Use an A/AAAA record (or CNAME) to your origin IP / host. Keep the same document root as your main tracker
+                    so <code>go.php</code>, <code>/km/…</code>, and the rest of the app still resolve on that domain.
+                </li>
+                <li>
+                    <strong>Create a Cloudflare API token</strong> with permission to edit Workers Scripts, Workers KV Storage,
+                    and Workers Routes for the zone (plus Account Settings Read). Paste Account ID and token above.
+                    Leave the token blank on later saves if you only need to change other fields.
+                </li>
+                <li>
+                    <strong>Set Origin base URL</strong> to the public HTTPS URL of this Kuma install
+                    (the same host the Worker should POST click analytics to). Then set <strong>Zone ID</strong> and a
+                    <strong>Route pattern</strong> such as <code>track.example.com/*</code> so Cloudflare sends click traffic to the Worker.
+                </li>
+                <li>
+                    <strong>Save connection</strong>, then click <strong>Deploy / Update Worker</strong>.
+                    That creates the KV namespace, uploads the redirect script, binds ingest credentials, and attaches the route.
+                    Use <strong>Health check</strong> afterward if you want to confirm the token and KV look good.
+                </li>
+                <li>
+                    <strong>Enable Edge redirect on each campaign</strong> you want accelerated, then save the campaign
+                    so its config syncs to KV. Phase 1 only supports a normal 302 — leave Referrer privacy on
+                    “Standard redirect.” Redirectless campaigns stay on origin.
+                </li>
+                <li>
+                    <strong>Keep your existing ad links.</strong>
+                    No URL change is required: <code>go.php?k=…</code>, <code>/go/…</code>, and <code>/km/…</code> still work.
+                    When the campaign is edge-enabled, the Worker answers from the nearest POP and logs the click asynchronously.
+                    If a campaign is not on the edge (or KV has no snapshot), traffic falls through to your origin.
+                </li>
+            </ol>
+            <p class="settings-edge-redirect__callout-note">
+                Tip: after changing offers, caps, or rotation, save the campaign again (or use <strong>Sync all campaigns</strong>)
+                so the edge snapshot stays current. Rotate the ingest secret only when needed, then redeploy so the Worker gets the new secret.
+            </p>
+        </div>
+
+        <p class="settings-edge-redirect__meta">
+            KV namespace: <?= htmlspecialchars($edgeStatus['kv_namespace_id'] ?: 'not provisioned') ?>
+            · Ingest secret: <?= $edgeStatus['has_ingest_secret'] ? 'configured' : 'not set' ?>
+        </p>
+    </div>
+
 <?php elseif ($activeTab === 'about'): ?>
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/settings-about.css?v=5">
+    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/settings-about.css?v=6">
 
     <div class="settings-about">
         <header class="about-intro">
@@ -5793,13 +6091,108 @@ php composer.phar install --no-dev --optimize-autoloader</pre>
                 ></iframe>
             </div>
         </section>
+
+        <section class="about-oss" aria-labelledby="about-oss-title">
+            <div class="about-oss-header">
+                <span class="about-eyebrow">Built on open source</span>
+                <h3 id="about-oss-title">Open Source Dependencies</h3>
+                <p>
+                    Simple KUMA ships free open-source libraries. Thank you to the maintainers
+                    whose work powers tracking, email, geolocation, ads integrations, and bot detection.
+                </p>
+            </div>
+
+            <div class="about-oss-grid">
+                <article class="about-oss-card">
+                    <div class="about-oss-card-top">
+                        <h4>Crawler-Detect</h4>
+                        <span class="about-oss-license">MIT</span>
+                    </div>
+                    <p>Bot and crawler user-agent detection for cleaner campaign stats.</p>
+                    <a class="about-oss-link" href="https://github.com/JayBizzle/Crawler-Detect" target="_blank" rel="noopener noreferrer">
+                        github.com/JayBizzle/Crawler-Detect
+                    </a>
+                </article>
+
+                <article class="about-oss-card">
+                    <div class="about-oss-card-top">
+                        <h4>Matomo DeviceDetector</h4>
+                        <span class="about-oss-license">LGPL-3.0-or-later</span>
+                    </div>
+                    <p>Device, OS, browser parsing — and bot classification on the same parse.</p>
+                    <a class="about-oss-link" href="https://github.com/matomo-org/device-detector" target="_blank" rel="noopener noreferrer">
+                        github.com/matomo-org/device-detector
+                    </a>
+                </article>
+
+                <article class="about-oss-card">
+                    <div class="about-oss-card-top">
+                        <h4>PHPMailer</h4>
+                        <span class="about-oss-license">LGPL-2.1-only</span>
+                    </div>
+                    <p>Reliable outbound email for alerts, resets, and notifications.</p>
+                    <a class="about-oss-link" href="https://github.com/PHPMailer/PHPMailer" target="_blank" rel="noopener noreferrer">
+                        github.com/PHPMailer/PHPMailer
+                    </a>
+                </article>
+
+                <article class="about-oss-card">
+                    <div class="about-oss-card-top">
+                        <h4>MaxMind GeoIP2</h4>
+                        <span class="about-oss-license">Apache-2.0</span>
+                    </div>
+                    <p>PHP reader for MaxMind GeoIP2 / GeoLite2 city databases.</p>
+                    <a class="about-oss-link" href="https://github.com/maxmind/GeoIP2-php" target="_blank" rel="noopener noreferrer">
+                        github.com/maxmind/GeoIP2-php
+                    </a>
+                </article>
+
+                <article class="about-oss-card">
+                    <div class="about-oss-card-top">
+                        <h4>IP2Location PHP</h4>
+                        <span class="about-oss-license">MIT</span>
+                    </div>
+                    <p>Reader for IP2Location binary geolocation databases.</p>
+                    <a class="about-oss-link" href="https://github.com/ip2location/ip2location-php" target="_blank" rel="noopener noreferrer">
+                        github.com/ip2location/ip2location-php
+                    </a>
+                </article>
+
+                <article class="about-oss-card">
+                    <div class="about-oss-card-top">
+                        <h4>Google Ads API PHP</h4>
+                        <span class="about-oss-license">Apache-2.0</span>
+                    </div>
+                    <p>Official client for Google Ads cost and conversion integrations.</p>
+                    <a class="about-oss-link" href="https://github.com/googleads/google-ads-php" target="_blank" rel="noopener noreferrer">
+                        github.com/googleads/google-ads-php
+                    </a>
+                </article>
+            </div>
+
+            <p class="about-oss-footnote">
+                Also includes transitive Composer dependencies shipped under <code>vendor/</code>
+                with their own licenses. GeoIP <em>database</em> attribution lives on the Geolocation settings tab.
+            </p>
+        </section>
     </div>
 
 <?php endif; ?>
 
+    </div><!-- .settings-content -->
+</div><!-- .settings-layout -->
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    var sectionSelect = document.getElementById('settings-section-select');
+    if (sectionSelect) {
+        sectionSelect.addEventListener('change', function () {
+            if (this.value) {
+                window.location.href = this.value;
+            }
+        });
+    }
+
     var token = <?= json_encode(\SimpleKuma\Auth\Csrf::ensureToken(), JSON_THROW_ON_ERROR) ?>;
     document.querySelectorAll('form').forEach(function (form) {
         var method = (form.getAttribute('method') || 'get').toLowerCase();

@@ -215,6 +215,8 @@ class Campaign
         $newId = $stmt->insert_id;
         if ($newId > 0) {
             $this->saveMinPostbackPayout((int)$newId, $data);
+            $this->persistEdgeFlags((int)$newId, $data);
+            \SimpleKuma\Edge\EdgeCampaignSync::hookAfterSave($this->db, (int)$newId);
         }
         if (defined('DEBUG_MODE') && DEBUG_MODE) {
             error_log('Campaign created with ID: ' . $newId);
@@ -720,6 +722,8 @@ class Campaign
         
         if ($result) {
             $this->saveMinPostbackPayout($id, $data);
+            $this->persistEdgeFlags($id, $data);
+            \SimpleKuma\Edge\EdgeCampaignSync::hookAfterSave($this->db, $id);
         }
         
         if (!$result) {
@@ -746,9 +750,64 @@ class Campaign
 
     public function delete(int $id): bool
     {
+        $campaignKey = '';
+        $slugs = [];
+        $keyStmt = $this->db->prepare('SELECT campaign_key FROM campaigns WHERE id = ?');
+        if ($keyStmt) {
+            $keyStmt->bind_param('i', $id);
+            $keyStmt->execute();
+            $keyRow = $keyStmt->get_result()->fetch_assoc();
+            $campaignKey = (string) ($keyRow['campaign_key'] ?? '');
+        }
+        $slugStmt = $this->db->prepare('SELECT slug FROM campaign_slugs WHERE campaign_id = ?');
+        if ($slugStmt) {
+            $slugStmt->bind_param('i', $id);
+            $slugStmt->execute();
+            $slugResult = $slugStmt->get_result();
+            while ($row = $slugResult->fetch_assoc()) {
+                $slugs[] = (string) $row['slug'];
+            }
+        }
+        if ($campaignKey !== '') {
+            \SimpleKuma\Edge\EdgeCampaignSync::hookBeforeDelete($this->db, $campaignKey, $slugs);
+        }
+
         $stmt = $this->db->prepare("DELETE FROM campaigns WHERE id = ?");
         $stmt->bind_param('i', $id);
         return $stmt->execute();
+    }
+
+    /**
+     * Persist edge_enabled after main INSERT/UPDATE (column from migration 083).
+     *
+     * @param array<string, mixed> $data
+     */
+    private function persistEdgeFlags(int $id, array $data): void
+    {
+        if (!$this->campaignsTableHasEdgeEnabled()) {
+            return;
+        }
+        if (!array_key_exists('edge_enabled', $data)) {
+            return;
+        }
+        $edgeEnabled = !empty($data['edge_enabled']) ? 1 : 0;
+        $stmt = $this->db->prepare('UPDATE campaigns SET edge_enabled = ? WHERE id = ?');
+        if (!$stmt) {
+            return;
+        }
+        $stmt->bind_param('ii', $edgeEnabled, $id);
+        $stmt->execute();
+    }
+
+    private function campaignsTableHasEdgeEnabled(): bool
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+        $result = $this->db->query("SHOW COLUMNS FROM campaigns LIKE 'edge_enabled'");
+        $cached = $result && $result->num_rows > 0;
+        return $cached;
     }
 
     public function validate(array $data): array

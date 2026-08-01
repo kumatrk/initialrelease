@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SimpleKuma\Entity;
 
 use mysqli;
+use SimpleKuma\Edge\EdgeCampaignSync;
 
 /**
  * Traffic Source Entity
@@ -115,7 +116,11 @@ class TrafficSource
             $id
         );
 
-        return $stmt->execute();
+        $ok = $stmt->execute();
+        if ($ok) {
+            EdgeCampaignSync::hookTrafficSourceChanged($this->db, $id);
+        }
+        return $ok;
     }
 
     /**

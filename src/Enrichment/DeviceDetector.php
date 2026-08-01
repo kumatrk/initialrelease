@@ -10,12 +10,12 @@ use DeviceDetector\Cache\StaticCache;
 /**
  * Device Detector
  * Enhanced device detection using Matomo DeviceDetector library
- * Provides device type, brand, model, OS, OS version, browser, and browser version
+ * Provides device type, brand, model, OS, OS version, browser, browser version,
+ * and bot classification from the same parse() call (no second parse).
  */
 class DeviceDetector
 {
     private string $userAgent;
-    private ?array $cachedResult = null;
     private static array $staticCache = [];
 
     public function __construct(string $userAgent)
@@ -27,6 +27,19 @@ class DeviceDetector
      * Get all device information
      * Uses Matomo DeviceDetector with caching for performance
      * Falls back to basic detection if library not installed
+     *
+     * @return array{
+     *   device: string,
+     *   device_brand: ?string,
+     *   device_model: ?string,
+     *   os: string,
+     *   os_version: ?string,
+     *   browser: string,
+     *   browser_version: ?string,
+     *   is_bot: bool,
+     *   bot_name: ?string,
+     *   bot_category: ?string
+     * }
      */
     public function getAll(): array
     {
@@ -44,24 +57,35 @@ class DeviceDetector
 
         // Initialize Matomo DeviceDetector
         $dd = new MatomoDeviceDetector($this->userAgent);
-        
+
         // Use static cache adapter for better performance
         if (class_exists('DeviceDetector\Cache\StaticCache')) {
             $dd->setCache(new StaticCache());
         }
-        
-        // Parse the user agent
+
+        // Parse the user agent once
         $dd->parse();
+
+        $isBot = $dd->isBot();
+        $botName = null;
+        $botCategory = null;
+        if ($isBot) {
+            $bot = $dd->getBot();
+            if (is_array($bot)) {
+                $botName = isset($bot['name']) && $bot['name'] !== '' ? (string) $bot['name'] : null;
+                $botCategory = isset($bot['category']) && $bot['category'] !== '' ? (string) $bot['category'] : null;
+            }
+        }
 
         // Extract device information
         $deviceType = $dd->getDeviceName(); // smartphone, tablet, desktop, etc.
         $deviceBrand = $dd->getBrandName(); // Apple, Samsung, Google, etc.
         $deviceModel = $dd->getModel(); // iPhone 12, Galaxy S21, etc.
-        
+
         // Extract OS information
         $osName = $dd->getOs('name') ?? 'Unknown';
         $osVersion = $dd->getOs('version') ?? null;
-        
+
         // Extract browser information
         $browserName = $dd->getClient('name') ?? 'Unknown';
         $browserVersion = $dd->getClient('version') ?? null;
@@ -78,12 +102,23 @@ class DeviceDetector
             'os_version' => $osVersion ?: null,
             'browser' => $browserName,
             'browser_version' => $browserVersion ?: null,
+            'is_bot' => $isBot,
+            'bot_name' => $botName,
+            'bot_category' => $botCategory,
         ];
 
         // Cache the result
         self::$staticCache[$uaHash] = $result;
 
         return $result;
+    }
+
+    /**
+     * Whether Matomo classified this UA as a bot (uses cached getAll()).
+     */
+    public function isBot(): bool
+    {
+        return !empty($this->getAll()['is_bot']);
     }
 
     /**
@@ -145,7 +180,6 @@ class DeviceDetector
      */
     private function getBasicDetection(): array
     {
-        $ua = strtolower($this->userAgent);
         $uaOriginal = $this->userAgent;
 
         // Device type
@@ -184,6 +218,9 @@ class DeviceDetector
             'os_version' => null,
             'browser' => $browser,
             'browser_version' => null,
+            'is_bot' => false,
+            'bot_name' => null,
+            'bot_category' => null,
         ];
 
         // Cache the result
