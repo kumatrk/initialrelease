@@ -1,4 +1,11 @@
-# Simple Kuma Tracker Version 1.1.5.10
+# Simple Kuma Tracker Version 1.1.5.11
+
+## Changes in 1.1.5.11
+
+### Fix: Actions column showing raw form HTML
+- CSRF tokens were accidentally placed inside delete/add form `action` attributes on Traffic Sources, Networks, Offers, and Landing Pages
+- That broke the markup so `style` / `onsubmit` attribute text appeared next to the trash icon
+- Tokens now sit inside the form body (same pattern as Campaigns); Actions buttons render cleanly again
 
 ## Changes in 1.1.5.10
 

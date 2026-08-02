@@ -249,10 +249,10 @@ $db->close();
                                                 🗑️
                                             </button>
                                         <?php else: ?>
-                                        <form method="post" action="?page=offers&action=delete&id=<?= $off['id'] ?>
-                <?= Csrf::field() ?>" 
+                                        <form method="post" action="?page=offers&action=delete&id=<?= $off['id'] ?>" 
                                               style="display: inline; margin: 0;" 
                                               onsubmit="return confirm('Are you sure you want to delete this offer?\\n\\nThis cannot be undone.');">
+                                            <?= Csrf::field() ?>
                                             <button type="submit" 
                                                     style="width: 36px; height: 36px; padding: 0; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; color: #666;"
                                                     title="Delete Offer"
@@ -351,10 +351,10 @@ $db->close();
                                         🗑️ Delete
                                     </button>
                                 <?php else: ?>
-                                <form method="post" action="?page=offers&action=delete&id=<?= $off['id'] ?>
-                <?= Csrf::field() ?>" 
+                                <form method="post" action="?page=offers&action=delete&id=<?= $off['id'] ?>" 
                                       style="flex: 1; margin: 0;" 
                                       onsubmit="return confirm('Are you sure you want to delete this offer?\\n\\nThis cannot be undone.');">
+                                    <?= Csrf::field() ?>
                                     <button type="submit" 
                                             style="width: 100%; padding: 8px 12px; font-size: 12px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; color: #666;">
                                         🗑️ Delete
@@ -377,8 +377,8 @@ $db->close();
             <a href="?page=offers" class="btn btn-secondary">← Back to List</a>
         </div>
         <div class="card-body">
-            <form method="post" action="?page=offers&action=<?= $action ?>
-                <?= Csrf::field() ?><?= $id ? "&id={$id}" : '' ?>">
+            <form method="post" action="?page=offers&action=<?= $action ?><?= $id ? "&id={$id}" : '' ?>">
+                <?= Csrf::field() ?>
                 <!-- Offer Name -->
                 <div style="margin-bottom: 24px;">
                     <label style="display: block; font-weight: 600; margin-bottom: 8px;">
