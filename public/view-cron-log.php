@@ -53,7 +53,10 @@ try {
     $permission = $auth->getPermission();
     $legacyNoRoles = empty($_SESSION['role_ids'] ?? [])
         && \SimpleKuma\Auth\Auth::allowsLegacyNoRolesFallback();
-    if ($permission && !$permission->hasPermission(\SimpleKuma\Auth\Permission::PERM_SETTINGS_VIEW) && !$legacyNoRoles) {
+    $canViewCron = ($permission && $permission->hasPermission(\SimpleKuma\Auth\Permission::PERM_SETTINGS_EDIT))
+        || $legacyNoRoles
+        || \SimpleKuma\Auth\SingleAdminMode::isEnabled();
+    if (!$canViewCron) {
         http_response_code(403);
         echo 'Forbidden';
         exit;

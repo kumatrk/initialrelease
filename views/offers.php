@@ -2,6 +2,10 @@
 // Offers CRUD Page
 require_once __DIR__ . '/../config/config.php';
 
+use SimpleKuma\Auth\Auth;
+use SimpleKuma\Auth\Csrf;
+use SimpleKuma\Auth\Permission;
+
 // Mobile detection function
 function isMobileDevice(): bool {
     $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
@@ -29,10 +33,26 @@ $action = $_GET['action'] ?? 'list';
 $id = isset($_GET['id']) ? (int)$_GET['id'] : null;
 $errors = [];
 $success = '';
+$permission = $GLOBALS['permission'] ?? null;
+$canManage = ($permission && $permission->hasPermission(Permission::PERM_OFFER_MANAGE))
+    || (Auth::allowsLegacyNoRolesFallback() && empty($_SESSION['role_ids'] ?? []));
+
+// Block add/edit screens when user cannot manage
+if (!$canManage && in_array($action, ['add', 'edit'], true)) {
+    $errors['general'] = 'You do not have permission to modify this resource.';
+    $action = 'list';
+}
+
 
 // Handle form submissions
+Csrf::ensureToken();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if ($action === 'delete') {
+    if (!Csrf::validate()) {
+        $errors['general'] = Csrf::invalidRequestMessage();
+    } elseif (!$canManage) {
+        $errors['general'] = 'You do not have permission to manage offers';
+        $action = 'list';
+    } elseif ($action === 'delete') {
         $blockReason = $offer->getDeleteBlockReason((int)$id);
         if ($blockReason !== null) {
             $errors['general'] = $blockReason;
@@ -129,7 +149,9 @@ $db->close();
     <div class="card">
         <div class="card-header">
             <h2 class="card-title">Your Offers</h2>
+            <?php if ($canManage): ?>
             <a href="?page=offers&action=add" class="btn btn-primary">+ Add Offer</a>
+            <?php endif; ?>
         </div>
         <div class="card-body">
             <?php
@@ -227,7 +249,8 @@ $db->close();
                                                 🗑️
                                             </button>
                                         <?php else: ?>
-                                        <form method="post" action="?page=offers&action=delete&id=<?= $off['id'] ?>" 
+                                        <form method="post" action="?page=offers&action=delete&id=<?= $off['id'] ?>
+                <?= Csrf::field() ?>" 
                                               style="display: inline; margin: 0;" 
                                               onsubmit="return confirm('Are you sure you want to delete this offer?\\n\\nThis cannot be undone.');">
                                             <button type="submit" 
@@ -328,7 +351,8 @@ $db->close();
                                         🗑️ Delete
                                     </button>
                                 <?php else: ?>
-                                <form method="post" action="?page=offers&action=delete&id=<?= $off['id'] ?>" 
+                                <form method="post" action="?page=offers&action=delete&id=<?= $off['id'] ?>
+                <?= Csrf::field() ?>" 
                                       style="flex: 1; margin: 0;" 
                                       onsubmit="return confirm('Are you sure you want to delete this offer?\\n\\nThis cannot be undone.');">
                                     <button type="submit" 
@@ -353,7 +377,8 @@ $db->close();
             <a href="?page=offers" class="btn btn-secondary">← Back to List</a>
         </div>
         <div class="card-body">
-            <form method="post" action="?page=offers&action=<?= $action ?><?= $id ? "&id={$id}" : '' ?>">
+            <form method="post" action="?page=offers&action=<?= $action ?>
+                <?= Csrf::field() ?><?= $id ? "&id={$id}" : '' ?>">
                 <!-- Offer Name -->
                 <div style="margin-bottom: 24px;">
                     <label style="display: block; font-weight: 600; margin-bottom: 8px;">

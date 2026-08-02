@@ -25,11 +25,13 @@ $isMobile = isMobileDevice();
 
 // Get permission instance
 $permission = $GLOBALS['permission'] ?? null;
+use SimpleKuma\Auth\Auth;
+use SimpleKuma\Auth\Csrf;
 use SimpleKuma\Auth\Permission;
 use SimpleKuma\Release\TrafficSourceReleaseHelper;
 
-// Check if user has no roles (fallback for legacy installations)
-$hasNoRoles = empty($_SESSION['role_ids'] ?? []);
+// Check if user has no roles (fallback for legacy installations outside production only)
+$hasNoRoles = empty($_SESSION['role_ids'] ?? []) && Auth::allowsLegacyNoRolesFallback();
 
 $db = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
 $userTimezone = $GLOBALS['userTimezone'] ?? 'UTC';
@@ -51,8 +53,15 @@ $id = isset($_POST['id']) ? (int)$_POST['id'] : (isset($_GET['id']) ? (int)$_GET
 $errors = [];
 $success = '';
 
-// Handle clone action (can be GET or POST from form)
-if (($action === 'clone' && $id) && ($_SERVER['REQUEST_METHOD'] === 'GET' || $_SERVER['REQUEST_METHOD'] === 'POST')) {
+// Handle clone action (POST + CSRF + create permission only — no GET clone)
+if ($action === 'clone' && $id && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!Csrf::validate()) {
+        $errors['general'] = Csrf::invalidRequestMessage();
+        $action = 'list';
+    } elseif ($permission && !$permission->hasPermission(Permission::PERM_CAMPAIGN_CREATE) && !$hasNoRoles) {
+        $errors['general'] = 'You do not have permission to clone campaigns';
+        $action = 'list';
+    } else {
     // Clone campaign
     $originalCampaign = $campaign->getById($id);
     if ($originalCampaign) {
@@ -137,6 +146,7 @@ if (($action === 'clone' && $id) && ($_SERVER['REQUEST_METHOD'] === 'GET' || $_S
     } else {
         $errors['general'] = 'Campaign not found';
     }
+    } // end clone CSRF/permission else
 }
 
 // Handle success message from redirect
@@ -164,7 +174,15 @@ if (isset($_GET['success'])) {
 }
 
 // Handle form submissions
+Csrf::ensureToken();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Clone already validated CSRF above
+    if ($action === 'clone') {
+        // no-op: handled in clone block
+    } elseif (!Csrf::validate()) {
+        $errors['general'] = Csrf::invalidRequestMessage();
+        $action = 'list';
+    } else {
     // Debug: Log POST data
     error_log('POST request received. POST data: ' . print_r($_POST, true));
     error_log('GET data: ' . print_r($_GET, true));
@@ -718,6 +736,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors['general'] = ($errors['general'] ?? 'Please fix the validation errors') . ' ' . implode(' ', $errors['slugs']);
         }
     }
+    } // end CSRF-validated POST body
 }
 
 $editCampaign = null;
@@ -1263,6 +1282,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                     
                                     <!-- Reset Conversions Button -->
                                     <form method="post" action="?page=campaigns" style="display: inline; margin: 0;">
+                                        <?= Csrf::field() ?>
                                         <input type="hidden" name="action" value="reset_campaign_conversions">
                                         <input type="hidden" name="campaign_id" value="<?= $camp['id'] ?>">
                                         <button type="submit" 
@@ -1276,6 +1296,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
 
                                     <!-- Reset Clicks Button -->
                                     <form method="post" action="?page=campaigns" style="display: inline; margin: 0;">
+                                        <?= Csrf::field() ?>
                                         <input type="hidden" name="action" value="reset_campaign_clicks">
                                         <input type="hidden" name="campaign_id" value="<?= $camp['id'] ?>">
                                         <button type="submit" 
@@ -1291,6 +1312,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                     <?php if (!$permission || $permission->hasPermission(\SimpleKuma\Auth\Permission::PERM_CAMPAIGN_CREATE)): ?>
                                     <!-- Clone Button -->
                                     <form method="post" action="?page=campaigns&action=clone&id=<?= $camp['id'] ?>" style="display: inline; margin: 0;">
+                                        <?= Csrf::field() ?>
                                         <button type="submit" 
                                                 class="campaign-action-btn"
                                                 data-action="clone"
@@ -1305,6 +1327,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                     <form method="post" action="?page=campaigns&action=delete&id=<?= $camp['id'] ?>" 
                                           style="display: inline; margin: 0;" 
                                           onsubmit="return confirm('Are you sure you want to delete this campaign?\\n\\nThis will permanently delete all associated click data and cannot be undone.');">
+                                        <?= Csrf::field() ?>
                                         <button type="submit" 
                                                 class="campaign-action-btn"
                                                 data-action="delete"
@@ -1666,6 +1689,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                             ✏️ Edit
                                         </a>
                                         <form method="post" action="?page=campaigns" style="display: inline; margin: 0;">
+                                            <?= Csrf::field() ?>
                                             <input type="hidden" name="action" value="reset_campaign_conversions">
                                             <input type="hidden" name="campaign_id" value="<?= $camp['id'] ?>">
                                             <button type="submit" 
@@ -1675,6 +1699,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                             </button>
                                         </form>
                                         <form method="post" action="?page=campaigns" style="display: inline; margin: 0;">
+                                            <?= Csrf::field() ?>
                                             <input type="hidden" name="action" value="reset_campaign_clicks">
                                             <input type="hidden" name="campaign_id" value="<?= $camp['id'] ?>">
                                             <button type="submit" 
@@ -1744,6 +1769,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                 ✏️ Edit
                             </a>
                             <form method="post" action="?page=campaigns" style="display: inline; margin: 0;">
+                                <?= Csrf::field() ?>
                                 <input type="hidden" name="action" value="reset_campaign_conversions">
                                 <input type="hidden" name="campaign_id" value="<?= $camp['id'] ?>">
                                 <button type="submit" 
@@ -1753,6 +1779,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                 </button>
                             </form>
                             <form method="post" action="?page=campaigns" style="display: inline; margin: 0;">
+                                <?= Csrf::field() ?>
                                 <input type="hidden" name="action" value="reset_campaign_clicks">
                                 <input type="hidden" name="campaign_id" value="<?= $camp['id'] ?>">
                                 <button type="submit" 
@@ -2082,6 +2109,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
         </div>
         <div class="card-body">
             <form method="post" action="?page=campaigns<?= $action === 'edit' && $id ? '&action=edit&id=' . (int)$id : ($action === 'add' ? '&action=add' : '') ?>" id="campaign-form">
+                <?= Csrf::field() ?>
                 <input type="hidden" name="action" value="<?= htmlspecialchars($action) ?>">
                 <?php if ($id): ?>
                 <input type="hidden" name="id" value="<?= (int)$id ?>">

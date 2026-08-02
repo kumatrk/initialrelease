@@ -166,9 +166,28 @@ function fetchAndSyncFacebookAdAccounts($db, $integrationId, $accessToken, $prox
 // Handle AJAX request to fetch and save Facebook ad accounts
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'fetch_fb_ad_accounts') {
     header('Content-Type: application/json');
-    
-    $accessToken = trim($_GET['access_token'] ?? '');
-    $integrationId = !empty($_GET['integration_id']) ? (int)$_GET['integration_id'] : 0;
+
+    $canEditAjax = ($permission && $permission->hasPermission(Permission::PERM_SETTINGS_EDIT))
+        || (Auth::allowsLegacyNoRolesFallback() && empty($_SESSION['role_ids'] ?? []));
+    if (!$canEditAjax) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Forbidden']);
+        exit;
+    }
+
+    // Prefer POST body so tokens are not stored in access logs / Referer
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+        http_response_code(405);
+        echo json_encode(['success' => false, 'error' => 'POST required']);
+        exit;
+    }
+    if (!Csrf::validate()) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token']);
+        exit;
+    }
+    $accessToken = trim((string) ($_POST['access_token'] ?? ''));
+    $integrationId = !empty($_POST['integration_id']) ? (int) $_POST['integration_id'] : 0;
     
     if (empty($accessToken)) {
         echo json_encode(['success' => false, 'error' => 'Access token required']);
@@ -413,6 +432,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['act
 // CSRF token for settings forms
 Csrf::ensureToken();
 
+$canEditSettings = ($permission && $permission->hasPermission(Permission::PERM_SETTINGS_EDIT))
+    || (\SimpleKuma\Auth\Auth::allowsLegacyNoRolesFallback() && empty($_SESSION['role_ids'] ?? []));
+
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -420,7 +442,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Handle composer install (must be before tab-specific handlers)
     if (!Csrf::validate()) {
         $errors['general'] = Csrf::invalidRequestMessage();
+    } elseif (
+        in_array($action, [
+            'update_settings',
+            'save_update_settings',
+            'check_updates',
+            'start_update',
+            'create_group',
+            'update_group',
+            'delete_group',
+            'create_fb_integration',
+            'update_fb_integration',
+            'delete_fb_integration',
+            'create_ga_integration',
+            'update_ga_integration',
+            'delete_ga_integration',
+            'create_ga_cost_integration',
+            'update_ga_cost_integration',
+            'delete_ga_cost_integration',
+            'create_custom_postback',
+            'update_custom_postback',
+            'delete_custom_postback',
+            'create_fm_integration',
+            'update_fm_integration',
+            'delete_fm_integration',
+            'create_domain',
+            'update_domain',
+            'delete_domain',
+        ], true) && !$canEditSettings
+    ) {
+        $errors['general'] = 'You do not have permission to edit settings.';
     } elseif ($action === 'install_composer') {
+        if (!$canEditSettings) {
+            $errors['general'] = 'You do not have permission to install dependencies.';
+        } else {
         // Set longer execution time for composer install
         @set_time_limit(300); // 5 minutes
         @ini_set('max_execution_time', '300');
@@ -470,36 +525,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             error_log("Composer install fatal error: " . $e->getMessage() . "\n" . $e->getTraceAsString());
             $errors['general'] = $errorMsg;
         }
+        } // end canEditSettings install_composer
     } elseif ($action === 'change_password') {
-        $currentPassword = $_POST['current_password'] ?? '';
-        $newPassword = $_POST['new_password'] ?? '';
-        $confirmPassword = $_POST['confirm_password'] ?? '';
-
-        // Validate
-        if (empty($currentPassword)) {
-            $errors['current_password'] = 'Current password is required';
-        } elseif (!password_verify($currentPassword, $currentUser['pass_hash'] ?? '')) {
-            $errors['current_password'] = 'Current password is incorrect';
-        }
-
-        if (empty($newPassword)) {
-            $errors['new_password'] = 'New password is required';
-        } elseif (strlen($newPassword) < 8) {
-            $errors['new_password'] = 'Password must be at least 8 characters';
-        }
-
-        if ($newPassword !== $confirmPassword) {
-            $errors['confirm_password'] = 'Passwords do not match';
-        }
-
-        if (empty($errors)) {
-            $passwordHash = password_hash($newPassword, HASH_ALGO, HASH_OPTIONS);
-            $stmt = $db->prepare("UPDATE users SET pass_hash = ? WHERE id = ?");
-            $stmt->bind_param('si', $passwordHash, $_SESSION['user_id']);
-            
-            if ($stmt->execute()) {
-                $success = 'Password changed successfully';
-            } else {
+        $changeResult = $auth->changePassword(
+            (int) $_SESSION['user_id'],
+            (string) ($_POST['current_password'] ?? ''),
+            (string) ($_POST['new_password'] ?? ''),
+            (string) ($_POST['confirm_password'] ?? '')
+        );
+        if (!empty($changeResult['success'])) {
+            $success = $changeResult['message'] ?? 'Password changed successfully';
+        } else {
+            foreach (($changeResult['errors'] ?? []) as $field => $message) {
+                $errors[$field] = $message;
+            }
+            if (empty($errors)) {
                 $errors['general'] = 'Failed to update password';
             }
         }
@@ -887,8 +927,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     } elseif ($action === 'add_manual_conversions') {
-        // Handle manual conversion entry (single + bulk share this loop)
         $activeTab = 'data';
+        if (!$canEditSettings) {
+            $errors['general'] = 'You do not have permission to add conversions.';
+        } else {
+        // Handle manual conversion entry (single + bulk share this loop)
         require_once __DIR__ . '/../src/Tracking/PostbackDispatcher.php';
         require_once __DIR__ . '/../src/Tracking/DailySummaryUpdater.php';
         require_once __DIR__ . '/../src/Database/ClicksTableResolver.php';
@@ -1101,11 +1144,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors['general'] = 'No conversions were added. ' . implode('; ', array_slice($errorsList, 0, 5));
             }
         }
+        } // end canEditSettings for add_manual_conversions
     } elseif ($action === 'delete_clicks_by_campaign') {
         $activeTab = 'data';
-        $campaignId = (int)($_POST['campaign_id'] ?? 0);
-
-        if ($campaignId <= 0) {
+        if (!$canEditSettings) {
+            $errors['general'] = 'You do not have permission to delete click data.';
+        } elseif (($campaignId = (int)($_POST['campaign_id'] ?? 0)) <= 0) {
             $errors['general'] = 'Invalid campaign ID';
         } else {
             try {
@@ -1120,20 +1164,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($action === 'delete_all_clicks') {
         $activeTab = 'data';
-        try {
-            require_once __DIR__ . '/../src/DataRetention/DataManagementCleanup.php';
-            $cleanup = new \SimpleKuma\DataRetention\DataManagementCleanup($db);
-            $result = $cleanup->deleteAllClicks();
-            $success = "Deleted {$result['clicks_deleted']} click(s) and {$result['conversions_deleted']} conversion(s) from the database (including archive). All click statistics were reset.";
-        } catch (\Throwable $e) {
-            error_log('delete_all_clicks failed: ' . $e->getMessage());
-            $errors['general'] = 'Failed to delete all clicks: ' . $e->getMessage();
+        if (!$canEditSettings) {
+            $errors['general'] = 'You do not have permission to delete click data.';
+        } else {
+            try {
+                require_once __DIR__ . '/../src/DataRetention/DataManagementCleanup.php';
+                $cleanup = new \SimpleKuma\DataRetention\DataManagementCleanup($db);
+                $result = $cleanup->deleteAllClicks();
+                $success = "Deleted {$result['clicks_deleted']} click(s) and {$result['conversions_deleted']} conversion(s) from the database (including archive). All click statistics were reset.";
+            } catch (\Throwable $e) {
+                error_log('delete_all_clicks failed: ' . $e->getMessage());
+                $errors['general'] = 'Failed to delete all clicks: ' . $e->getMessage();
+            }
         }
     } elseif ($action === 'delete_clicks_by_ip') {
         $activeTab = 'data';
         $ip = trim($_POST['ip_address'] ?? '');
 
-        if ($ip === '') {
+        if (!$canEditSettings) {
+            $errors['general'] = 'You do not have permission to delete click data.';
+        } elseif ($ip === '') {
             $errors['general'] = 'IP address is required';
         } else {
             try {
@@ -1150,7 +1200,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $activeTab = 'data';
         $ip = trim($_POST['ip_address'] ?? '');
         $note = trim($_POST['note'] ?? '');
-        if ($ip === '') {
+        if (!$canEditSettings) {
+            $errors['general'] = 'You do not have permission to manage stats exclusions.';
+        } elseif ($ip === '') {
             $errors['general'] = 'IP address is required';
         } else {
             try {
@@ -1172,6 +1224,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $activeTab = 'data';
         $ip = trim($_POST['ip_address'] ?? '');
         $id = (int)($_POST['id'] ?? 0);
+        if (!$canEditSettings) {
+            $errors['general'] = 'You do not have permission to manage stats exclusions.';
+        } else {
         try {
             $hiddenSvc = new \SimpleKuma\Stats\StatsHiddenIpService($db);
             $result = $id > 0 ? $hiddenSvc->removeById($id) : $hiddenSvc->remove($ip);
@@ -1184,12 +1239,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             error_log('unhide_ip_from_stats failed: ' . $e->getMessage());
             $errors['general'] = 'Failed to unhide IP: ' . $e->getMessage();
         }
+        }
     } elseif ($action === 'delete_clicks_by_subid') {
         $activeTab = 'data';
         $subidParam = trim($_POST['subid_param'] ?? '');
         $subidValue = trim($_POST['subid_value'] ?? '');
 
-        if ($subidParam === '' || $subidValue === '') {
+        if (!$canEditSettings) {
+            $errors['general'] = 'You do not have permission to delete click data.';
+        } elseif ($subidParam === '' || $subidValue === '') {
             $errors['general'] = 'Both parameter name and value are required';
         } else {
             try {
@@ -1206,7 +1264,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $activeTab = 'data';
         $campaignId = (int)($_POST['campaign_id'] ?? 0);
 
-        if ($campaignId <= 0) {
+        if (!$canEditSettings) {
+            $errors['general'] = 'You do not have permission to delete conversion data.';
+        } elseif ($campaignId <= 0) {
             $errors['general'] = 'Invalid campaign ID';
         } else {
             try {
@@ -1223,7 +1283,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $activeTab = 'data';
         $clickIdsInput = trim($_POST['click_ids'] ?? '');
 
-        if ($clickIdsInput === '') {
+        if (!$canEditSettings) {
+            $errors['general'] = 'You do not have permission to delete conversion data.';
+        } elseif ($clickIdsInput === '') {
             $errors['general'] = 'Click ID(s) are required';
         } else {
             $clickIds = array_map('trim', explode(',', $clickIdsInput));
@@ -1773,8 +1835,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($id <= 0) {
             $errors['general'] = 'Invalid integration ID';
         } else {
-            // Optional: Validate access token
-            $tokenValidationErrors = $facebookMarketing->validateAccessToken($accessToken);
+            // Optional: Validate access token only when a new one is submitted
+            $tokenValidationErrors = $accessToken !== ''
+                ? $facebookMarketing->validateAccessToken($accessToken)
+                : [];
             
             $validationErrors = $facebookMarketing->validate([
                 'id' => $id,
@@ -2055,6 +2119,10 @@ $allFacebookIntegrations = $facebookCapi->getAll();
 $editingFacebookIntegration = null;
 if (isset($_GET['edit_fb_integration'])) {
     $editingFacebookIntegration = $facebookCapi->getById((int)$_GET['edit_fb_integration']);
+    if (is_array($editingFacebookIntegration)) {
+        $editingFacebookIntegration['access_token_set'] = !empty($editingFacebookIntegration['access_token']);
+        unset($editingFacebookIntegration['access_token'], $editingFacebookIntegration['proxy_pass_encrypted']);
+    }
 }
 // Load Google Ads integrations for display
 $allGoogleAdsIntegrations = $googleAds->getAll();
@@ -2077,6 +2145,10 @@ $allFacebookMarketingIntegrations = $facebookMarketing->getAllIncludingPaused();
 $editingFacebookMarketingIntegration = null;
 if (isset($_GET['edit_fm_integration'])) {
     $editingFacebookMarketingIntegration = $facebookMarketing->getById((int)$_GET['edit_fm_integration']);
+    if (is_array($editingFacebookMarketingIntegration)) {
+        $editingFacebookMarketingIntegration['access_token_set'] = !empty($editingFacebookMarketingIntegration['access_token']);
+        unset($editingFacebookMarketingIntegration['access_token'], $editingFacebookMarketingIntegration['proxy_pass_encrypted']);
+    }
 }
 // Load custom postbacks for display
 $allCustomPostbacks = $customPostback->getAll();
@@ -2823,13 +2895,13 @@ $settingsTabs = array_values(array_filter(
                         </div>
 
                         <div style="margin-bottom: 20px;">
-                            <label style="display: block; font-weight: 600; margin-bottom: 8px;">Access Token <span style="color: #d32f2f;">*</span></label>
-                            <input type="text" name="fb_access_token" 
-                                   value="<?= htmlspecialchars($editingFacebookIntegration['access_token'] ?? '') ?>"
-                                   placeholder="EAAxxxxxxxxxxxxxxxx"
-                                   required
+                            <label style="display: block; font-weight: 600; margin-bottom: 8px;">Access Token <?php if (empty(($editingFacebookIntegration ?? [])['access_token_set'])): ?><span style="color: #d32f2f;">*</span><?php endif; ?></label>
+                            <input type="password" name="fb_access_token" autocomplete="new-password"
+                                   value=""
+                                   placeholder="<?= !empty(($editingFacebookIntegration ?? [])['access_token_set']) ? 'Leave blank to keep existing token' : 'EAAxxxxxxxxxxxxxxxx' ?>"
+                                   <?= empty(($editingFacebookIntegration ?? [])['access_token_set']) ? 'required' : '' ?>
                                    style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px; font-family: monospace;">
-                            <div style="font-size: 12px; color: #666; margin-top: 4px;">Server-side access token from Facebook Business Settings</div>
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">Server-side access token from Facebook Business Settings<?= !empty(($editingFacebookIntegration ?? [])['access_token_set']) ? ' (leave blank to keep current)' : '' ?></div>
                         </div>
 
                         <div style="margin-bottom: 20px;">
@@ -4126,13 +4198,13 @@ $settingsTabs = array_values(array_filter(
                         </div>
 
                         <div style="margin-bottom: 20px;">
-                            <label style="display: block; font-weight: 600; margin-bottom: 8px;">Access Token <span style="color: #d32f2f;">*</span></label>
-                            <input type="text" name="fm_access_token" 
-                                   value="<?= htmlspecialchars($editingFacebookMarketingIntegration['access_token'] ?? '') ?>"
-                                   placeholder="EAAxxxxxxxxxxxxxxxx"
-                                   required
+                            <label style="display: block; font-weight: 600; margin-bottom: 8px;">Access Token <?php if (empty(($editingFacebookMarketingIntegration ?? [])['access_token_set'])): ?><span style="color: #d32f2f;">*</span><?php endif; ?></label>
+                            <input type="password" name="fm_access_token" autocomplete="new-password"
+                                   value=""
+                                   placeholder="<?= !empty(($editingFacebookMarketingIntegration ?? [])['access_token_set']) ? 'Leave blank to keep existing token' : 'EAAxxxxxxxxxxxxxxxx' ?>"
+                                   <?= empty(($editingFacebookMarketingIntegration ?? [])['access_token_set']) ? 'required' : '' ?>
                                    style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px; font-family: monospace;">
-                            <div style="font-size: 12px; color: #666; margin-top: 4px;">Facebook Marketing API access token from Business Settings</div>
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">Facebook Marketing API access token from Business Settings<?= !empty(($editingFacebookMarketingIntegration ?? [])['access_token_set']) ? ' (leave blank to keep current)' : '' ?></div>
                         </div>
 
                         <div style="margin-bottom: 20px;">
@@ -4427,9 +4499,16 @@ $settingsTabs = array_values(array_filter(
                     fetchBtn.disabled = true;
                     fetchBtn.textContent = '🔄 Fetching & Saving...';
                     
-                    // Fetch and save ad accounts via AJAX
-                    const url = '?page=settings&tab=api-costs&ajax=fetch_fb_ad_accounts&access_token=' + encodeURIComponent(accessToken) + '&integration_id=' + integrationId;
-                    fetch(url)
+                    // Fetch and save ad accounts via AJAX (POST — never put token in URL/logs)
+                    const formData = new FormData();
+                    formData.append('access_token', accessToken);
+                    formData.append('integration_id', String(integrationId));
+                    formData.append('app_csrf', <?= json_encode(Csrf::ensureToken(), JSON_THROW_ON_ERROR) ?>);
+                    fetch('?page=settings&tab=api-costs&ajax=fetch_fb_ad_accounts', {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'same-origin'
+                    })
                         .then(response => response.json())
                         .then(data => {
                             loadingDiv.style.display = 'none';

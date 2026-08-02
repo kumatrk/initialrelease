@@ -798,9 +798,12 @@ class PostbackDispatcher
         $fbcValue = $userData['fbc'] ?? 'NOT SET';
         error_log("Facebook CAPI fbc parameter for conversion {$conversion['id']}: " . $fbcValue);
         
-        // Log the full event data structure for debugging (truncated if too long)
+        // Log event structure without secrets (access_token redacted)
+        $eventDataForLog = $eventData;
+        $eventDataForLog['access_token'] = '[REDACTED]';
         $eventDataJson = json_encode($eventData);
-        $eventDataPreview = strlen($eventDataJson) > 500 ? substr($eventDataJson, 0, 500) . '...' : $eventDataJson;
+        $eventDataPreview = json_encode($eventDataForLog);
+        $eventDataPreview = strlen($eventDataPreview) > 500 ? substr($eventDataPreview, 0, 500) . '...' : $eventDataPreview;
         error_log("Facebook CAPI event data for conversion {$conversion['id']}: " . $eventDataPreview);
         
         // Send POST request to Facebook Graph API
@@ -809,8 +812,41 @@ class PostbackDispatcher
     }
 
     /**
-     * Replace macros in template
+     * Strip secrets from bodies stored in postback_logs / diagnostics.
      */
+    private function redactSecretsInLoggedBody(string $body): string
+    {
+        $decoded = json_decode($body, true);
+        if (is_array($decoded)) {
+            $this->redactSecretKeysRecursive($decoded);
+            $encoded = json_encode($decoded);
+            return is_string($encoded) ? $encoded : $body;
+        }
+
+        return (string) preg_replace(
+            '/("(?:access_token|password|api_token|client_secret|refresh_token|proxy_pass)"\s*:\s*")[^"]*(")/i',
+            '$1[REDACTED]$2',
+            $body
+        );
+    }
+
+    /**
+     * @param array<mixed> $data
+     */
+    private function redactSecretKeysRecursive(array &$data): void
+    {
+        foreach ($data as $key => &$value) {
+            if (is_array($value)) {
+                $this->redactSecretKeysRecursive($value);
+                continue;
+            }
+            if (is_string($key) && preg_match('/access_token|password|secret|api_token|refresh_token|proxy_pass/i', $key)) {
+                $value = '[REDACTED]';
+            }
+        }
+        unset($value);
+    }
+
     /**
      * Extract the origin (base domain) from a URL for Meta event_source_url
      * Format: scheme + "://" + host + (port ? ":" + port : "") + "/"
@@ -1169,7 +1205,7 @@ class PostbackDispatcher
             // Truncate request body if too long (max 10000 chars for JSON payloads)
             $requestBodyStored = null;
             if ($requestBody !== null) {
-                $requestBodyStored = $requestBody;
+                $requestBodyStored = $this->redactSecretsInLoggedBody($requestBody);
                 if (strlen($requestBodyStored) > 10000) {
                     $requestBodyStored = substr($requestBodyStored, 0, 10000) . '... [truncated]';
                 }

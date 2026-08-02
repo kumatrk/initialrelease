@@ -1,4 +1,14 @@
-# Simple Kuma Tracker Version 1.1.5.9
+# Simple Kuma Tracker Version 1.1.5.10
+
+## Changes in 1.1.5.10
+
+### Security hardening (auth, CSRF, secrets, packaging)
+- Password reset: hash-only tokens, generic responses, rate limits, remember-me revoke; sessions invalidate via `auth_epoch` (migrations **084**, **085**)
+- Settings mutations require `settings.edit`; entity manage permissions + CSRF on campaigns/offers/networks/LPs/traffic sources
+- Dev-tool PHP endpoints gated + Apache deny list expanded; production zip excludes debug/manual fire helpers (`login-preview`, `fire-postback-for-conversion`, diagnose/smoke scripts)
+- Meta CAPI / Marketing access tokens no longer echoed in edit forms; blank keeps existing; postback logs/API redact secrets
+- Google conversion CSV keys compared with `hash_equals`; update-check and cron-log views require settings permissions
+- Signing secrets refuse weak static fallbacks when `APP_KEY` is missing in production
 
 ## Changes in 1.1.5.9
 
@@ -121,7 +131,7 @@
 
 ## Migrations
 
-Fresh installs should apply forward migrations **001 through 082** (exclude `rollback_*.sql`). Existing installs: run pending migrations after upgrade (includes **081** for Meta click stats exclusion and **082** for conversion event mapping).
+Fresh installs should apply forward migrations **001 through 083** (exclude `rollback_*.sql`). Existing installs: run pending migrations after upgrade (includes **083** for Cloudflare edge campaign flags).
 
 ## License
 

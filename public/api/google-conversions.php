@@ -38,14 +38,31 @@ while ($integrationRow = $integrationResult->fetch_assoc()) {
     $integrationKeyMap[$integrationRow['conversion_key']] = $integrationRow['id'];
 }
 
-$providedKey = $_GET['key'] ?? '';
+$providedKey = (string) ($_GET['key'] ?? '');
 $matchedIntegrationId = null;
+$keyAccepted = false;
 
-if (!empty($providedKey) && isset($integrationKeyMap[$providedKey])) {
-    $matchedIntegrationId = $integrationKeyMap[$providedKey];
-} elseif (!empty($legacyGoogleConversionKey) && $providedKey === $legacyGoogleConversionKey) {
+if ($providedKey !== '') {
+    foreach ($integrationKeyMap as $conversionKey => $integrationId) {
+        if (is_string($conversionKey) && $conversionKey !== '' && hash_equals($conversionKey, $providedKey)) {
+            $matchedIntegrationId = $integrationId;
+            $keyAccepted = true;
+            break;
+        }
+    }
+}
+
+if (
+    !$keyAccepted
+    && !empty($legacyGoogleConversionKey)
+    && $providedKey !== ''
+    && hash_equals((string) $legacyGoogleConversionKey, $providedKey)
+) {
     $matchedIntegrationId = null;
-} else {
+    $keyAccepted = true;
+}
+
+if (!$keyAccepted) {
     http_response_code(401);
     header('Content-Type: text/plain');
     echo "Unauthorized: Invalid or missing conversion key";

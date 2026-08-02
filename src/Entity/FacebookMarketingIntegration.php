@@ -176,7 +176,15 @@ class FacebookMarketingIntegration
         
         // Extract values to variables for bind_param (must be by reference)
         $name = $data['name'];
-        $accessToken = $data['access_token'];
+        $accessToken = (string) ($data['access_token'] ?? '');
+        // Blank token on update = keep existing (never wipe from empty form field)
+        if ($accessToken === '') {
+            $existing = $this->getById($id);
+            $accessToken = is_array($existing) ? (string) ($existing['access_token'] ?? '') : '';
+            if ($accessToken === '') {
+                return false;
+            }
+        }
         $adAccountId = $data['ad_account_id'] ?? null;
         $status = $data['status'] ?? 'active';
         $useProxy = isset($data['use_proxy']) ? (int)(bool)$data['use_proxy'] : 0;
@@ -255,7 +263,9 @@ class FacebookMarketingIntegration
         }
         
         if (empty($data['access_token'])) {
-            $errors[] = "Access token is required.";
+            if (!$isUpdate) {
+                $errors[] = "Access token is required.";
+            }
         }
         
         if (!empty($data['ad_account_id']) && strlen($data['ad_account_id']) > 50) {

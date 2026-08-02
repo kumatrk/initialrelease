@@ -105,9 +105,24 @@
 </FilesMatch>
 
 # Block access to test, debug, utility, and migration scripts (production security)
-<FilesMatch "^(test-|debug-|check-|diagnose\.php|diagnose-|fix-|clear-|backfill-|backup-|convert-|revert-|set-|sync-|remove-|run-migration-|analyze-|find-|modsecurity-).*\.php$">
-    Order allow,deny
-    Deny from all
+# diagnose.php uses $ (exact) — do not put diagnose\.php inside (...).*\.php$ or it never matches
+<FilesMatch "^(test-|debug-|check-|diagnose-|fix-|clear-|cleanup-|backfill-|backup-|convert-|revert-|set-|sync-|remove-|run-migration-|run-timezone-|analyze-|find-|modsecurity-|verify-|km-|install-composer|install-maxmind|fire-postback-|api-v1-smoke|update-base-url|login-preview).*\.php$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+<FilesMatch "^(diagnose\.php|dashboard\.php|index2\.php|simple-asset-test\.php|api-v1-smoke\.php)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
 </FilesMatch>
 
 # Block access to scripts directory if somehow accessible

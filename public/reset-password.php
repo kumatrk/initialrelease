@@ -55,7 +55,10 @@ if (!empty($token)) {
 
 $loginGate = new LoginGate();
 if ($loginGate->isEnabled($db)) {
-    if ($tokenValid || $loginGate->validateAccess($db)) {
+    // Valid reset token may view this page, but must not mint a long-lived gate pass cookie
+    if ($tokenValid) {
+        // allow through without issuePassCookie()
+    } elseif ($loginGate->validateAccess($db)) {
         $loginGate->issuePassCookie();
     } else {
         $loginGate->enforceOrRedirect($db);

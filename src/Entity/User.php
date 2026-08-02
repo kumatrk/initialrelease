@@ -215,6 +215,22 @@ class User
         $stmt->bind_param($types, ...$params);
         $result = $stmt->execute();
 
+        if ($result && isset($data['password'])) {
+            // Invalidate other sessions + remember-me after any password write
+            $col = $this->db->query("SHOW COLUMNS FROM users LIKE 'auth_epoch'");
+            if ($col && $col->num_rows > 0) {
+                $bump = $this->db->prepare('UPDATE users SET auth_epoch = auth_epoch + 1 WHERE id = ?');
+                $bump->bind_param('i', $id);
+                $bump->execute();
+            }
+            $tokTable = $this->db->query("SHOW TABLES LIKE 'remember_tokens'");
+            if ($tokTable && $tokTable->num_rows > 0) {
+                $del = $this->db->prepare('DELETE FROM remember_tokens WHERE user_id = ?');
+                $del->bind_param('i', $id);
+                $del->execute();
+            }
+        }
+
         // Update additional roles if provided
         if (isset($data['additional_role_ids']) && is_array($data['additional_role_ids'])) {
             // Remove all existing additional roles

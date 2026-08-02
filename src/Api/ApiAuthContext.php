@@ -52,7 +52,9 @@ class ApiAuthContext
             return true;
         }
 
-        return \SimpleKuma\Auth\Auth::allowsLegacyNoRolesFallback();
+        // Match UI/ApiAuth: legacy full-access only when user has no roles AND env allows it
+        return \SimpleKuma\Auth\Auth::allowsLegacyNoRolesFallback()
+            && $this->permission->getRoles() === [];
     }
 
     public function requirePermission(string $permission): void

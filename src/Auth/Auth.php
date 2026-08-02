@@ -16,6 +16,11 @@ class Auth
     private const SESSION_LIFETIME = 7200; // 2 hours
     private const REMEMBER_TOKEN_LIFETIME = 2592000; // 30 days
 
+    /** @var bool|null Request-scoped auth result (avoids repeat DB hits on stats AJAX) */
+    private ?bool $authCheckCache = null;
+    /** @var bool|null Process-scoped: whether users.auth_epoch exists */
+    private static ?bool $authEpochColumnExists = null;
+
     public function __construct(mysqli $db)
     {
         $this->db = $db;
@@ -99,6 +104,8 @@ class Auth
         $_SESSION['email'] = $user['email'];
         $_SESSION['logged_in'] = true;
         $_SESSION['login_time'] = time();
+        $_SESSION['auth_epoch'] = $this->fetchAuthEpoch((int) $user['id']);
+        $this->authCheckCache = true;
 
         // Load user roles into session
         $this->loadUserRolesIntoSession($user['id']);
@@ -165,24 +172,37 @@ class Auth
     }
 
     /**
-     * Check if user is authenticated
+     * Check if user is authenticated.
+     * Validates session timeout, is_active, and auth_epoch (password-change invalidation).
+     * Result is memoized once per request so stats AJAX does not multiply DB lookups.
      */
     public function isAuthenticated(): bool
     {
+        if ($this->authCheckCache !== null) {
+            return $this->authCheckCache;
+        }
+
         // Check session
         if (!empty($_SESSION['logged_in']) && !empty($_SESSION['user_id'])) {
-            // Check session timeout
             $loginTime = $_SESSION['login_time'] ?? 0;
             if ((time() - $loginTime) < self::SESSION_LIFETIME) {
-                return true;
+                if ($this->sessionCredentialsStillValid((int) $_SESSION['user_id'])) {
+                    $this->authCheckCache = true;
+                    return true;
+                }
+                // Password changed / deactivated elsewhere — drop this session
+                $this->clearSessionOnly();
             }
         }
 
         // Check remember token
         if (isset($_COOKIE['remember_token'])) {
-            return $this->loginFromRememberToken($_COOKIE['remember_token']);
+            $ok = $this->loginFromRememberToken($_COOKIE['remember_token']);
+            $this->authCheckCache = $ok;
+            return $ok;
         }
 
+        $this->authCheckCache = false;
         return false;
     }
 
@@ -362,7 +382,7 @@ class Auth
             ];
         }
 
-        $this->deleteRememberTokensForUser($userId);
+        $this->bumpAuthEpochAndRevoke($userId, true);
 
         return [
             'success' => true,
@@ -474,9 +494,12 @@ class Auth
         $_SESSION['email'] = $user['email'];
         $_SESSION['logged_in'] = true;
         $_SESSION['login_time'] = time();
+        $_SESSION['auth_epoch'] = $this->fetchAuthEpoch((int) $user['id']);
+        $this->authCheckCache = true;
 
         $this->loadUserRolesIntoSession((int) $user['id']);
         $this->createRememberToken((int) $user['id']);
+        session_regenerate_id(true);
 
         return true;
     }
@@ -561,88 +584,105 @@ class Auth
         return (int) ($row['count'] ?? 0);
     }
 
+    private const RESET_GENERIC_MESSAGE = 'If an account exists with that email, a password reset link has been sent.';
+    private const RESET_MAX_PER_IP = 3;
+    private const RESET_MAX_PER_USER = 3;
+
     /**
-     * Request password reset
-     * Returns ['success' => bool, 'message' => string, 'token' => string|null]
+     * Request password reset.
+     * Always returns a generic success message (no email/rate-limit enumeration).
+     *
+     * @return array{success: bool, message: string, token?: string, user?: array}
      */
     public function requestPasswordReset(string $email): array
     {
-        // Rate limiting: Check for recent requests from this IP
         $ipAddress = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
-        $recentRequests = $this->getRecentResetRequests($ipAddress);
-        
-        if ($recentRequests >= 3) {
+
+        // IP rate limit: silent generic success (do not reveal throttling)
+        if ($this->getRecentResetRequests($ipAddress) >= self::RESET_MAX_PER_IP) {
+            $this->passwordResetBackoff();
             return [
-                'success' => false,
-                'message' => 'Too many reset requests. Please wait before trying again.'
+                'success' => true,
+                'message' => self::RESET_GENERIC_MESSAGE,
             ];
         }
 
-        // Find user by email
         $stmt = $this->db->prepare(
-            "SELECT id, username, email FROM users WHERE email = ?"
+            'SELECT id, username, email FROM users WHERE email = ? AND is_active = 1'
         );
         $stmt->bind_param('s', $email);
         $stmt->execute();
         $result = $stmt->get_result();
         $user = $result->fetch_assoc();
 
-        // Always return success to prevent email enumeration
-        // But only generate token if user exists
+        // Always return success to prevent email enumeration; only mint token when eligible
         if (!$user) {
+            $this->passwordResetBackoff();
             return [
                 'success' => true,
-                'message' => 'If an account exists with that email, a password reset link has been sent.'
+                'message' => self::RESET_GENERIC_MESSAGE,
             ];
         }
 
-        // Generate secure token
-        $token = bin2hex(random_bytes(32)); // 64 character token
-        $tokenHash = hash('sha256', $token); // Hash for database storage
-        $expiresAt = date('Y-m-d H:i:s', time() + 3600); // 1 hour expiry
+        // Per-user cap: stop reset-link invalidation DoS without revealing why
+        if ($this->getRecentResetRequestsForUser((int) $user['id']) >= self::RESET_MAX_PER_USER) {
+            $this->passwordResetBackoff();
+            return [
+                'success' => true,
+                'message' => self::RESET_GENERIC_MESSAGE,
+            ];
+        }
 
-        // Invalidate any existing tokens for this user
-        $this->invalidateUserTokens($user['id']);
+        $token = bin2hex(random_bytes(32));
+        $tokenHash = hash('sha256', $token);
+        $expiresAt = date('Y-m-d H:i:s', time() + 3600);
 
-        // Store hashed token only (plain token sent via email, never stored)
+        $this->invalidateUserTokens((int) $user['id']);
+
+        // Hash-only storage (token_plain left empty / unused)
         $stmt = $this->db->prepare(
-            "INSERT INTO password_reset_tokens (user_id, token, token_plain, expires_at, ip_address) 
+            "INSERT INTO password_reset_tokens (user_id, token, token_plain, expires_at, ip_address)
              VALUES (?, ?, '', ?, ?)"
         );
         $stmt->bind_param('isss', $user['id'], $tokenHash, $expiresAt, $ipAddress);
-        
+
         if (!$stmt->execute()) {
+            $this->passwordResetBackoff();
             return [
-                'success' => false,
-                'message' => 'Failed to generate reset token. Please try again.'
+                'success' => true,
+                'message' => self::RESET_GENERIC_MESSAGE,
             ];
         }
 
+        $this->passwordResetBackoff();
         return [
             'success' => true,
-            'message' => 'If an account exists with that email, a password reset link has been sent.',
+            'message' => self::RESET_GENERIC_MESSAGE,
             'token' => $token,
-            'user' => $user
+            'user' => $user,
         ];
     }
 
     /**
-     * Validate reset token
+     * Validate reset token (hash-only; active users only).
      */
     public function validateResetToken(string $token): ?array
     {
-        $now = date('Y-m-d H:i:s');
+        if ($token === '') {
+            return null;
+        }
 
+        $now = date('Y-m-d H:i:s');
         $tokenHash = hash('sha256', $token);
 
         $stmt = $this->db->prepare(
-            "SELECT prt.id, prt.user_id, prt.expires_at, prt.used_at, u.email, u.username
+            'SELECT prt.id, prt.user_id, prt.expires_at, prt.used_at, u.email, u.username
              FROM password_reset_tokens prt
              INNER JOIN users u ON prt.user_id = u.id
-             WHERE (prt.token = ? OR prt.token_plain = ?) AND prt.expires_at > ? AND prt.used_at IS NULL
-             LIMIT 1"
+             WHERE prt.token = ? AND prt.expires_at > ? AND prt.used_at IS NULL AND u.is_active = 1
+             LIMIT 1'
         );
-        $stmt->bind_param('sss', $tokenHash, $token, $now);
+        $stmt->bind_param('ss', $tokenHash, $now);
         $stmt->execute();
         $result = $stmt->get_result();
         $data = $result->fetch_assoc();
@@ -655,106 +695,226 @@ class Auth
             'token_id' => $data['id'],
             'user_id' => $data['user_id'],
             'email' => $data['email'],
-            'username' => $data['username']
+            'username' => $data['username'],
         ];
     }
 
     /**
-     * Reset password using token
+     * Reset password using token. Revokes remember-me tokens on success.
      */
     public function resetPassword(string $token, string $newPassword): array
     {
-        // Validate token
         $tokenData = $this->validateResetToken($token);
-        
+
         if (!$tokenData) {
             return [
                 'success' => false,
-                'message' => 'Invalid or expired reset token.'
+                'message' => 'Invalid or expired reset token.',
             ];
         }
 
-        // Validate password strength
         if (strlen($newPassword) < 8) {
             return [
                 'success' => false,
-                'message' => 'Password must be at least 8 characters long.'
+                'message' => 'Password must be at least 8 characters long.',
             ];
         }
 
-        // Hash new password
         $passwordHash = PasswordHasher::hash($newPassword);
-
-        // Begin transaction
         $this->db->begin_transaction();
 
         try {
-            // Update password
             $stmt = $this->db->prepare(
-                "UPDATE users SET pass_hash = ?, updated_at = NOW() WHERE id = ?"
+                'UPDATE users SET pass_hash = ?, updated_at = NOW() WHERE id = ? AND is_active = 1'
             );
             $stmt->bind_param('si', $passwordHash, $tokenData['user_id']);
-            
-            if (!$stmt->execute()) {
+
+            if (!$stmt->execute() || $stmt->affected_rows === 0) {
                 throw new \Exception('Failed to update password');
             }
 
-            // Mark token as used
             $stmt = $this->db->prepare(
-                "UPDATE password_reset_tokens SET used_at = NOW() WHERE id = ?"
+                'UPDATE password_reset_tokens SET used_at = NOW() WHERE id = ?'
             );
             $stmt->bind_param('i', $tokenData['token_id']);
             $stmt->execute();
 
-            // Invalidate all other tokens for this user
-            $this->invalidateUserTokens($tokenData['user_id']);
+            $this->invalidateUserTokens((int) $tokenData['user_id']);
+            $this->bumpAuthEpochAndRevoke((int) $tokenData['user_id'], false);
 
             $this->db->commit();
 
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                $_SESSION = [];
+                session_regenerate_id(true);
+            }
+            $this->authCheckCache = false;
+
             return [
                 'success' => true,
-                'message' => 'Password reset successfully. You can now login with your new password.'
+                'message' => 'Password reset successfully. You can now login with your new password.',
             ];
         } catch (\Exception $e) {
             $this->db->rollback();
             return [
                 'success' => false,
-                'message' => 'Failed to reset password. Please try again.'
+                'message' => 'Failed to reset password. Please try again.',
             ];
         }
     }
 
     /**
-     * Get count of recent reset requests from IP
+     * Clear remember_token cookie after password change/reset.
      */
+    public function clearRememberCookieClient(): void
+    {
+        if (headers_sent()) {
+            return;
+        }
+        $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (isset($_SERVER['SERVER_PORT']) && (int) $_SERVER['SERVER_PORT'] === 443);
+        setcookie('remember_token', '', [
+            'expires' => time() - 3600,
+            'path' => '/',
+            'secure' => $isHttps,
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
+    }
+
+    private function passwordResetBackoff(): void
+    {
+        try {
+            usleep(random_int(100000, 300000));
+        } catch (\Exception $e) {
+            usleep(200000);
+        }
+    }
+
     private function getRecentResetRequests(string $ipAddress): int
     {
         $oneHourAgo = date('Y-m-d H:i:s', time() - 3600);
-        
+
         $stmt = $this->db->prepare(
-            "SELECT COUNT(*) as count FROM password_reset_tokens 
-             WHERE ip_address = ? AND created_at > ?"
+            'SELECT COUNT(*) as count FROM password_reset_tokens
+             WHERE ip_address = ? AND created_at > ?'
         );
         $stmt->bind_param('ss', $ipAddress, $oneHourAgo);
         $stmt->execute();
         $result = $stmt->get_result();
         $row = $result->fetch_assoc();
-        
-        return (int)($row['count'] ?? 0);
+
+        return (int) ($row['count'] ?? 0);
     }
 
-    /**
-     * Invalidate all unused tokens for a user
-     */
+    private function getRecentResetRequestsForUser(int $userId): int
+    {
+        $oneHourAgo = date('Y-m-d H:i:s', time() - 3600);
+
+        $stmt = $this->db->prepare(
+            'SELECT COUNT(*) as count FROM password_reset_tokens
+             WHERE user_id = ? AND created_at > ?'
+        );
+        $stmt->bind_param('is', $userId, $oneHourAgo);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $row = $result->fetch_assoc();
+
+        return (int) ($row['count'] ?? 0);
+    }
+
     private function invalidateUserTokens(int $userId): void
     {
         $stmt = $this->db->prepare(
-            "UPDATE password_reset_tokens 
-             SET used_at = NOW() 
-             WHERE user_id = ? AND used_at IS NULL"
+            'UPDATE password_reset_tokens
+             SET used_at = NOW()
+             WHERE user_id = ? AND used_at IS NULL'
         );
         $stmt->bind_param('i', $userId);
         $stmt->execute();
     }
-}
 
+    /**
+     * Bump auth_epoch and revoke remember-me tokens (invalidates other sessions).
+     * @param bool $keepCurrentSession When true (settings change-password), refresh this session's epoch.
+     */
+    public function bumpAuthEpochAndRevoke(int $userId, bool $keepCurrentSession = false): void
+    {
+        if ($this->hasAuthEpochColumn()) {
+            $stmt = $this->db->prepare('UPDATE users SET auth_epoch = auth_epoch + 1 WHERE id = ?');
+            $stmt->bind_param('i', $userId);
+            $stmt->execute();
+        }
+
+        $this->deleteRememberTokensForUser($userId);
+        $this->clearRememberCookieClient();
+
+        if ($keepCurrentSession
+            && !empty($_SESSION['user_id'])
+            && (int) $_SESSION['user_id'] === $userId
+        ) {
+            $_SESSION['auth_epoch'] = $this->fetchAuthEpoch($userId);
+            $this->authCheckCache = true;
+        } elseif (!empty($_SESSION['user_id']) && (int) $_SESSION['user_id'] === $userId) {
+            $this->authCheckCache = false;
+        }
+    }
+
+    private function sessionCredentialsStillValid(int $userId): bool
+    {
+        if ($this->hasAuthEpochColumn()) {
+            $stmt = $this->db->prepare(
+                'SELECT auth_epoch, is_active FROM users WHERE id = ? LIMIT 1'
+            );
+            $stmt->bind_param('i', $userId);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            if (!$row || (int) ($row['is_active'] ?? 0) !== 1) {
+                return false;
+            }
+            $dbEpoch = (int) ($row['auth_epoch'] ?? 0);
+            if (!array_key_exists('auth_epoch', $_SESSION)) {
+                // Pre-migration / pre-hardening session: adopt current epoch once (no mass logout)
+                $_SESSION['auth_epoch'] = $dbEpoch;
+                return true;
+            }
+            $sessEpoch = (int) $_SESSION['auth_epoch'];
+            return $sessEpoch === $dbEpoch;
+        }
+
+        $stmt = $this->db->prepare('SELECT is_active FROM users WHERE id = ? LIMIT 1');
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        return $row && (int) ($row['is_active'] ?? 0) === 1;
+    }
+
+    private function fetchAuthEpoch(int $userId): int
+    {
+        if (!$this->hasAuthEpochColumn()) {
+            return 0;
+        }
+        $stmt = $this->db->prepare('SELECT auth_epoch FROM users WHERE id = ? LIMIT 1');
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        return (int) ($row['auth_epoch'] ?? 0);
+    }
+
+    private function hasAuthEpochColumn(): bool
+    {
+        if (self::$authEpochColumnExists !== null) {
+            return self::$authEpochColumnExists;
+        }
+        $result = $this->db->query("SHOW COLUMNS FROM users LIKE 'auth_epoch'");
+        self::$authEpochColumnExists = $result && $result->num_rows > 0;
+        return self::$authEpochColumnExists;
+    }
+
+    private function clearSessionOnly(): void
+    {
+        $_SESSION = [];
+        $this->authCheckCache = false;
+    }
+
+}

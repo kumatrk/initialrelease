@@ -2,6 +2,10 @@
 // Networks CRUD Page
 require_once __DIR__ . '/../config/config.php';
 
+use SimpleKuma\Auth\Auth;
+use SimpleKuma\Auth\Csrf;
+use SimpleKuma\Auth\Permission;
+
 // Mobile detection function
 function isMobileDevice(): bool {
     $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
@@ -28,10 +32,26 @@ $action = $_GET['action'] ?? 'list';
 $id = isset($_GET['id']) ? (int)$_GET['id'] : null;
 $errors = [];
 $success = '';
+$permission = $GLOBALS['permission'] ?? null;
+$canManage = ($permission && $permission->hasPermission(Permission::PERM_NETWORK_MANAGE))
+    || (Auth::allowsLegacyNoRolesFallback() && empty($_SESSION['role_ids'] ?? []));
+
+// Block add/edit screens when user cannot manage
+if (!$canManage && in_array($action, ['add', 'edit'], true)) {
+    $errors['general'] = 'You do not have permission to modify this resource.';
+    $action = 'list';
+}
+
 
 // Handle form submissions
+Csrf::ensureToken();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if ($action === 'delete') {
+    if (!Csrf::validate()) {
+        $errors['general'] = Csrf::invalidRequestMessage();
+    } elseif (!$canManage) {
+        $errors['general'] = 'You do not have permission to manage networks';
+        $action = 'list';
+    } elseif ($action === 'delete') {
         if ($network->delete($id)) {
             $success = 'Network deleted successfully';
             $action = 'list';
@@ -90,7 +110,9 @@ $db->close();
     <div class="card">
         <div class="card-header">
             <h2 class="card-title">Your Networks</h2>
+            <?php if ($canManage): ?>
             <a href="?page=networks&action=add" class="btn btn-primary">+ Add Network</a>
+            <?php endif; ?>
         </div>
         <div class="card-body">
             <?php
@@ -148,7 +170,8 @@ $db->close();
                                         </a>
                                         
                                         <!-- Delete Button -->
-                                        <form method="post" action="?page=networks&action=delete&id=<?= $net['id'] ?>" 
+                                        <form method="post" action="?page=networks&action=delete&id=<?= $net['id'] ?>
+                <?= Csrf::field() ?>" 
                                               style="display: inline; margin: 0;" 
                                               onsubmit="return confirm('Are you sure you want to delete this network?\\n\\nThis cannot be undone.');">
                                             <button type="submit" 
@@ -209,7 +232,8 @@ $db->close();
                                    style="flex: 1; padding: 8px 12px; font-size: 12px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; text-decoration: none; color: #666; text-align: center; display: inline-block;">
                                     ✏️ Edit
                                 </a>
-                                <form method="post" action="?page=networks&action=delete&id=<?= $net['id'] ?>" 
+                                <form method="post" action="?page=networks&action=delete&id=<?= $net['id'] ?>
+                <?= Csrf::field() ?>" 
                                       style="flex: 1; margin: 0;" 
                                       onsubmit="return confirm('Are you sure you want to delete this network?\\n\\nThis cannot be undone.');">
                                     <button type="submit" 
@@ -232,7 +256,8 @@ $db->close();
             <a href="?page=networks" class="btn btn-secondary">← Back</a>
         </div>
         <div class="card-body">
-            <form method="post" action="?page=networks&action=<?= $action ?><?= $id ? "&id={$id}" : '' ?>">
+            <form method="post" action="?page=networks&action=<?= $action ?>
+                <?= Csrf::field() ?><?= $id ? "&id={$id}" : '' ?>">
                 <div style="margin-bottom: 24px;">
                     <label style="display: block; font-weight: 600; margin-bottom: 8px;">
                         Network Name <span style="color: #d32f2f;">*</span>

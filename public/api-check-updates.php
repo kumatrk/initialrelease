@@ -34,6 +34,20 @@ if ($db->connect_error) {
 
 $auth = new Auth($db);
 $auth->requireAuth();
+$permission = $auth->getPermission();
+$legacyNoRoles = empty($_SESSION['role_ids'] ?? [])
+    && Auth::allowsLegacyNoRolesFallback();
+$canCheckUpdates = \SimpleKuma\Auth\SingleAdminMode::isEnabled()
+    || $legacyNoRoles
+    || ($permission && (
+        $permission->hasPermission(\SimpleKuma\Auth\Permission::PERM_SETTINGS_VIEW)
+        || $permission->hasPermission(\SimpleKuma\Auth\Permission::PERM_SETTINGS_EDIT)
+    ));
+if (!$canCheckUpdates) {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'Forbidden']);
+    exit;
+}
 // Do not hold the session lock while waiting on GitHub.
 $auth->releaseSessionLock();
 

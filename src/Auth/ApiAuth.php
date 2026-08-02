@@ -23,7 +23,10 @@ class ApiAuth
         if (
             !$perm->hasPermission($permission)
             && !SingleAdminMode::isEnabled()
-            && !self::allowsLegacyNoRolesFallback()
+            && !(
+                self::allowsLegacyNoRolesFallback()
+                && empty($_SESSION['role_ids'] ?? [])
+            )
         ) {
             self::deny(403, 'Forbidden - Insufficient permissions');
         }

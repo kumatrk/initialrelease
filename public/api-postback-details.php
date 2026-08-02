@@ -134,6 +134,13 @@ $logResult = $logStmt->get_result();
 
 $logs = [];
 while ($row = $logResult->fetch_assoc()) {
+    if (!empty($row['request_body']) && is_string($row['request_body'])) {
+        $row['request_body'] = redactSecretsInPostbackBody($row['request_body']);
+    }
+    if (!empty($row['url']) && is_string($row['url'])) {
+        $row['url'] = preg_replace('/([?&]access_token=)[^&]*/i', '$1[REDACTED]', $row['url']);
+        $row['request_url'] = $row['url'];
+    }
     $logs[] = $row;
 }
 $logStmt->close();
@@ -151,6 +158,42 @@ foreach ($logs as &$log) {
     }
 }
 unset($log); // Break reference
+
+/**
+ * Redact secrets from stored/returned postback request bodies.
+ */
+function redactSecretsInPostbackBody(string $body): string
+{
+    $decoded = json_decode($body, true);
+    if (is_array($decoded)) {
+        redactSecretKeysInArray($decoded);
+        $encoded = json_encode($decoded);
+        return is_string($encoded) ? $encoded : $body;
+    }
+
+    return (string) preg_replace(
+        '/("(?:access_token|password|api_token|client_secret|refresh_token|proxy_pass)"\s*:\s*")[^"]*(")/i',
+        '$1[REDACTED]$2',
+        $body
+    );
+}
+
+/**
+ * @param array<mixed> $data
+ */
+function redactSecretKeysInArray(array &$data): void
+{
+    foreach ($data as $key => &$value) {
+        if (is_array($value)) {
+            redactSecretKeysInArray($value);
+            continue;
+        }
+        if (is_string($key) && preg_match('/access_token|password|secret|api_token|refresh_token|proxy_pass/i', $key)) {
+            $value = '[REDACTED]';
+        }
+    }
+    unset($value);
+}
 
 /**
  * Reconstruct Facebook CAPI payload using the same logic as PostbackDispatcher
@@ -314,7 +357,7 @@ function reconstructFacebookCAPIPayload(array $conversion, array $clickExtra, my
             'user_data' => $userData,
             'custom_data' => $customData,
         ]],
-        'access_token' => $conversion['access_token'], // Will be masked in display
+        'access_token' => '[REDACTED]',
     ];
     
     // Add test event code if configured

@@ -19,6 +19,7 @@ require_once __DIR__ . '/../config/config.php';
 
 use SimpleKuma\Auth\ApiAuth;
 use SimpleKuma\Auth\Auth;
+use SimpleKuma\Auth\Csrf;
 use SimpleKuma\Auth\Permission;
 use SimpleKuma\Database\DbTimezone;
 
@@ -57,6 +58,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['error' => 'Method not allowed. Use POST.']);
+    exit;
+}
+
+if (!Csrf::validate()) {
+    ob_clean();
+    http_response_code(403);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['error' => Csrf::invalidRequestMessage()]);
     exit;
 }
 

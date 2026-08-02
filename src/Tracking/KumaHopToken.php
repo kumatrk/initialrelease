@@ -59,7 +59,13 @@ final class KumaHopToken
             return (string) APP_KEY;
         }
 
-        return 'kuma-hop-dev-only';
+        $host = strtolower((string) ($_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost'));
+        $isLocal = str_contains($host, 'localhost') || str_contains($host, '127.0.0.1') || str_ends_with($host, '.local');
+        if (!$isLocal && (!defined('APP_ENV') || APP_ENV === 'production')) {
+            throw new \RuntimeException('APP_KEY must be configured for KumaHop token signing');
+        }
+
+        return hash('sha256', 'kuma-hop-local|' . ($host !== '' ? $host : 'localhost') . '|' . __DIR__);
     }
 
     private static function base64UrlEncode(string $data): string

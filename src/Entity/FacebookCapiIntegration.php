@@ -164,7 +164,15 @@ class FacebookCapiIntegration
         $hasMappingCols = $this->hasMappingColumns();
         $name = $data['name'];
         $pixelId = $data['pixel_id'];
-        $accessToken = $data['access_token'];
+        $accessToken = (string) ($data['access_token'] ?? '');
+        // Blank token on update = keep existing (never wipe from empty form field)
+        if ($accessToken === '') {
+            $existing = $this->getById($id);
+            $accessToken = is_array($existing) ? (string) ($existing['access_token'] ?? '') : '';
+            if ($accessToken === '') {
+                return false;
+            }
+        }
         $testCode = $data['test_code'] ?? null;
         $eventType = $data['event_type'] ?? 'Purchase';
         $useProxy = isset($data['use_proxy']) ? (int)(bool)$data['use_proxy'] : 0;
@@ -336,7 +344,9 @@ class FacebookCapiIntegration
         }
 
         if (empty($data['access_token'])) {
-            $errors[] = "Access token is required.";
+            if (!$isUpdate) {
+                $errors[] = "Access token is required.";
+            }
         }
 
         if (!empty($data['test_code']) && strlen($data['test_code']) > 50) {
