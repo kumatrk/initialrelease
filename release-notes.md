@@ -147,7 +147,7 @@
 
 ## Migrations
 
-Fresh installs should apply forward migrations **001 through 083** (exclude `rollback_*.sql`). Existing installs: run pending migrations after upgrade (includes **083** for Cloudflare edge campaign flags).
+Fresh installs should apply forward migrations **001 through 086** (exclude `rollback_*.sql`). Existing installs: run pending migrations after upgrade (includes **086** for the clicks covering stats index).
 
 ## License
 

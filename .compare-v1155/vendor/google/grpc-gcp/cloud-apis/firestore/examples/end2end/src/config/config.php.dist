@@ -1,9 +1,0 @@
-<?php
-return [
-    'firestore' => [
-        'options'=> [], // options that will be used for the creation of the FirestoreClient
-        'projectId' => 'myProjectId',
-        'collectionId' => 'GrpcTestData',
-        'database'  => '(default)',
-    ]
-];
