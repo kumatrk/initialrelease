@@ -2,8 +2,8 @@
   "schema": "simplekuma-upgrade-manifest",
   "schema_version": 1,
   "release": {
-    "version": "1.1.5.11",
-    "release_date": "2026-08-02",
+    "version": "1.1.5.12",
+    "release_date": "2026-08-03",
     "channel": "stable"
   },
   "purpose": "Overlay this release onto an existing install without replacing config, storage, or database data.",
@@ -115,6 +115,18 @@
     {
       "file": "database/migrations/083_add_campaign_edge_enabled.sql",
       "description": "Campaign edge_enabled flag + edge sync metadata for Cloudflare Worker redirects"
+    },
+    {
+      "file": "database/migrations/084_password_reset_hash_only_and_unique_email.sql",
+      "description": "Password-reset hash-only tokens + unique email constraint"
+    },
+    {
+      "file": "database/migrations/085_add_users_auth_epoch.sql",
+      "description": "users.auth_epoch for session invalidation on password reset"
+    },
+    {
+      "file": "database/migrations/086_clicks_click_id_cover_stats_index.sql",
+      "description": "Covering index for conversion→click stats joins (click_id, exclude_from_stats, ts, campaign_id)"
     }
   ],
   "agent_workflow": [

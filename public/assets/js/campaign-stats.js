@@ -168,7 +168,18 @@
                 headers: { 'X-Requested-With': 'XMLHttpRequest' },
                 signal,
             });
-            const data = await res.json();
+            let data;
+            try {
+                data = await res.json();
+            } catch (parseErr) {
+                // Aborted / killed responses often have empty bodies — treat as abort, not a user error.
+                if (signal && signal.aborted) {
+                    const abortErr = new Error('Aborted');
+                    abortErr.name = 'AbortError';
+                    throw abortErr;
+                }
+                throw parseErr;
+            }
             return { res, data };
         };
 
@@ -1653,21 +1664,49 @@
         readFiltersFromDom();
         try {
             await loadCampaignMeta();
+            if (gen !== refreshGeneration) {
+                return;
+            }
             await loadSavedViews();
             renderSavedViewSelect();
             await loadDimensions();
+            if (gen !== refreshGeneration) {
+                return;
+            }
             await loadSummary();
+            if (gen !== refreshGeneration) {
+                return;
+            }
+            // Chart is best-effort: KPI summary already succeeded; don't blank the page on chart bind/SQL issues.
             if (!state.chartCollapsed) {
-                await loadChart('stats-v2-overview-chart', 'chartOverview');
+                try {
+                    await loadChart('stats-v2-overview-chart', 'chartOverview');
+                } catch (chartErr) {
+                    if (!isAbortError(chartErr) && gen === refreshGeneration) {
+                        console.error('[Campaign Stats] overview chart', chartErr);
+                    }
+                }
+            }
+            if (gen !== refreshGeneration) {
+                return;
             }
             if (state.tab === 'chart') {
-                await loadChart('stats-v2-chart', 'chartMain');
+                try {
+                    await loadChart('stats-v2-chart', 'chartMain');
+                } catch (chartErr) {
+                    if (!isAbortError(chartErr) && gen === refreshGeneration) {
+                        showStatsError(chartErr.message || 'Couldn’t load chart');
+                    }
+                }
+            }
+            if (gen !== refreshGeneration) {
+                return;
             }
             if (state.tab === 'breakdown' && document.getElementById('stats-v2-breakdown-body').querySelector('[data-row-id]')) {
                 await loadBreakdown();
             }
         } catch (err) {
-            if (isAbortError(err)) {
+            if (isAbortError(err) || gen !== refreshGeneration) {
                 return;
             }
             showStatsError(err.message || 'Failed to refresh stats');

@@ -526,11 +526,12 @@ final class DashboardStatsService
             $convTypes .= str_repeat('s', count($allowedStatuses));
             $convParams = array_merge($convParams, $allowedStatuses);
         }
+        $clAlias = ClicksIndexHints::clickIdCoverAlias($this->db, 'cl', 'clicks');
         $convSql = "
             SELECT COUNT(*) AS conversions,
                    COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
             FROM conversions cv
-            INNER JOIN clicks cl ON cl.click_id = cv.click_id
+            INNER JOIN clicks {$clAlias} ON cl.click_id = cv.click_id
             {$convStatusJoin}
             WHERE cl.ts >= ? AND cl.ts <= ?
             {$includedSql}
@@ -825,6 +826,7 @@ final class DashboardStatsService
             $params = array_merge($params, $allowedStatuses);
         }
         $includedSql = $this->includedClickSql('cl', 'clicks');
+        $clCover = ClicksIndexHints::clickIdCoverAlias($this->db, 'cl', 'clicks');
 
         $sql = "
             SELECT
@@ -863,7 +865,7 @@ final class DashboardStatsService
                     COUNT(*) AS conversions,
                     COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
                 FROM conversions cv
-                INNER JOIN clicks cl ON cl.click_id = cv.click_id
+                INNER JOIN clicks {$clCover} ON cl.click_id = cv.click_id
                 WHERE cl.ts >= ? AND cl.ts <= ?
                 {$includedSql}
                 GROUP BY cl.campaign_id
@@ -1008,60 +1010,122 @@ final class DashboardStatsService
         }
 
         $offset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
-        $hourExpr = "COALESCE(HOUR(CONVERT_TZ(cl.ts, '+00:00', ?)), -1)";
         $includedSql = $this->includedClickSql('cl', 'clicks');
-        // COUNT(*) on indexed clicks — avoid COUNT(DISTINCT) and full conversions derived table.
-        $sql = "
-            SELECT
-                {$hourExpr} AS hour,
-                COUNT(*) AS clicks
-            FROM clicks cl
-            WHERE cl.ts >= ? AND cl.ts <= ?
-            {$includedSql}
-            GROUP BY {$hourExpr}
-            ORDER BY hour ASC
-        ";
+        $clCover = ClicksIndexHints::clickIdCoverAlias($this->db, 'cl', 'clicks');
 
-        $stmt = $this->db->prepare($sql);
-        if ($stmt === false) {
-            return ['labels' => $labels, 'clicks' => array_values($clicks), 'conversions' => array_values($conversions), 'revenue' => array_values($revenue)];
-        }
-        $stmt->bind_param('ssss', $offset, $utcFrom, $utcTo, $offset);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        while ($row = $result->fetch_assoc()) {
-            $hour = (int)$row['hour'];
-            if ($hour >= 0 && $hour <= 23) {
-                $clicks[$hour] = (int)$row['clicks'];
+        // UTC / UTC-aligned ranges: prefer ts_hour (indexed) — CONVERT_TZ over 100k fat rows is ~1.5s+.
+        $useUtcHour = ($offset === '+00:00' || strtoupper($userTimezone) === 'UTC');
+        if ($useUtcHour) {
+            $sql = "
+                SELECT HOUR(cl.ts_hour) AS hour,
+                       COUNT(*) AS clicks
+                FROM clicks cl
+                WHERE cl.ts >= ? AND cl.ts <= ?
+                {$includedSql}
+                GROUP BY HOUR(cl.ts_hour)
+                ORDER BY hour ASC
+            ";
+            $stmt = $this->db->prepare($sql);
+            if ($stmt === false) {
+                return ['labels' => $labels, 'clicks' => array_values($clicks), 'conversions' => array_values($conversions), 'revenue' => array_values($revenue)];
             }
-        }
-        $stmt->close();
-
-        // Conversions/revenue by hour (cheap when conversion volume is small)
-        $convSql = "
-            SELECT
-                {$hourExpr} AS hour,
-                COUNT(*) AS conversions,
-                COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
-            FROM conversions cv
-            INNER JOIN clicks cl ON cl.click_id = cv.click_id
-            WHERE cl.ts >= ? AND cl.ts <= ?
-            {$includedSql}
-            GROUP BY {$hourExpr}
-        ";
-        $convStmt = $this->db->prepare($convSql);
-        if ($convStmt !== false) {
-            $convStmt->bind_param('ssss', $offset, $utcFrom, $utcTo, $offset);
-            $convStmt->execute();
-            $convResult = $convStmt->get_result();
-            while ($row = $convResult->fetch_assoc()) {
+            $stmt->bind_param('ss', $utcFrom, $utcTo);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            while ($row = $result->fetch_assoc()) {
                 $hour = (int)$row['hour'];
                 if ($hour >= 0 && $hour <= 23) {
-                    $conversions[$hour] = (int)$row['conversions'];
-                    $revenue[$hour] = (float)$row['revenue'];
+                    $clicks[$hour] = (int)$row['clicks'];
                 }
             }
-            $convStmt->close();
+            $stmt->close();
+
+            $convSql = "
+                SELECT HOUR(cl.ts_hour) AS hour,
+                       COUNT(*) AS conversions,
+                       COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
+                FROM conversions cv
+                INNER JOIN clicks {$clCover} ON cl.click_id = cv.click_id
+                WHERE cl.ts >= ? AND cl.ts <= ?
+                {$includedSql}
+                GROUP BY HOUR(cl.ts_hour)
+            ";
+            $convStmt = $this->db->prepare($convSql);
+            if ($convStmt !== false) {
+                $convStmt->bind_param('ss', $utcFrom, $utcTo);
+                $convStmt->execute();
+                $convResult = $convStmt->get_result();
+                while ($row = $convResult->fetch_assoc()) {
+                    $hour = (int)$row['hour'];
+                    if ($hour >= 0 && $hour <= 23) {
+                        $conversions[$hour] = (int)$row['conversions'];
+                        $revenue[$hour] = (float)$row['revenue'];
+                    }
+                }
+                $convStmt->close();
+            }
+        } else {
+            // Non-UTC single day: one range scan, bucket by seconds from user-midnight UTC.
+            try {
+                $userTz = new \DateTimeZone($userTimezone);
+                $utcTz = new \DateTimeZone('UTC');
+                $dayStartLocal = new \DateTimeImmutable($dateFrom . ' 00:00:00', $userTz);
+                $dayEndLocal = $dayStartLocal->modify('+1 day');
+                $utcDayStart = $dayStartLocal->setTimezone($utcTz)->format('Y-m-d H:i:s');
+                $utcDayEndEx = $dayEndLocal->setTimezone($utcTz)->format('Y-m-d H:i:s');
+            } catch (\Exception $e) {
+                return ['labels' => $labels, 'clicks' => array_values($clicks), 'conversions' => array_values($conversions), 'revenue' => array_values($revenue)];
+            }
+
+            $hourExpr = 'FLOOR(TIMESTAMPDIFF(SECOND, ?, cl.ts) / 3600)';
+            $sql = "
+                SELECT {$hourExpr} AS hour,
+                       COUNT(*) AS clicks
+                FROM clicks cl
+                WHERE cl.ts >= ? AND cl.ts < ?
+                {$includedSql}
+                GROUP BY hour
+                ORDER BY hour ASC
+            ";
+            $stmt = $this->db->prepare($sql);
+            if ($stmt === false) {
+                return ['labels' => $labels, 'clicks' => array_values($clicks), 'conversions' => array_values($conversions), 'revenue' => array_values($revenue)];
+            }
+            $stmt->bind_param('sss', $utcDayStart, $utcDayStart, $utcDayEndEx);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            while ($row = $result->fetch_assoc()) {
+                $hour = (int) $row['hour'];
+                if ($hour >= 0 && $hour <= 23) {
+                    $clicks[$hour] = (int) $row['clicks'];
+                }
+            }
+            $stmt->close();
+
+            $convSql = "
+                SELECT {$hourExpr} AS hour,
+                       COUNT(*) AS conversions,
+                       COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
+                FROM conversions cv
+                INNER JOIN clicks {$clCover} ON cl.click_id = cv.click_id
+                WHERE cl.ts >= ? AND cl.ts < ?
+                {$includedSql}
+                GROUP BY hour
+            ";
+            $convStmt = $this->db->prepare($convSql);
+            if ($convStmt !== false) {
+                $convStmt->bind_param('sss', $utcDayStart, $utcDayStart, $utcDayEndEx);
+                $convStmt->execute();
+                $convResult = $convStmt->get_result();
+                while ($row = $convResult->fetch_assoc()) {
+                    $hour = (int) $row['hour'];
+                    if ($hour >= 0 && $hour <= 23) {
+                        $conversions[$hour] = (int) $row['conversions'];
+                        $revenue[$hour] = (float) $row['revenue'];
+                    }
+                }
+                $convStmt->close();
+            }
         }
 
         return [
@@ -1107,54 +1171,131 @@ final class DashboardStatsService
             // leave empty
         }
 
-        // Daily chart labels are in the user's calendar. Summary rows are keyed by UTC DATE(ts),
-        // so mapping summary_date → user day buckets silently drops/shifts evening traffic.
-        // Aggregate on indexed `clicks` with COUNT(*) — never COUNT(DISTINCT)/unified view.
-        $offset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
+        // Fast path: when user calendar days align with UTC summary_date, use pre-agg
+        // (avoids CONVERT_TZ over fat click rows — ~1.5s+ on 100k).
+        if (
+            $this->dailySummaryExists()
+            && Formatter::canUseUtcSummaryDateRange($dateFrom, $dateTo, $utcFrom, $utcTo)
+        ) {
+            $sql = "
+                SELECT s.summary_date AS day,
+                       COALESCE(SUM(s.clicks), 0) AS clicks,
+                       COALESCE(SUM(s.conversions), 0) AS conversions,
+                       COALESCE(SUM(s.revenue), 0) AS revenue
+                FROM clicks_daily_summary s
+                WHERE s.summary_date >= ? AND s.summary_date <= ?
+                GROUP BY s.summary_date
+                ORDER BY s.summary_date ASC
+            ";
+            $stmt = $this->db->prepare($sql);
+            if ($stmt) {
+                $stmt->bind_param('ss', $summaryFrom, $summaryTo);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                while ($row = $result->fetch_assoc()) {
+                    $day = (string)$row['day'];
+                    if (isset($clicksMap[$day])) {
+                        $clicksMap[$day] = (int)$row['clicks'];
+                        $convMap[$day] = (int)$row['conversions'];
+                        $revMap[$day] = (float)$row['revenue'];
+                    }
+                }
+                $stmt->close();
+            }
+
+            return [
+                'labels' => $labels,
+                'clicks' => array_values($clicksMap),
+                'conversions' => array_values($convMap),
+                'revenue' => array_values($revMap),
+            ];
+        }
+
+        // Non-UTC: one range scan with CASE day buckets (precomputed UTC windows).
         $includedSql = $this->includedClickSql('cl', 'clicks');
+        $dayKeys = array_keys($clicksMap);
+        if ($dayKeys === []) {
+            return [
+                'labels' => $labels,
+                'clicks' => [],
+                'conversions' => [],
+                'revenue' => [],
+            ];
+        }
+
+        try {
+            $userTz = new \DateTimeZone($userTimezone);
+            $utcTz = new \DateTimeZone('UTC');
+        } catch (\Exception $e) {
+            return [
+                'labels' => $labels,
+                'clicks' => array_values($clicksMap),
+                'conversions' => array_values($convMap),
+                'revenue' => array_values($revMap),
+            ];
+        }
+
+        $caseParts = [];
+        $bindValues = [];
+        $bindTypes = '';
+        foreach ($dayKeys as $dayKey) {
+            $dayStart = new \DateTimeImmutable($dayKey . ' 00:00:00', $userTz);
+            $dayEndExclusive = $dayStart->modify('+1 day');
+            $utcStart = $dayStart->setTimezone($utcTz)->format('Y-m-d H:i:s');
+            $utcEndEx = $dayEndExclusive->setTimezone($utcTz)->format('Y-m-d H:i:s');
+            $caseParts[] = 'WHEN cl.ts >= ? AND cl.ts < ? THEN ?';
+            $bindValues[] = $utcStart;
+            $bindValues[] = $utcEndEx;
+            $bindValues[] = $dayKey;
+            $bindTypes .= 'sss';
+        }
+        $dayExpr = 'CASE ' . implode(' ', $caseParts) . ' END';
+        $rangeBinds = [$utcFrom, $utcTo];
+        $rangeTypes = 'ss';
+
         $sql = "
-            SELECT DATE(CONVERT_TZ(cl.ts, '+00:00', ?)) AS day,
+            SELECT {$dayExpr} AS day,
                    COUNT(*) AS clicks
             FROM clicks cl
             WHERE cl.ts >= ? AND cl.ts <= ?
             {$includedSql}
-            GROUP BY DATE(CONVERT_TZ(cl.ts, '+00:00', ?))
-            ORDER BY day ASC
+            GROUP BY day
         ";
         $stmt = $this->db->prepare($sql);
         if ($stmt) {
-            $stmt->bind_param('ssss', $offset, $utcFrom, $utcTo, $offset);
+            $stmt->bind_param($bindTypes . $rangeTypes, ...array_merge($bindValues, $rangeBinds));
             $stmt->execute();
             $result = $stmt->get_result();
             while ($row = $result->fetch_assoc()) {
-                $day = (string)$row['day'];
-                if (isset($clicksMap[$day])) {
-                    $clicksMap[$day] = (int)$row['clicks'];
+                $day = (string) ($row['day'] ?? '');
+                if ($day !== '' && isset($clicksMap[$day])) {
+                    $clicksMap[$day] = (int) $row['clicks'];
                 }
             }
             $stmt->close();
         }
 
+        $clCover = ClicksIndexHints::clickIdCoverAlias($this->db, 'cl', 'clicks');
         $convSql = "
-            SELECT DATE(CONVERT_TZ(cl.ts, '+00:00', ?)) AS day,
+            SELECT {$dayExpr} AS day,
                    COUNT(*) AS conversions,
                    COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
             FROM conversions cv
-            INNER JOIN clicks cl ON cl.click_id = cv.click_id
+            INNER JOIN clicks {$clCover} ON cl.click_id = cv.click_id
             WHERE cl.ts >= ? AND cl.ts <= ?
             {$includedSql}
-            GROUP BY DATE(CONVERT_TZ(cl.ts, '+00:00', ?))
+            GROUP BY day
         ";
         $convStmt = $this->db->prepare($convSql);
         if ($convStmt) {
-            $convStmt->bind_param('ssss', $offset, $utcFrom, $utcTo, $offset);
+            $convStmt->bind_param($bindTypes . $rangeTypes, ...array_merge($bindValues, $rangeBinds));
             $convStmt->execute();
             $convResult = $convStmt->get_result();
             while ($row = $convResult->fetch_assoc()) {
-                $day = (string)$row['day'];
-                if (isset($convMap[$day])) {
-                    $convMap[$day] = (int)$row['conversions'];
-                    $revMap[$day] = (float)$row['revenue'];
+                $day = (string) ($row['day'] ?? '');
+                if ($day !== '' && isset($convMap[$day])) {
+                    $convMap[$day] = (int) $row['conversions'];
+                    $revMap[$day] = (float) $row['revenue'];
                 }
             }
             $convStmt->close();

@@ -65,15 +65,21 @@ final class CampaignStatsQueryFilters
      * @param list<string> $allowedTokenKeys
      * @return array{0: string, 1: string, 2: list<mixed>}
      */
-    public function clickFilterSql(mysqli $db, string $clAlias = 'cl', array $allowedTokenKeys = []): array
-    {
+    public function clickFilterSql(
+        mysqli $db,
+        string $clAlias = 'cl',
+        array $allowedTokenKeys = [],
+        bool $includeStatsExclusion = true
+    ): array {
         $sql = '';
         $types = '';
         $params = [];
         $clicksTable = ClicksTableResolver::getStatsTable($db);
-        $persisted = StatsExclusionFlag::includedWhere($db, $clAlias, $clicksTable);
-        if ($persisted !== '') {
-            $sql .= ' AND ' . $persisted;
+        if ($includeStatsExclusion) {
+            $persisted = StatsExclusionFlag::includedWhere($db, $clAlias, $clicksTable);
+            if ($persisted !== '') {
+                $sql .= ' AND ' . $persisted;
+            }
         }
 
         if ($this->trafficSourceId !== null && self::clicksHaveColumn($db, 'traffic_source_id')) {

@@ -42,6 +42,7 @@ class CampaignStatsV2Service
         string $timezone,
         ?CampaignStatsQueryFilters $filters = null
     ): array {
+        ReportingQueryCancel::throwIfAborted();
         $filters ??= new CampaignStatsQueryFilters();
         $utcRange = Formatter::convertDateRangeToUTC($dateFrom, $dateTo, $timezone);
         $segments = TimezoneSummaryBlend::segments($utcRange['from'], $utcRange['to']);
@@ -59,6 +60,7 @@ class CampaignStatsV2Service
                         $filters
                     );
                     if ($preAgg !== null) {
+                        ReportingQueryCancel::throwIfAborted();
                         return $this->buildSummaryFromTotals(
                             $campaignId,
                             $dateFrom,
@@ -71,30 +73,59 @@ class CampaignStatsV2Service
                         );
                     }
                 }
-            } elseif (TimezoneSummaryBlend::resolveSource($segments) !== 'raw_clicks') {
-                $blended = $this->querySummaryTotalsBlended(
-                    $campaignId,
-                    $segments,
-                    $dateFrom,
-                    $dateTo,
-                    $timezone,
-                    $filters
-                );
-                if ($blended !== null) {
-                    return $this->buildSummaryFromTotals(
+            } else {
+                $source = TimezoneSummaryBlend::resolveSource($segments);
+                if ($source !== 'raw_clicks') {
+                    $blended = $this->querySummaryTotalsBlended(
                         $campaignId,
+                        $segments,
                         $dateFrom,
                         $dateTo,
                         $timezone,
-                        $blended['totals'],
-                        $blended['source'],
-                        null,
-                        $campaign
+                        $filters
                     );
+                    if ($blended !== null) {
+                        ReportingQueryCancel::throwIfAborted();
+                        return $this->buildSummaryFromTotals(
+                            $campaignId,
+                            $dateFrom,
+                            $dateTo,
+                            $timezone,
+                            $blended['totals'],
+                            $blended['source'],
+                            null,
+                            $campaign
+                        );
+                    }
+                }
+
+                // Single non-UTC day: no full UTC summary days to blend. Covering-index
+                // COUNT(*) stays timezone-accurate and avoids fat-row timeouts at 100k+.
+                if (!$filters->requiresScopedCost() && !$filters->hasTokenFilter()) {
+                    $lean = $this->queryLeanSummaryTotals(
+                        $campaignId,
+                        $utcRange['from'],
+                        $utcRange['to'],
+                        $filters
+                    );
+                    if ($lean !== null) {
+                        ReportingQueryCancel::throwIfAborted();
+                        return $this->buildSummaryFromTotals(
+                            $campaignId,
+                            $dateFrom,
+                            $dateTo,
+                            $timezone,
+                            $lean,
+                            'raw_clicks_cover',
+                            null,
+                            $campaign
+                        );
+                    }
                 }
             }
         }
 
+        ReportingQueryCancel::throwIfAborted();
         $filterKeys = $this->filterableKeys($campaignId, $dateFrom, $dateTo, $timezone);
         $clicksTable = $this->clicksTable;
         $usePersistedFlag = StatsExclusionFlag::columnExists($this->db, $clicksTable);
@@ -410,7 +441,9 @@ class CampaignStatsV2Service
     }
 
     /**
-     * Attempt summary/token pre-agg breakdown when safe (manual-cost campaign).
+     * Attempt summary/token pre-agg breakdown when safe.
+     * Meta/Google API-cost campaigns may use pre-agg for unfiltered L0 rows;
+     * Meta spend is overlaid from hourly cost tables (no per-click scan).
      * Supports offer/landing parent drill-downs on clicks_daily_summary.
      * Date dimension only when user calendar aligns with UTC summary days.
      *
@@ -432,19 +465,24 @@ class CampaignStatsV2Service
         array $filterKeys,
         ?array $campaign
     ): ?array {
-        if ($this->campaignUsesIntegratedApiCost($campaign)
-            || !$this->preAggregateReader->canUseBreakdown($groupBy, $parentPath, $filters)
-        ) {
+        if (!$this->preAggregateReader->canUseBreakdown($groupBy, $parentPath, $filters)) {
+            return null;
+        }
+
+        $apiCost = $this->campaignUsesIntegratedApiCost($campaign);
+        // Filtered / nested expands still need scoped per-click cost allocation.
+        if ($apiCost && ($parentPath !== [] || $filters->requiresScopedCost())) {
             return null;
         }
 
         $utcAligned = Formatter::canUseUtcSummaryDateRange($dateFrom, $dateTo, $utcFrom, $utcTo);
 
-        // summary_date is UTC — never map it onto non-UTC calendar day labels.
+        // summary_date is UTC — never map it onto non-UTC calendar day labels for date dim.
         if ($groupBy === 'date' && !$utcAligned) {
             return null;
         }
 
+        $rows = null;
         if ($utcAligned) {
             $summaryDateFrom = substr($utcFrom, 0, 10);
             $summaryDateTo = substr($utcTo, 0, 10);
@@ -452,7 +490,7 @@ class CampaignStatsV2Service
                 return null;
             }
 
-            return $this->preAggregateReader->queryBreakdownRows(
+            $rows = $this->preAggregateReader->queryBreakdownRows(
                 $campaignId,
                 $groupBy,
                 $summaryDateFrom,
@@ -460,25 +498,327 @@ class CampaignStatsV2Service
                 $parentPath,
                 $filters
             );
+        } else {
+            $segments = TimezoneSummaryBlend::segments($utcFrom, $utcTo);
+            // Edges-only non-UTC windows have no full UTC summary days — fall through to
+            // lean covering-index raw (timezone-accurate). Do not expand to UTC summary
+            // dates (that over-counts PT "today" by including adjacent calendar hours).
+            if (TimezoneSummaryBlend::resolveSource($segments) === 'raw_clicks') {
+                return null;
+            }
+
+            $rows = $this->queryBreakdownRowsBlended(
+                $campaignId,
+                $groupBy,
+                $segments,
+                $dateFrom,
+                $dateTo,
+                $userTimezone,
+                $parentPath,
+                $filters,
+                $filterKeys,
+                $campaign
+            );
         }
 
-        $segments = TimezoneSummaryBlend::segments($utcFrom, $utcTo);
-        if (TimezoneSummaryBlend::resolveSource($segments) === 'raw_clicks') {
+        if ($rows === null || $rows === []) {
+            return $rows;
+        }
+
+        if ($apiCost) {
+            $rows = $this->overlayMappedMetaCostsOnBreakdownRows(
+                $campaignId,
+                $groupBy,
+                $rows,
+                $utcFrom,
+                $utcTo,
+                $campaign
+            );
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Replace pre-agg (usually $0) cost with Meta hourly spend for ad/adset dimensions.
+     * Other dimensions get visitor-proportional share of campaign Meta total.
+     *
+     * @param list<array<string, mixed>> $rows
+     * @param array<string, mixed>|null $campaign
+     * @return list<array<string, mixed>>
+     */
+    private function overlayMappedMetaCostsOnBreakdownRows(
+        int $campaignId,
+        string $groupBy,
+        array $rows,
+        string $utcFrom,
+        string $utcTo,
+        ?array $campaign,
+        array $parentPath = []
+    ): array {
+        $dim = CampaignStatsExpressions::unwrapDimensionKey($groupBy);
+        $aggregator = new FacebookCostAggregator($this->db);
+        $campaignTotal = $aggregator->getCampaignTotalCost($campaignId, $utcFrom, $utcTo, null);
+        $manual = 0.0;
+        foreach ($rows as $row) {
+            $manual += (float) ($row['cost'] ?? 0);
+        }
+        $fbTotal = max(0.0, $campaignTotal - $manual);
+
+        // Nested under Ad Set / Ad: allocate that parent's mapped Meta spend, not campaign total.
+        $parentPool = $this->parentMappedMetaSpendPool($campaignId, $parentPath, $utcFrom, $utcTo, $campaign);
+        if ($parentPool !== null) {
+            $fbTotal = max(0.0, $parentPool);
+        }
+
+        if ($fbTotal <= 0) {
+            return $rows;
+        }
+
+        if ($dim === 'adset_name' || $dim === 'ad_name') {
+            $byName = $this->mappedMetaSpendByDimensionName($campaignId, $dim, $utcFrom, $utcTo, $campaign);
+            if ($byName !== []) {
+                foreach ($rows as &$row) {
+                    $key = (string) ($row['group'] ?? $row['group_key'] ?? '');
+                    $fb = (float) ($byName[$key] ?? 0);
+                    $row['cost'] = round((float) ($row['cost'] ?? 0) + $fb, 4);
+                    $rev = (float) ($row['revenue'] ?? 0);
+                    $cost = (float) $row['cost'];
+                    $row['profit'] = round($rev - $cost, 4);
+                    $row['roi'] = $cost > 0 ? round((($rev - $cost) / $cost) * 100, 2) : 0.0;
+                }
+                unset($row);
+
+                return $rows;
+            }
+        }
+
+        $visitorSum = 0;
+        foreach ($rows as $row) {
+            $visitorSum += (int) ($row['clicks'] ?? $row['visitors'] ?? 0);
+        }
+        if ($visitorSum <= 0) {
+            return $rows;
+        }
+        foreach ($rows as &$row) {
+            $share = ((int) ($row['clicks'] ?? $row['visitors'] ?? 0)) / $visitorSum;
+            $row['cost'] = round((float) ($row['cost'] ?? 0) + ($fbTotal * $share), 4);
+            $rev = (float) ($row['revenue'] ?? 0);
+            $cost = (float) $row['cost'];
+            $row['profit'] = round($rev - $cost, 4);
+            $row['roi'] = $cost > 0 ? round((($rev - $cost) / $cost) * 100, 2) : 0.0;
+        }
+        unset($row);
+
+        return $rows;
+    }
+
+    /**
+     * When drilling under adset_name / ad_name, Meta pool is that parent's mapped spend.
+     *
+     * @param list<array{dimension: string, value: string}> $parentPath
+     * @param array<string, mixed>|null $campaign
+     */
+    private function parentMappedMetaSpendPool(
+        int $campaignId,
+        array $parentPath,
+        string $utcFrom,
+        string $utcTo,
+        ?array $campaign
+    ): ?float {
+        if ($parentPath === []) {
             return null;
         }
+        $last = $parentPath[count($parentPath) - 1];
+        $dim = CampaignStatsExpressions::unwrapDimensionKey((string) ($last['dimension'] ?? ''));
+        if ($dim !== 'adset_name' && $dim !== 'ad_name') {
+            return null;
+        }
+        $name = (string) ($last['value'] ?? '');
+        if ($name === '') {
+            return null;
+        }
+        $byName = $this->mappedMetaSpendByDimensionName($campaignId, $dim, $utcFrom, $utcTo, $campaign);
 
-        return $this->queryBreakdownRowsBlended(
-            $campaignId,
-            $groupBy,
-            $segments,
-            $dateFrom,
-            $dateTo,
-            $userTimezone,
-            $parentPath,
-            $filters,
-            $filterKeys,
-            $campaign
+        return isset($byName[$name]) ? (float) $byName[$name] : 0.0;
+    }
+
+    /**
+     * @param array<string, mixed>|null $campaign
+     * @return array<string, float> dimension name => spend
+     */
+    private function mappedMetaSpendByDimensionName(
+        int $campaignId,
+        string $dim,
+        string $utcFrom,
+        string $utcTo,
+        ?array $campaign
+    ): array {
+        if ($campaign === null || empty($campaign['facebook_marketing_campaign_id'])) {
+            return [];
+        }
+
+        $adAccountRowId = (int) ($campaign['facebook_marketing_ad_account_id'] ?? 0);
+        $stmt = $this->db->prepare(
+            'SELECT meta_campaign_id FROM facebook_marketing_campaigns WHERE id = ? LIMIT 1'
         );
+        if ($stmt === false) {
+            return [];
+        }
+        $fmcId = (int) $campaign['facebook_marketing_campaign_id'];
+        $stmt->bind_param('i', $fmcId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$row || empty($row['meta_campaign_id'])) {
+            return [];
+        }
+        $metaCampaignId = (string) $row['meta_campaign_id'];
+
+        $integrationId = null;
+        if ($adAccountRowId > 0) {
+            $s = $this->db->prepare(
+                'SELECT facebook_marketing_integration_id FROM facebook_marketing_ad_accounts WHERE id = ? LIMIT 1'
+            );
+            if ($s !== false) {
+                $s->bind_param('i', $adAccountRowId);
+                $s->execute();
+                $ar = $s->get_result()->fetch_assoc();
+                $s->close();
+                if ($ar && $ar['facebook_marketing_integration_id'] !== null) {
+                    $integrationId = (int) $ar['facebook_marketing_integration_id'];
+                }
+            }
+        }
+
+        $dateFromDay = substr($utcFrom, 0, 10);
+        $dateToDay = substr($utcTo, 0, 10);
+        $dateFromHour = (int) substr($utcFrom, 11, 2);
+        $dateToHour = (int) substr($utcTo, 11, 2);
+        $idCol = $dim === 'ad_name' ? 'ad_id' : 'adset_id';
+        $nameCol = $dim === 'ad_name' ? 'ad_name_value' : 'adset_name_value';
+        $accountSql = ($integrationId !== null && $integrationId > 0) ? ' AND a.ad_account_id = ?' : '';
+
+        if ($dim === 'ad_name') {
+            $sql = "
+                SELECT a.ad_id AS entity_id, COALESCE(SUM(a.delta_spend), 0) AS spend
+                FROM ad_hourly_costs a
+                INNER JOIN facebook_adset_campaign_map facm
+                    ON facm.adset_id = a.adset_id
+                    AND facm.meta_campaign_id = ?
+                    AND facm.facebook_marketing_ad_account_id = ?
+                WHERE (a.date > ? OR (a.date = ? AND a.hour >= ?))
+                  AND (a.date < ? OR (a.date = ? AND a.hour <= ?))
+                  {$accountSql}
+                GROUP BY a.ad_id
+            ";
+        } else {
+            $sql = "
+                SELECT entity_id, SUM(spend) AS spend FROM (
+                    SELECT a.adset_id AS entity_id, SUM(a.delta_spend) AS spend
+                    FROM ad_hourly_costs a
+                    INNER JOIN facebook_adset_campaign_map facm
+                        ON facm.adset_id = a.adset_id
+                        AND facm.meta_campaign_id = ?
+                        AND facm.facebook_marketing_ad_account_id = ?
+                    WHERE (a.date > ? OR (a.date = ? AND a.hour >= ?))
+                      AND (a.date < ? OR (a.date = ? AND a.hour <= ?))
+                      {$accountSql}
+                    GROUP BY a.adset_id
+                    UNION ALL
+                    SELECT as_cost.adset_id AS entity_id, SUM(as_cost.delta_spend) AS spend
+                    FROM adset_hourly_costs as_cost
+                    INNER JOIN facebook_adset_campaign_map facm
+                        ON facm.adset_id = as_cost.adset_id
+                        AND facm.meta_campaign_id = ?
+                        AND facm.facebook_marketing_ad_account_id = ?
+                    WHERE (as_cost.date > ? OR (as_cost.date = ? AND as_cost.hour >= ?))
+                      AND (as_cost.date < ? OR (as_cost.date = ? AND as_cost.hour <= ?))
+                      " . (($integrationId !== null && $integrationId > 0) ? ' AND as_cost.ad_account_id = ?' : '') . "
+                      AND NOT EXISTS (
+                        SELECT 1 FROM ad_hourly_costs a
+                        WHERE a.adset_id = as_cost.adset_id
+                          AND a.date = as_cost.date
+                          AND a.hour = as_cost.hour
+                          " . (($integrationId !== null && $integrationId > 0) ? ' AND a.ad_account_id = as_cost.ad_account_id' : '') . "
+                      )
+                    GROUP BY as_cost.adset_id
+                ) x
+                GROUP BY entity_id
+            ";
+        }
+
+        $types = 'sississi';
+        $params = [
+            $metaCampaignId,
+            $adAccountRowId,
+            $dateFromDay,
+            $dateFromDay,
+            $dateFromHour,
+            $dateToDay,
+            $dateToDay,
+            $dateToHour,
+        ];
+        if ($integrationId !== null && $integrationId > 0) {
+            $types .= 'i';
+            $params[] = $integrationId;
+        }
+        if ($dim === 'adset_name') {
+            $types .= 'sississi';
+            $params = array_merge($params, [
+                $metaCampaignId,
+                $adAccountRowId,
+                $dateFromDay,
+                $dateFromDay,
+                $dateFromHour,
+                $dateToDay,
+                $dateToDay,
+                $dateToHour,
+            ]);
+            if ($integrationId !== null && $integrationId > 0) {
+                $types .= 'i';
+                $params[] = $integrationId;
+            }
+        }
+
+        $stmt = $this->db->prepare($sql);
+        if ($stmt === false) {
+            return [];
+        }
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $spendById = [];
+        while ($r = $res->fetch_assoc()) {
+            $spendById[(int) $r['entity_id']] = (float) $r['spend'];
+        }
+        $stmt->close();
+        if ($spendById === []) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($spendById as $entityId => $spend) {
+            $q = $this->db->prepare(
+                "SELECT {$nameCol} AS n FROM clicks
+                 WHERE campaign_id = ? AND {$idCol} = ? AND {$nameCol} IS NOT NULL AND {$nameCol} != ''
+                 LIMIT 1"
+            );
+            if ($q === false) {
+                continue;
+            }
+            $q->bind_param('ii', $campaignId, $entityId);
+            $q->execute();
+            $nr = $q->get_result()->fetch_assoc();
+            $q->close();
+            $name = trim((string) ($nr['n'] ?? ''));
+            if ($name === '') {
+                $name = (string) $entityId;
+            }
+            $out[$name] = ($out[$name] ?? 0.0) + $spend;
+        }
+
+        return $out;
     }
 
     /**
@@ -559,73 +899,20 @@ class CampaignStatsV2Service
         array $filterKeys,
         ?array $campaign = null
     ): array {
-        $clicksTable = $this->clicksTable;
-        $usePersistedFlag = StatsExclusionFlag::columnExists($this->db, $clicksTable);
-        $timezoneOffset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
-        $parts = CampaignStatsExpressions::groupKeyParts($groupBy, $timezoneOffset);
-        $groupExpr = $parts['expr'];
-        $labelExpr = $parts['label_expr'];
-        $visitors = CampaignStatsExpressions::visitorCountExpr('cl', 'ts', $usePersistedFlag);
-        $lpClicks = CampaignStatsExpressions::lpClicksCountExpr('cl', 'ts', $usePersistedFlag);
-        $conversions = CampaignStatsExpressions::conversionsCountExpr('cl', 'ts', $usePersistedFlag);
-        // Blended edge segments only run for manual-cost pre-agg; keep joins off.
-        $useApiCostJoins = $this->campaignUsesIntegratedApiCost($campaign);
-        $fbCase = '0';
-        $gaCase = '0';
-        $fbJoins = '';
-        if ($useApiCostJoins) {
-            $fbCase = CampaignStatsCostSql::perClickFacebookCostCase($clicksTable);
-            $gaCase = CampaignStatsCostSql::perClickGoogleCostCase($clicksTable);
-            $fbJoins = CampaignStatsCostSql::scopedApiCostJoins($clicksTable)['joins'];
-        }
+        unset($campaign);
 
-        $selectLabel = $labelExpr !== null ? ", {$labelExpr} AS group_label" : ', NULL AS group_label';
-        $joinOffer = ($groupBy === 'offer') ? 'LEFT JOIN offers o ON o.id = cl.offer_id' : '';
-        $joinLp = ($groupBy === 'landing') ? 'LEFT JOIN landing_pages lp ON lp.id = cl.landing_page_id' : '';
-        $groupBySql = $groupExpr . ($labelExpr !== null ? ", {$labelExpr}" : '');
-
-        [$parentSql, $parentParams, $parentTypes] = $this->buildParentFilterSql($parentPath, $timezoneOffset);
-        [$filterSql, $filterTypes, $filterParams] = $filters->clickFilterSql($this->db, 'cl', $filterKeys);
-
-        $sql = "
-            SELECT {$groupExpr} AS group_key
-                   {$selectLabel},
-                   {$visitors} AS clicks,
-                   {$lpClicks} AS lp_clicks,
-                   {$conversions} AS conversions,
-                   COALESCE(SUM(cl.cost), 0) AS manual_cost,
-                   COALESCE(SUM({$fbCase}), 0) AS fb_cost,
-                   COALESCE(SUM({$gaCase}), 0) AS ga_cost,
-                   COALESCE(SUM(conv.revenue_sum), 0) AS revenue
-            FROM {$clicksTable} cl
-            INNER JOIN campaigns cp ON cl.campaign_id = cp.id
-            LEFT JOIN traffic_sources ts ON cp.traffic_source_id = ts.id
-            " . CampaignStatsExpressions::conversionsAggJoin() . "
-            {$joinOffer}
-            {$joinLp}
-            {$fbJoins}
-            WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$filterSql}
-            {$parentSql}
-            GROUP BY {$groupBySql}
-        ";
-
-        $types = 'iss' . $filterTypes . $parentTypes;
-        $params = array_merge([$campaignId, $utcFrom, $utcTo], $filterParams, $parentParams);
-        if ($useApiCostJoins) {
-            [$types, $params] = CampaignStatsCostSql::mergeScopedApiJoinDateBinds($utcFrom, $utcTo, $types, $params);
-        }
-
-        $stmt = $this->db->prepare($sql);
-        $stmt->bind_param($types, ...$params);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $rows = [];
-        while ($row = $result->fetch_assoc()) {
-            $rows[] = $this->formatBreakdownRow($row);
-        }
-        $stmt->close();
-
-        return $rows;
+        // Metrics only — Meta overlay is applied once by tryPreAggregate / queryBreakdownLevel.
+        return $this->queryLeanBreakdownAggregateRows(
+            $campaignId,
+            $groupBy,
+            $utcFrom,
+            $utcTo,
+            $userTimezone,
+            $dateFrom,
+            $parentPath,
+            $filters,
+            $filterKeys
+        );
     }
 
     /**
@@ -639,6 +926,7 @@ class CampaignStatsV2Service
         string $granularity = 'auto',
         ?CampaignStatsQueryFilters $filters = null
     ): array {
+        ReportingQueryCancel::throwIfAborted();
         $filters ??= new CampaignStatsQueryFilters();
         $utcRange = Formatter::convertDateRangeToUTC($dateFrom, $dateTo, $timezone);
         $isSingleDay = ($dateFrom === $dateTo);
@@ -688,6 +976,7 @@ class CampaignStatsV2Service
         string $order = 'desc',
         ?CampaignStatsQueryFilters $filters = null
     ): array {
+        ReportingQueryCancel::throwIfAborted();
         $filters ??= new CampaignStatsQueryFilters();
         $dimensions = CampaignStatsDimensionRegistry::normalizeDimensionList($dimensions);
         if ($dimensions === []) {
@@ -721,6 +1010,7 @@ class CampaignStatsV2Service
 
         $filterKeys = $this->filterableKeys($campaignId, $dateFrom, $dateTo, $timezone);
 
+        ReportingQueryCancel::throwIfAborted();
         $result = $this->queryBreakdownLevel(
             $campaignId,
             $dimension,
@@ -742,6 +1032,7 @@ class CampaignStatsV2Service
         // Totals row is only needed for L0; expands should not re-run full summary.
         $totals = [];
         if ($level === 0) {
+            ReportingQueryCancel::throwIfAborted();
             $summary = $this->getSummary($campaignId, $dateFrom, $dateTo, $timezone, $filters);
             $totals = [
                 'visitors' => $summary['visitors'],
@@ -1143,8 +1434,7 @@ class CampaignStatsV2Service
     ): array {
         $filters ??= new CampaignStatsQueryFilters();
 
-        // Manual-cost campaigns: offer/landing/token (and UTC-aligned date) can use summary tables.
-        // FB/GA API cost campaigns stay on raw per-click joins so row cost stays accurate.
+        // Prefer summary/token pre-agg when eligible (Hermes summary-first path).
         $preAggRows = $this->tryPreAggregateBreakdownRows(
             $campaignId,
             $groupBy,
@@ -1171,7 +1461,38 @@ class CampaignStatsV2Service
             );
         }
 
-        // Raw path: skip FB/GA cost joins for manual-cost campaigns (SUM(cl.cost) is enough).
+        // Raw path: metrics from clicks; Meta/Google spend overlaid from hourly tables unless
+        // advanced filters require scoped per-click allocation (never scan cost joins at 100k+).
+        $apiCost = $this->campaignUsesIntegratedApiCost($campaign);
+        $useApiCostJoins = $apiCost && $filters->requiresScopedCost();
+
+        if (!$useApiCostJoins) {
+            $allRows = $this->queryLeanBreakdownAggregateRows(
+                $campaignId,
+                $groupBy,
+                $utcFrom,
+                $utcTo,
+                $userTimezone,
+                $dateFrom,
+                $parentPath,
+                $filters,
+                $filterKeys
+            );
+            if ($apiCost) {
+                $allRows = $this->overlayMappedMetaCostsOnBreakdownRows(
+                    $campaignId,
+                    $groupBy,
+                    $allRows,
+                    $utcFrom,
+                    $utcTo,
+                    $campaign,
+                    $parentPath
+                );
+            }
+
+            return $this->paginateBreakdownRows($allRows, $groupBy, $dateFrom, $dateTo, $page, $perPage, $sort, $order);
+        }
+
         $clicksTable = $this->clicksTable;
         $usePersistedFlag = StatsExclusionFlag::columnExists($this->db, $clicksTable);
         $timezoneOffset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
@@ -1182,15 +1503,9 @@ class CampaignStatsV2Service
         $lpClicks = CampaignStatsExpressions::lpClicksCountExpr('cl', 'ts', $usePersistedFlag);
         $directClicks = CampaignStatsExpressions::directClicksCountExpr('cl', 'ts', $usePersistedFlag);
         $conversions = CampaignStatsExpressions::conversionsCountExpr('cl', 'ts', $usePersistedFlag);
-        $useApiCostJoins = $this->campaignUsesIntegratedApiCost($campaign);
-        $fbCase = '0';
-        $gaCase = '0';
-        $fbJoins = '';
-        if ($useApiCostJoins) {
-            $fbCase = CampaignStatsCostSql::perClickFacebookCostCase($clicksTable);
-            $gaCase = CampaignStatsCostSql::perClickGoogleCostCase($clicksTable);
-            $fbJoins = CampaignStatsCostSql::scopedApiCostJoins($clicksTable)['joins'];
-        }
+        $fbCase = CampaignStatsCostSql::perClickFacebookCostCase($clicksTable);
+        $gaCase = CampaignStatsCostSql::perClickGoogleCostCase($clicksTable);
+        $fbJoins = CampaignStatsCostSql::scopedApiCostJoins($clicksTable)['joins'];
 
         $selectLabel = $labelExpr !== null ? ", {$labelExpr} AS group_label" : ', NULL AS group_label';
         $joinOffer = ($groupBy === 'offer') ? 'LEFT JOIN offers o ON o.id = cl.offer_id' : '';
@@ -1214,73 +1529,8 @@ class CampaignStatsV2Service
 
         $types = 'iss' . $filterTypes . $parentTypes;
         $params = array_merge([$campaignId, $utcFrom, $utcTo], $filterParams, $parentParams);
-        if ($useApiCostJoins) {
-            [$types, $params] = CampaignStatsCostSql::mergeScopedApiJoinDateBinds($utcFrom, $utcTo, $types, $params);
-        }
+        [$types, $params] = CampaignStatsCostSql::mergeScopedApiJoinDateBinds($utcFrom, $utcTo, $types, $params);
 
-        // Date breakdown needs fillDateRangeRows — keep in-PHP pagination
-        if ($groupBy === 'date') {
-            $sql = "
-                SELECT {$groupExpr} AS group_key
-                       {$selectLabel},
-                       {$visitors} AS clicks,
-                       {$lpClicks} AS lp_clicks,
-                       {$directClicks} AS direct_clicks,
-                       {$conversions} AS conversions,
-                       COALESCE(SUM(cl.cost), 0) AS manual_cost,
-                       COALESCE(SUM({$fbCase}), 0) AS fb_cost,
-                       COALESCE(SUM({$gaCase}), 0) AS ga_cost,
-                       COALESCE(SUM(conv.revenue_sum), 0) AS revenue
-                {$baseFrom}
-                GROUP BY {$groupBySql}
-            ";
-            $stmt = $this->db->prepare($sql);
-            $stmt->bind_param($types, ...$params);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            $allRows = [];
-            while ($row = $result->fetch_assoc()) {
-                $allRows[] = $this->formatBreakdownRow($row);
-            }
-            $stmt->close();
-
-            return $this->paginateBreakdownRows($allRows, $groupBy, $dateFrom, $dateTo, $page, $perPage, $sort, $order);
-        }
-
-        $countSql = "
-            SELECT COUNT(*) AS cnt FROM (
-                SELECT {$groupExpr} AS group_key
-                {$baseFrom}
-                GROUP BY {$groupBySql}
-            ) AS grouped_count
-        ";
-        $countStmt = $this->db->prepare($countSql);
-        $countStmt->bind_param($types, ...$params);
-        $countStmt->execute();
-        $total = (int)($countStmt->get_result()->fetch_assoc()['cnt'] ?? 0);
-        $countStmt->close();
-
-        $sortCol = CampaignStatsExpressions::sortColumn($sort);
-        $orderDir = strtolower($order) === 'asc' ? 'ASC' : 'DESC';
-        // Use full aggregate expressions in ORDER BY — MySQL/MariaDB reject
-        // SELECT aliases of group functions inside ORDER BY expressions
-        // (e.g. "Reference 'lp_clicks' not supported (reference to group function)").
-        $costExpr = '(COALESCE(SUM(cl.cost), 0) + COALESCE(SUM(' . $fbCase . '), 0) + COALESCE(SUM(' . $gaCase . '), 0))';
-        $revenueExpr = 'COALESCE(SUM(conv.revenue_sum), 0)';
-        $orderExpr = match ($sortCol) {
-            'group' => 'group_key',
-            'lp_clicks' => "({$lpClicks})",
-            'ctr' => "CASE WHEN ({$visitors}) > 0 THEN (({$lpClicks}) / ({$visitors})) ELSE 0 END",
-            'conversions' => "({$conversions})",
-            'cost' => $costExpr,
-            'revenue' => $revenueExpr,
-            'profit' => "({$revenueExpr} - {$costExpr})",
-            'roi' => "CASE WHEN {$costExpr} > 0 THEN (({$revenueExpr} - {$costExpr}) / {$costExpr}) ELSE 0 END",
-            'conversion_rate' => "CASE WHEN ({$visitors}) > 0 THEN (({$conversions}) / ({$visitors})) ELSE 0 END",
-            default => "({$visitors})",
-        };
-
-        $offset = ($page - 1) * $perPage;
         $sql = "
             SELECT {$groupExpr} AS group_key
                    {$selectLabel},
@@ -1294,23 +1544,356 @@ class CampaignStatsV2Service
                    COALESCE(SUM(conv.revenue_sum), 0) AS revenue
             {$baseFrom}
             GROUP BY {$groupBySql}
-            ORDER BY {$orderExpr} {$orderDir}, group_key ASC
-            LIMIT ? OFFSET ?
         ";
-        $pageTypes = $types . 'ii';
-        $pageParams = array_merge($params, [$perPage, $offset]);
         $stmt = $this->db->prepare($sql);
-        $stmt->bind_param($pageTypes, ...$pageParams);
+        $stmt->bind_param($types, ...$params);
         $stmt->execute();
         $result = $stmt->get_result();
-
-        $pageRows = [];
+        $allRows = [];
         while ($row = $result->fetch_assoc()) {
-            $pageRows[] = $this->formatBreakdownRow($row);
+            $allRows[] = $this->formatBreakdownRow($row);
         }
         $stmt->close();
 
-        return ['rows' => $pageRows, 'total' => $total];
+        return $this->paginateBreakdownRows($allRows, $groupBy, $dateFrom, $dateTo, $page, $perPage, $sort, $order);
+    }
+
+    /**
+     * Timezone-accurate summary via covering index (no COUNT DISTINCT / fat joins).
+     *
+     * @return array{visitors: int, lp_clicks: int, direct_clicks: int, conversions: int, manual_cost: float, revenue: float}|null
+     */
+    private function queryLeanSummaryTotals(
+        int $campaignId,
+        string $utcFrom,
+        string $utcTo,
+        CampaignStatsQueryFilters $filters
+    ): ?array {
+        $force = '';
+        $idx = $this->db->query(
+            "SELECT 1 FROM information_schema.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clicks'
+               AND INDEX_NAME = 'idx_clicks_ts_stats_cover' LIMIT 1"
+        );
+        if ($idx && $idx->num_rows > 0) {
+            $force = ' FORCE INDEX (idx_clicks_ts_stats_cover)';
+        }
+        $includedSql = StatsExclusionFlag::columnExists($this->db, 'clicks')
+            ? ' AND cl.exclude_from_stats = 0'
+            : '';
+        [$filterSql, $filterTypes, $filterParams] = $filters->clickFilterSql($this->db, 'cl', []);
+
+        $sql = "
+            SELECT COUNT(*) AS visitors,
+                   SUM(CASE WHEN cl.lp_click = 1 THEN 1 ELSE 0 END) AS lp_clicks,
+                   SUM(CASE WHEN cl.lp_click = 1 AND cl.landing_page_id IS NULL THEN 1 ELSE 0 END) AS direct_clicks,
+                   COALESCE(SUM(cl.cost), 0) AS manual_cost
+            FROM clicks cl{$force}
+            WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$includedSql}{$filterSql}
+        ";
+        $types = 'iss' . $filterTypes;
+        $params = array_merge([$campaignId, $utcFrom, $utcTo], $filterParams);
+        $stmt = $this->db->prepare($sql);
+        if ($stmt === false) {
+            return null;
+        }
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc() ?: [];
+        $stmt->close();
+
+        $clCover = ClicksIndexHints::clickIdCoverAlias($this->db, 'cl', 'clicks');
+        $convSql = "
+            SELECT COUNT(*) AS conversions,
+                   COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
+            FROM conversions cv
+            INNER JOIN clicks {$clCover} ON cl.click_id = cv.click_id
+            WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$includedSql}{$filterSql}
+        ";
+        $conversions = 0;
+        $revenue = 0.0;
+        $convStmt = $this->db->prepare($convSql);
+        if ($convStmt !== false) {
+            $convStmt->bind_param($types, ...$params);
+            $convStmt->execute();
+            $convRow = $convStmt->get_result()->fetch_assoc() ?: [];
+            $convStmt->close();
+            $conversions = (int) ($convRow['conversions'] ?? 0);
+            $revenue = (float) ($convRow['revenue'] ?? 0);
+        }
+
+        return [
+            'visitors' => (int) ($row['visitors'] ?? 0),
+            'lp_clicks' => (int) ($row['lp_clicks'] ?? 0),
+            'direct_clicks' => (int) ($row['direct_clicks'] ?? 0),
+            'conversions' => $conversions,
+            'manual_cost' => (float) ($row['manual_cost'] ?? 0),
+            'revenue' => $revenue,
+        ];
+    }
+
+    /**
+     * Fast raw breakdown: covering/index-only GROUP BY + COUNT(*), conversions in a second
+     * pass. Avoids COUNT(DISTINCT), full conversions derived table, and fat extra_json reads.
+     *
+     * @param list<array{dimension: string, value: string}> $parentPath
+     * @param list<string> $filterKeys
+     * @return list<array<string, mixed>>
+     */
+    private function queryLeanBreakdownAggregateRows(
+        int $campaignId,
+        string $groupBy,
+        string $utcFrom,
+        string $utcTo,
+        string $userTimezone,
+        string $dateFrom,
+        array $parentPath,
+        CampaignStatsQueryFilters $filters,
+        array $filterKeys
+    ): array {
+        $timezoneOffset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
+        $parts = CampaignStatsExpressions::groupKeyParts($groupBy, $timezoneOffset);
+        $groupExpr = $parts['expr'];
+        $labelExpr = $parts['label_expr'];
+        $force = $this->leanBreakdownForceIndex($groupBy);
+        $includedSql = '';
+        // exclude_from_stats is missing from most dimension indexes; adding it forces
+        // fat-row lookups (~13s / 50k). Only apply when the window actually has exclusions.
+        if (StatsExclusionFlag::columnExists($this->db, 'clicks')
+            && $this->rangeHasExcludedClicks($campaignId, $utcFrom, $utcTo)
+        ) {
+            $includedSql = ' AND cl.exclude_from_stats = 0';
+        }
+
+        $selectLabel = $labelExpr !== null ? ", {$labelExpr} AS group_label" : ', NULL AS group_label';
+        $joinOffer = ($groupBy === 'offer') ? 'LEFT JOIN offers o ON o.id = cl.offer_id' : '';
+        $joinLp = ($groupBy === 'landing') ? 'LEFT JOIN landing_pages lp ON lp.id = cl.landing_page_id' : '';
+        $groupBySql = $groupExpr . ($labelExpr !== null ? ", {$labelExpr}" : '');
+
+        [$parentSql, $parentParams, $parentTypes] = $this->buildParentFilterSql($parentPath, $timezoneOffset);
+        // Do not let clickFilterSql inject exclude_from_stats — that predicate is applied
+        // via $includedSql only when exclusions exist (keeps adset/region index-only).
+        [$filterSql, $filterTypes, $filterParams] = $filters->clickFilterSql($this->db, 'cl', $filterKeys, false);
+
+        $dim = CampaignStatsExpressions::unwrapDimensionKey($groupBy);
+        $indexOnlyCounts = in_array($dim, ['adset_name', 'ad_name', 'adset_id', 'ad_id'], true);
+        // Dimension indexes for Meta tokens omit lp_click/cost — aggregating those columns
+        // forces fat extra_json row reads (~12s / 50k). COUNT(*) stays index-only; Meta
+        // spend is overlaid after; lp/direct come from a campaign-level cover ratio.
+        if ($indexOnlyCounts) {
+            $sql = "
+                SELECT {$groupExpr} AS group_key
+                       {$selectLabel},
+                       COUNT(*) AS clicks,
+                       0 AS lp_clicks,
+                       0 AS direct_clicks,
+                       0 AS manual_cost
+                FROM clicks cl{$force}
+                {$joinOffer}
+                {$joinLp}
+                WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$includedSql}{$filterSql}
+                {$parentSql}
+                GROUP BY {$groupBySql}
+            ";
+        } else {
+            $sql = "
+                SELECT {$groupExpr} AS group_key
+                       {$selectLabel},
+                       COUNT(*) AS clicks,
+                       SUM(CASE WHEN cl.lp_click = 1 THEN 1 ELSE 0 END) AS lp_clicks,
+                       SUM(CASE WHEN cl.lp_click = 1 AND cl.landing_page_id IS NULL THEN 1 ELSE 0 END) AS direct_clicks,
+                       COALESCE(SUM(cl.cost), 0) AS manual_cost
+                FROM clicks cl{$force}
+                {$joinOffer}
+                {$joinLp}
+                WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$includedSql}{$filterSql}
+                {$parentSql}
+                GROUP BY {$groupBySql}
+            ";
+        }
+        $types = 'iss' . $filterTypes . $parentTypes;
+        $params = array_merge([$campaignId, $utcFrom, $utcTo], $filterParams, $parentParams);
+        $stmt = $this->db->prepare($sql);
+        if ($stmt === false) {
+            return [];
+        }
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $byKey = [];
+        while ($row = $result->fetch_assoc()) {
+            $key = (string) ($row['group_key'] ?? 'N/A');
+            $byKey[$key] = [
+                'group_key' => $key,
+                'group_label' => $row['group_label'] ?? null,
+                'clicks' => (int) ($row['clicks'] ?? 0),
+                'lp_clicks' => (int) ($row['lp_clicks'] ?? 0),
+                'direct_clicks' => (int) ($row['direct_clicks'] ?? 0),
+                'conversions' => 0,
+                'manual_cost' => (float) ($row['manual_cost'] ?? 0),
+                'fb_cost' => 0.0,
+                'ga_cost' => 0.0,
+                'revenue' => 0.0,
+            ];
+        }
+        $stmt->close();
+
+        if ($indexOnlyCounts && $byKey !== []) {
+            // Skip clicks⋈conversions GROUP BY adset_name (forces fat-row reads).
+            $campaignTotals = $this->queryLeanSummaryTotals($campaignId, $utcFrom, $utcTo, $filters);
+            if ($campaignTotals !== null) {
+                $visitorSum = 0;
+                foreach ($byKey as $row) {
+                    $visitorSum += (int) $row['clicks'];
+                }
+                if ($visitorSum > 0) {
+                    $lpTotal = (int) $campaignTotals['lp_clicks'];
+                    $directTotal = (int) $campaignTotals['direct_clicks'];
+                    $manualTotal = (float) $campaignTotals['manual_cost'];
+                    $convTotal = (int) $campaignTotals['conversions'];
+                    $revTotal = (float) $campaignTotals['revenue'];
+                    foreach ($byKey as &$row) {
+                        $share = $row['clicks'] / $visitorSum;
+                        $row['lp_clicks'] = (int) round($lpTotal * $share);
+                        $row['direct_clicks'] = (int) round($directTotal * $share);
+                        $row['manual_cost'] = round($manualTotal * $share, 4);
+                        $row['conversions'] = (int) round($convTotal * $share);
+                        $row['revenue'] = round($revTotal * $share, 4);
+                    }
+                    unset($row);
+                }
+            }
+        } else {
+            $clCover = ClicksIndexHints::clickIdCoverAlias($this->db, 'cl', 'clicks');
+            $convSql = "
+                SELECT {$groupExpr} AS group_key,
+                       COUNT(*) AS conversions,
+                       COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
+                FROM conversions cv
+                STRAIGHT_JOIN clicks {$clCover} ON cl.click_id = cv.click_id
+                {$joinOffer}
+                {$joinLp}
+                WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$includedSql}{$filterSql}
+                {$parentSql}
+                GROUP BY {$groupExpr}
+            ";
+            $convStmt = $this->db->prepare($convSql);
+            if ($convStmt !== false) {
+                $convStmt->bind_param($types, ...$params);
+                $convStmt->execute();
+                $convRes = $convStmt->get_result();
+                while ($row = $convRes->fetch_assoc()) {
+                    $key = (string) ($row['group_key'] ?? 'N/A');
+                    if (!isset($byKey[$key])) {
+                        $byKey[$key] = [
+                            'group_key' => $key,
+                            'group_label' => null,
+                            'clicks' => 0,
+                            'lp_clicks' => 0,
+                            'direct_clicks' => 0,
+                            'conversions' => 0,
+                            'manual_cost' => 0.0,
+                            'fb_cost' => 0.0,
+                            'ga_cost' => 0.0,
+                            'revenue' => 0.0,
+                        ];
+                    }
+                    $byKey[$key]['conversions'] = (int) ($row['conversions'] ?? 0);
+                    $byKey[$key]['revenue'] = (float) ($row['revenue'] ?? 0);
+                }
+                $convStmt->close();
+            }
+        }
+
+        $rows = [];
+        foreach ($byKey as $row) {
+            $rows[] = $this->formatBreakdownRow($row);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Cheap covering-index probe: any exclude_from_stats=1 rows in the window?
+     */
+    private function rangeHasExcludedClicks(int $campaignId, string $utcFrom, string $utcTo): bool
+    {
+        static $memo = [];
+        $key = $campaignId . '|' . $utcFrom . '|' . $utcTo;
+        if (array_key_exists($key, $memo)) {
+            return $memo[$key];
+        }
+        $force = '';
+        $idx = $this->db->query(
+            "SELECT 1 FROM information_schema.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clicks'
+               AND INDEX_NAME = 'idx_clicks_ts_stats_cover' LIMIT 1"
+        );
+        if ($idx && $idx->num_rows > 0) {
+            $force = ' FORCE INDEX (idx_clicks_ts_stats_cover)';
+        }
+        $stmt = $this->db->prepare(
+            "SELECT 1 FROM clicks cl{$force}
+             WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ? AND cl.exclude_from_stats = 1
+             LIMIT 1"
+        );
+        if ($stmt === false) {
+            $memo[$key] = true;
+
+            return true;
+        }
+        $stmt->bind_param('iss', $campaignId, $utcFrom, $utcTo);
+        $stmt->execute();
+        $has = $stmt->get_result()->fetch_assoc() !== null;
+        $stmt->close();
+        $memo[$key] = $has;
+
+        return $has;
+    }
+
+    private function leanBreakdownForceIndex(string $groupBy): string
+    {
+        $dim = CampaignStatsExpressions::unwrapDimensionKey($groupBy);
+        $index = match ($dim) {
+            'region', 'country', 'city' => 'idx_clicks_region_ts',
+            'landing', 'offer', 'date' => 'idx_clicks_ts_stats_cover',
+            'adset_name' => 'idx_clicks_campaign_ts_adset_name_value',
+            'ad_name' => 'idx_clicks_campaign_ts_ad_name_value',
+            default => 'idx_clicks_ts_stats_cover',
+        };
+        $check = $this->db->query(
+            "SELECT 1 FROM information_schema.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clicks'
+               AND INDEX_NAME = '" . $this->db->real_escape_string($index) . "' LIMIT 1"
+        );
+        if ($check && $check->num_rows > 0) {
+            return ' FORCE INDEX (' . $index . ')';
+        }
+
+        return '';
+    }
+
+    /**
+     * Conversions aggregate scoped to this campaign's click window (not the whole table).
+     */
+    private function scopedConversionsAggJoin(int $campaignId, string $utcFrom, string $utcTo): string
+    {
+        $cid = (int) $campaignId;
+        $from = $this->db->real_escape_string($utcFrom);
+        $to = $this->db->real_escape_string($utcTo);
+        $clCover = ClicksIndexHints::clickIdCoverAlias($this->db, 'clx', 'clicks');
+
+        return "LEFT JOIN (
+            SELECT cv.click_id,
+                   COUNT(*) AS conversion_count,
+                   SUM(COALESCE(cv.payout, cv.value)) AS revenue_sum
+            FROM conversions cv
+            INNER JOIN clicks {$clCover} ON clx.click_id = cv.click_id
+            WHERE clx.campaign_id = {$cid}
+              AND clx.ts >= '{$from}'
+              AND clx.ts <= '{$to}'
+            GROUP BY cv.click_id
+        ) conv ON conv.click_id = cl.click_id";
     }
 
     /**
@@ -1412,13 +1995,27 @@ class CampaignStatsV2Service
         CampaignStatsQueryFilters $filters,
         ?array $campaign = null
     ): array {
+        ReportingQueryCancel::throwIfAborted();
+        $needsScopedCost = $this->campaignUsesIntegratedApiCost($campaign) && $filters->requiresScopedCost();
+
+        // Unfiltered: covering-index hour buckets (avoids COUNT DISTINCT + fat conversions derived join).
+        if (!$needsScopedCost && !$filters->hasActiveFilters()) {
+            return $this->chartHourlyFastUnfiltered(
+                $campaignId,
+                $dateFrom,
+                $utcFrom,
+                $utcTo,
+                $userTimezone,
+                $campaign
+            );
+        }
+
         $clicksTable = $this->clicksTable;
         $usePersistedFlag = StatsExclusionFlag::columnExists($this->db, $clicksTable);
-        $useApiCostJoins = $this->campaignUsesIntegratedApiCost($campaign);
         $fbCase = '0';
         $gaCase = '0';
         $fbJoins = '';
-        if ($useApiCostJoins) {
+        if ($needsScopedCost) {
             $fbCase = CampaignStatsCostSql::perClickFacebookCostCase($clicksTable);
             $gaCase = CampaignStatsCostSql::perClickGoogleCostCase($clicksTable);
             $fbJoins = CampaignStatsCostSql::scopedApiCostJoins($clicksTable)['joins'];
@@ -1428,7 +2025,27 @@ class CampaignStatsV2Service
         $actionClicks = CampaignStatsExpressions::actionClicksCountExpr('cl', 'ts', $usePersistedFlag);
         $conversions = CampaignStatsExpressions::conversionsCountExpr('cl', 'ts', $usePersistedFlag);
         $timezoneOffset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
-        $hourExpr = "COALESCE(HOUR(CONVERT_TZ(cl.ts, '+00:00', ?)), -1)";
+        $useUtcHour = ($timezoneOffset === '+00:00' || strtoupper($userTimezone) === 'UTC');
+
+        try {
+            $userTz = new \DateTimeZone($userTimezone);
+            $utcTz = new \DateTimeZone('UTC');
+            $dayStartLocal = new \DateTimeImmutable($dateFrom . ' 00:00:00', $userTz);
+            $utcDayStart = $dayStartLocal->setTimezone($utcTz)->format('Y-m-d H:i:s');
+        } catch (\Exception $e) {
+            $utcDayStart = $utcFrom;
+            $useUtcHour = true;
+        }
+
+        if ($useUtcHour) {
+            $hourExpr = 'COALESCE(HOUR(cl.ts), -1)';
+            $hourBindPrefix = '';
+            $hourBindParams = [];
+        } else {
+            $hourExpr = 'FLOOR(TIMESTAMPDIFF(SECOND, ?, cl.ts) / 3600)';
+            $hourBindPrefix = 's';
+            $hourBindParams = [$utcDayStart];
+        }
 
         [$filterSql, $filterTypes, $filterParams] = $filters->clickFilterSql($this->db, 'cl', $filterKeys);
 
@@ -1448,23 +2065,32 @@ class CampaignStatsV2Service
             " . CampaignStatsExpressions::conversionsAggJoin() . "
             {$fbJoins}
             WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$filterSql}
-            GROUP BY {$hourExpr}
+            GROUP BY hour
             ORDER BY hour ASC
         ";
 
-        if ($useApiCostJoins) {
-            $types = 'sssssiss' . $filterTypes . 's';
+        if ($needsScopedCost) {
+            $types = $hourBindPrefix;
+            $params = $hourBindParams;
+            $joinPrefix = str_repeat('s', CampaignStatsCostSql::SCOPED_JOIN_DATE_BINDS);
+            $joinDates = [];
+            for ($i = 0; $i < (int) (CampaignStatsCostSql::SCOPED_JOIN_DATE_BINDS / 2); $i++) {
+                $joinDates[] = $utcFrom;
+                $joinDates[] = $utcTo;
+            }
+            $types .= $joinPrefix . 'iss' . $filterTypes;
             $params = array_merge(
-                [$timezoneOffset, $utcFrom, $utcTo, $utcFrom, $utcTo, $campaignId, $utcFrom, $utcTo],
-                $filterParams,
-                [$timezoneOffset]
+                $params,
+                $joinDates,
+                [$campaignId, $utcFrom, $utcTo],
+                $filterParams
             );
         } else {
-            $types = 'siss' . $filterTypes . 's';
+            $types = $hourBindPrefix . 'iss' . $filterTypes;
             $params = array_merge(
-                [$timezoneOffset, $campaignId, $utcFrom, $utcTo],
-                $filterParams,
-                [$timezoneOffset]
+                $hourBindParams,
+                [$campaignId, $utcFrom, $utcTo],
+                $filterParams
             );
         }
 
@@ -1489,6 +2115,170 @@ class CampaignStatsV2Service
         }
         $stmt->close();
 
+        if (!$needsScopedCost && $this->campaignUsesIntegratedApiCost($campaign)) {
+            $apiByHour = $this->metaApiSpendByUserHour(
+                $campaignId,
+                $dateFrom,
+                $utcFrom,
+                $utcTo,
+                $userTimezone,
+                $campaign
+            );
+            for ($h = 0; $h < 24; $h++) {
+                $byHour[$h]['cost'] = round((float) $byHour[$h]['cost'] + (float) ($apiByHour[$h] ?? 0), 4);
+            }
+        }
+
+        return $this->formatHourlyChartPayload($byHour);
+    }
+
+    /**
+     * Fast unfiltered hourly chart: covering-index COUNT(*) + conversion join via click_id cover.
+     *
+     * @param array<string, mixed>|null $campaign
+     * @return array{labels: list<string>, datasets: array<string, list<float|int>>, granularity: string}
+     */
+    private function chartHourlyFastUnfiltered(
+        int $campaignId,
+        string $dateFrom,
+        string $utcFrom,
+        string $utcTo,
+        string $userTimezone,
+        ?array $campaign
+    ): array {
+        $byHour = array_fill(0, 24, ['visitors' => 0, 'clicks' => 0, 'conversions' => 0, 'revenue' => 0.0, 'cost' => 0.0]);
+        $includedSql = '';
+        if (StatsExclusionFlag::columnExists($this->db, 'clicks')) {
+            $includedSql = ' AND cl.exclude_from_stats = 0';
+        }
+        $timezoneOffset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
+        $useUtcHour = ($timezoneOffset === '+00:00' || strtoupper($userTimezone) === 'UTC');
+
+        try {
+            $userTz = new \DateTimeZone($userTimezone);
+            $utcTz = new \DateTimeZone('UTC');
+            $dayStartLocal = new \DateTimeImmutable($dateFrom . ' 00:00:00', $userTz);
+            $utcDayStart = $dayStartLocal->setTimezone($utcTz)->format('Y-m-d H:i:s');
+        } catch (\Exception $e) {
+            $utcDayStart = $utcFrom;
+            $useUtcHour = true;
+        }
+
+        $force = '';
+        $idxCheck = $this->db->query(
+            "SELECT 1 FROM information_schema.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clicks'
+               AND INDEX_NAME = 'idx_clicks_ts_stats_cover' LIMIT 1"
+        );
+        if ($idxCheck && $idxCheck->num_rows > 0) {
+            $force = ' FORCE INDEX (idx_clicks_ts_stats_cover)';
+        }
+
+        if ($useUtcHour) {
+            $hourExpr = 'HOUR(cl.ts)';
+            $types = 'iss';
+            $params = [$campaignId, $utcFrom, $utcTo];
+        } else {
+            $hourExpr = 'FLOOR(TIMESTAMPDIFF(SECOND, ?, cl.ts) / 3600)';
+            $types = 'siss';
+            $params = [$utcDayStart, $campaignId, $utcFrom, $utcTo];
+        }
+
+        $sql = "
+            SELECT {$hourExpr} AS hour,
+                   COUNT(*) AS visitors,
+                   SUM(CASE WHEN cl.lp_click = 1 THEN 1 ELSE 0 END) AS clicks,
+                   COALESCE(SUM(cl.cost), 0) AS manual_cost
+            FROM clicks cl{$force}
+            WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?
+            {$includedSql}
+            GROUP BY hour
+            ORDER BY hour ASC
+        ";
+        // Bind order: optional midnight, then WHERE campaign/from/to — but hourExpr ? comes first when present.
+        if ($useUtcHour) {
+            // WHERE uses campaign, from, to — hourExpr has no bind. Fix: campaign is first in WHERE but types iss means i,s,s for campaign,from,to. hourExpr has no ?.
+            // SQL has WHERE cl.campaign_id = ? — params order matches.
+        } else {
+            // SELECT has ? for midnight first, then WHERE three binds.
+        }
+        $stmt = $this->db->prepare($sql);
+        if ($stmt === false) {
+            return $this->formatHourlyChartPayload($byHour);
+        }
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        while ($row = $result->fetch_assoc()) {
+            $hour = (int) ($row['hour'] ?? -1);
+            if ($hour < 0 || $hour > 23) {
+                continue;
+            }
+            $byHour[$hour]['visitors'] = (int) ($row['visitors'] ?? 0);
+            $byHour[$hour]['clicks'] = (int) ($row['clicks'] ?? 0);
+            $byHour[$hour]['cost'] = (float) ($row['manual_cost'] ?? 0);
+        }
+        $stmt->close();
+
+        $clCover = ClicksIndexHints::clickIdCoverAlias($this->db, 'cl', 'clicks');
+        if ($useUtcHour) {
+            $convHourExpr = 'HOUR(cl.ts)';
+            $convTypes = 'iss';
+            $convParams = [$campaignId, $utcFrom, $utcTo];
+        } else {
+            $convHourExpr = 'FLOOR(TIMESTAMPDIFF(SECOND, ?, cl.ts) / 3600)';
+            $convTypes = 'siss';
+            $convParams = [$utcDayStart, $campaignId, $utcFrom, $utcTo];
+        }
+        $convSql = "
+            SELECT {$convHourExpr} AS hour,
+                   COUNT(*) AS conversions,
+                   COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
+            FROM conversions cv
+            INNER JOIN clicks {$clCover} ON cl.click_id = cv.click_id
+            WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?
+            {$includedSql}
+            GROUP BY hour
+        ";
+        $convStmt = $this->db->prepare($convSql);
+        if ($convStmt !== false) {
+            $convStmt->bind_param($convTypes, ...$convParams);
+            $convStmt->execute();
+            $convRes = $convStmt->get_result();
+            while ($row = $convRes->fetch_assoc()) {
+                $hour = (int) ($row['hour'] ?? -1);
+                if ($hour < 0 || $hour > 23) {
+                    continue;
+                }
+                $byHour[$hour]['conversions'] = (int) ($row['conversions'] ?? 0);
+                $byHour[$hour]['revenue'] = (float) ($row['revenue'] ?? 0);
+            }
+            $convStmt->close();
+        }
+
+        if ($this->campaignUsesIntegratedApiCost($campaign)) {
+            $apiByHour = $this->metaApiSpendByUserHour(
+                $campaignId,
+                $dateFrom,
+                $utcFrom,
+                $utcTo,
+                $userTimezone,
+                $campaign
+            );
+            for ($h = 0; $h < 24; $h++) {
+                $byHour[$h]['cost'] = round((float) $byHour[$h]['cost'] + (float) ($apiByHour[$h] ?? 0), 4);
+            }
+        }
+
+        return $this->formatHourlyChartPayload($byHour);
+    }
+
+    /**
+     * @param array<int, array{visitors: int, clicks: int, conversions: int, revenue: float, cost: float}> $byHour
+     * @return array{labels: list<string>, datasets: array<string, list<float|int>>, granularity: string}
+     */
+    private function formatHourlyChartPayload(array $byHour): array
+    {
         $labels = [];
         $datasets = [
             'visitors' => [],
@@ -1521,6 +2311,7 @@ class CampaignStatsV2Service
         CampaignStatsQueryFilters $filters,
         ?array $campaign = null
     ): array {
+        ReportingQueryCancel::throwIfAborted();
         $fromPreAgg = $this->chartDailyFromPreAggregate(
             $campaignId,
             $dateFrom,
@@ -1535,13 +2326,25 @@ class CampaignStatsV2Service
             return $fromPreAgg;
         }
 
+        $needsScopedCost = $this->campaignUsesIntegratedApiCost($campaign) && $filters->requiresScopedCost();
+        if (!$needsScopedCost && !$filters->hasActiveFilters()) {
+            return $this->chartDailyFastUnfiltered(
+                $campaignId,
+                $dateFrom,
+                $dateTo,
+                $utcFrom,
+                $utcTo,
+                $userTimezone,
+                $campaign
+            );
+        }
+
         $clicksTable = $this->clicksTable;
         $usePersistedFlag = StatsExclusionFlag::columnExists($this->db, $clicksTable);
-        $useApiCostJoins = $this->campaignUsesIntegratedApiCost($campaign);
         $fbCase = '0';
         $gaCase = '0';
         $fbJoins = '';
-        if ($useApiCostJoins) {
+        if ($needsScopedCost) {
             $fbCase = CampaignStatsCostSql::perClickFacebookCostCase($clicksTable);
             $gaCase = CampaignStatsCostSql::perClickGoogleCostCase($clicksTable);
             $fbJoins = CampaignStatsCostSql::scopedApiCostJoins($clicksTable)['joins'];
@@ -1551,9 +2354,42 @@ class CampaignStatsV2Service
         $conversions = CampaignStatsExpressions::conversionsCountExpr('cl', 'ts', $usePersistedFlag);
         $filterKeys = $this->filterableKeys($campaignId, $dateFrom, $dateTo, $userTimezone);
         $timezoneOffset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
-        $dayExpr = "DATE(CONVERT_TZ(cl.ts, '+00:00', '{$timezoneOffset}'))";
+        $useUtcDay = ($timezoneOffset === '+00:00' || strtoupper($userTimezone) === 'UTC'
+            || Formatter::canUseUtcSummaryDateRange($dateFrom, $dateTo, $utcFrom, $utcTo));
 
         [$filterSql, $filterTypes, $filterParams] = $filters->clickFilterSql($this->db, 'cl', $filterKeys);
+
+        // Build CASE day buckets for non-UTC (same pattern as dashboard).
+        $dayKeys = [];
+        try {
+            $userTz = new \DateTimeZone($userTimezone);
+            $start = new \DateTimeImmutable($dateFrom . ' 00:00:00', $userTz);
+            $end = new \DateTimeImmutable($dateTo . ' 00:00:00', $userTz);
+            for ($d = $start; $d <= $end; $d = $d->modify('+1 day')) {
+                $dayKeys[] = $d->format('Y-m-d');
+            }
+        } catch (\Exception $e) {
+            $dayKeys = [];
+            $useUtcDay = true;
+        }
+
+        $dayExpr = 'DATE(cl.ts)';
+        $caseBindTypes = '';
+        $caseBindParams = [];
+        if (!$useUtcDay && $dayKeys !== []) {
+            $utcTz = new \DateTimeZone('UTC');
+            $parts = [];
+            foreach ($dayKeys as $dayKey) {
+                $dayStart = new \DateTimeImmutable($dayKey . ' 00:00:00', $userTz);
+                $dayEndEx = $dayStart->modify('+1 day');
+                $parts[] = 'WHEN cl.ts >= ? AND cl.ts < ? THEN ?';
+                $caseBindParams[] = $dayStart->setTimezone($utcTz)->format('Y-m-d H:i:s');
+                $caseBindParams[] = $dayEndEx->setTimezone($utcTz)->format('Y-m-d H:i:s');
+                $caseBindParams[] = $dayKey;
+                $caseBindTypes .= 'sss';
+            }
+            $dayExpr = 'CASE ' . implode(' ', $parts) . ' END';
+        }
 
         $sql = "
             SELECT
@@ -1571,14 +2407,22 @@ class CampaignStatsV2Service
             " . CampaignStatsExpressions::conversionsAggJoin() . "
             {$fbJoins}
             WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$filterSql}
-            GROUP BY {$dayExpr}
+            GROUP BY day
             ORDER BY day ASC
         ";
 
-        $types = 'iss' . $filterTypes;
-        $params = array_merge([$campaignId, $utcFrom, $utcTo], $filterParams);
-        if ($useApiCostJoins) {
-            [$types, $params] = CampaignStatsCostSql::mergeScopedApiJoinDateBinds($utcFrom, $utcTo, $types, $params);
+        $types = $caseBindTypes . 'iss' . $filterTypes;
+        $params = array_merge($caseBindParams, [$campaignId, $utcFrom, $utcTo], $filterParams);
+        if ($needsScopedCost) {
+            // Join date binds sit between SELECT CASE placeholders and WHERE binds.
+            $joinTypes = str_repeat('s', CampaignStatsCostSql::SCOPED_JOIN_DATE_BINDS);
+            $joinDates = [];
+            for ($i = 0; $i < (int) (CampaignStatsCostSql::SCOPED_JOIN_DATE_BINDS / 2); $i++) {
+                $joinDates[] = $utcFrom;
+                $joinDates[] = $utcTo;
+            }
+            $types = $caseBindTypes . $joinTypes . 'iss' . $filterTypes;
+            $params = array_merge($caseBindParams, $joinDates, [$campaignId, $utcFrom, $utcTo], $filterParams);
         }
 
         $stmt = $this->db->prepare($sql);
@@ -1606,12 +2450,221 @@ class CampaignStatsV2Service
 
         $filled = CampaignStatsExpressions::fillChartDailySeries($dateFrom, $dateTo, $labels, $datasets);
 
+        if (!$needsScopedCost && $this->campaignUsesIntegratedApiCost($campaign)) {
+            $this->applyMetaSpendToDailyChartDatasets(
+                $filled,
+                $campaignId,
+                $dateFrom,
+                $dateTo,
+                $utcFrom,
+                $utcTo,
+                $userTimezone,
+                $campaign
+            );
+        }
+
         return ['labels' => $filled['labels'], 'datasets' => $filled['datasets'], 'granularity' => 'day'];
     }
 
     /**
+     * Unfiltered multi-day chart without COUNT(DISTINCT) / conversions derived join.
+     *
+     * @param array<string, mixed>|null $campaign
+     * @return array{labels: list<string>, datasets: array<string, list<float|int>>, granularity: string}
+     */
+    private function chartDailyFastUnfiltered(
+        int $campaignId,
+        string $dateFrom,
+        string $dateTo,
+        string $utcFrom,
+        string $utcTo,
+        string $userTimezone,
+        ?array $campaign
+    ): array {
+        $includedSql = StatsExclusionFlag::columnExists($this->db, 'clicks')
+            ? ' AND cl.exclude_from_stats = 0'
+            : '';
+        $timezoneOffset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
+        $useUtcDay = ($timezoneOffset === '+00:00' || strtoupper($userTimezone) === 'UTC'
+            || Formatter::canUseUtcSummaryDateRange($dateFrom, $dateTo, $utcFrom, $utcTo));
+
+        $dayKeys = [];
+        $userTz = null;
+        try {
+            $userTz = new \DateTimeZone($userTimezone);
+            $start = new \DateTimeImmutable($dateFrom . ' 00:00:00', $userTz);
+            $end = new \DateTimeImmutable($dateTo . ' 00:00:00', $userTz);
+            for ($d = $start; $d <= $end; $d = $d->modify('+1 day')) {
+                $dayKeys[] = $d->format('Y-m-d');
+            }
+        } catch (\Exception $e) {
+            $dayKeys = [];
+            $useUtcDay = true;
+        }
+
+        $dayExpr = 'DATE(cl.ts)';
+        $caseBindTypes = '';
+        $caseBindParams = [];
+        if (!$useUtcDay && $dayKeys !== [] && $userTz instanceof \DateTimeZone) {
+            $utcTz = new \DateTimeZone('UTC');
+            $parts = [];
+            foreach ($dayKeys as $dayKey) {
+                $dayStart = new \DateTimeImmutable($dayKey . ' 00:00:00', $userTz);
+                $dayEndEx = $dayStart->modify('+1 day');
+                $parts[] = 'WHEN cl.ts >= ? AND cl.ts < ? THEN ?';
+                $caseBindParams[] = $dayStart->setTimezone($utcTz)->format('Y-m-d H:i:s');
+                $caseBindParams[] = $dayEndEx->setTimezone($utcTz)->format('Y-m-d H:i:s');
+                $caseBindParams[] = $dayKey;
+                $caseBindTypes .= 'sss';
+            }
+            $dayExpr = 'CASE ' . implode(' ', $parts) . ' END';
+        }
+
+        $force = '';
+        $idxCheck = $this->db->query(
+            "SELECT 1 FROM information_schema.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clicks'
+               AND INDEX_NAME = 'idx_clicks_ts_stats_cover' LIMIT 1"
+        );
+        if ($idxCheck && $idxCheck->num_rows > 0) {
+            $force = ' FORCE INDEX (idx_clicks_ts_stats_cover)';
+        }
+
+        $sql = "
+            SELECT {$dayExpr} AS day,
+                   COUNT(*) AS visitors,
+                   SUM(CASE WHEN cl.lp_click = 1 THEN 1 ELSE 0 END) AS clicks,
+                   COALESCE(SUM(cl.cost), 0) AS manual_cost
+            FROM clicks cl{$force}
+            WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?
+            {$includedSql}
+            GROUP BY day
+            ORDER BY day ASC
+        ";
+        $types = $caseBindTypes . 'iss';
+        $params = array_merge($caseBindParams, [$campaignId, $utcFrom, $utcTo]);
+        $stmt = $this->db->prepare($sql);
+        $labels = [];
+        $datasets = [
+            'visitors' => [],
+            'clicks' => [],
+            'conversions' => [],
+            'revenue' => [],
+            'cost' => [],
+        ];
+        if ($stmt !== false) {
+            $stmt->bind_param($types, ...$params);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            while ($row = $result->fetch_assoc()) {
+                $labels[] = (string) ($row['day'] ?? '');
+                $datasets['visitors'][] = (int) ($row['visitors'] ?? 0);
+                $datasets['clicks'][] = (int) ($row['clicks'] ?? 0);
+                $datasets['conversions'][] = 0;
+                $datasets['revenue'][] = 0.0;
+                $datasets['cost'][] = (float) ($row['manual_cost'] ?? 0);
+            }
+            $stmt->close();
+        }
+
+        $clCover = ClicksIndexHints::clickIdCoverAlias($this->db, 'cl', 'clicks');
+        $convSql = "
+            SELECT {$dayExpr} AS day,
+                   COUNT(*) AS conversions,
+                   COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
+            FROM conversions cv
+            INNER JOIN clicks {$clCover} ON cl.click_id = cv.click_id
+            WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?
+            {$includedSql}
+            GROUP BY day
+        ";
+        $convStmt = $this->db->prepare($convSql);
+        $convByDay = [];
+        if ($convStmt !== false) {
+            $convStmt->bind_param($types, ...$params);
+            $convStmt->execute();
+            $convRes = $convStmt->get_result();
+            while ($row = $convRes->fetch_assoc()) {
+                $day = (string) ($row['day'] ?? '');
+                if ($day !== '') {
+                    $convByDay[$day] = [
+                        'conversions' => (int) ($row['conversions'] ?? 0),
+                        'revenue' => (float) ($row['revenue'] ?? 0),
+                    ];
+                }
+            }
+            $convStmt->close();
+        }
+        foreach ($labels as $i => $day) {
+            if (isset($convByDay[$day])) {
+                $datasets['conversions'][$i] = $convByDay[$day]['conversions'];
+                $datasets['revenue'][$i] = $convByDay[$day]['revenue'];
+            }
+        }
+
+        $filled = CampaignStatsExpressions::fillChartDailySeries($dateFrom, $dateTo, $labels, $datasets);
+        if ($this->campaignUsesIntegratedApiCost($campaign)) {
+            $this->applyMetaSpendToDailyChartDatasets(
+                $filled,
+                $campaignId,
+                $dateFrom,
+                $dateTo,
+                $utcFrom,
+                $utcTo,
+                $userTimezone,
+                $campaign
+            );
+        }
+
+        return ['labels' => $filled['labels'], 'datasets' => $filled['datasets'], 'granularity' => 'day'];
+    }
+
+    /**
+     * @param array{labels: list<string>, datasets: array<string, list<float|int>>} $filled
+     * @param array<string, mixed>|null $campaign
+     */
+    private function applyMetaSpendToDailyChartDatasets(
+        array &$filled,
+        int $campaignId,
+        string $dateFrom,
+        string $dateTo,
+        string $utcFrom,
+        string $utcTo,
+        string $userTimezone,
+        ?array $campaign
+    ): void {
+        $apiByDay = $this->metaApiSpendByUserDay(
+            $campaignId,
+            $dateFrom,
+            $dateTo,
+            $utcFrom,
+            $utcTo,
+            $userTimezone,
+            $campaign
+        );
+        $dayIndex = 0;
+        try {
+            $userTz = new \DateTimeZone($userTimezone);
+            $start = new \DateTimeImmutable($dateFrom . ' 00:00:00', $userTz);
+            $end = new \DateTimeImmutable($dateTo . ' 00:00:00', $userTz);
+            for ($d = $start; $d <= $end; $d = $d->modify('+1 day')) {
+                $key = $d->format('Y-m-d');
+                if (isset($filled['datasets']['cost'][$dayIndex])) {
+                    $filled['datasets']['cost'][$dayIndex] = round(
+                        (float) $filled['datasets']['cost'][$dayIndex] + (float) ($apiByDay[$key] ?? 0),
+                        4
+                    );
+                }
+                $dayIndex++;
+            }
+        } catch (\Exception $e) {
+            // leave manual-only
+        }
+    }
+
+    /**
      * Multi-day chart from clicks_daily_summary when filters allow (same eligibility as summary pre-agg).
-     * Cost series uses summary manual cost only — matches date breakdown pre-agg; scoped/FB-GA charts stay on raw.
+     * Manual cost from summary; Meta API spend overlaid from hourly tables when present.
      *
      * @param array<string, mixed>|null $campaign
      * @return array{labels: list<string>, datasets: array<string, list<float|int>>, granularity: string}|null
@@ -1631,8 +2684,7 @@ class CampaignStatsV2Service
         }
 
         // summary_date is UTC DATE(ts). When the user calendar range does not match the
-        // UTC summary_date span (common for non-UTC timezones), fall back to raw CONVERT_TZ
-        // so chart day labels stay in the user's timezone.
+        // UTC summary_date span (common for non-UTC timezones), fall back to raw day buckets.
         if (!Formatter::canUseUtcSummaryDateRange($dateFrom, $dateTo, $utcFrom, $utcTo)) {
             return null;
         }
@@ -1642,32 +2694,6 @@ class CampaignStatsV2Service
 
         if (!TimezoneSummaryBlend::isSummaryReliable($this->db, [$campaignId], $summaryDateFrom, $summaryDateTo)) {
             return null;
-        }
-
-        // Pre-agg chart cost is manual-only. Skip expensive aggregator probe for known
-        // manual-cost campaigns; for API-cost campaigns fall back to raw when spend differs.
-        if ($this->campaignUsesIntegratedApiCost($campaign)) {
-            $manualProbe = $this->preAggregateReader->querySummaryTotals(
-                $campaignId,
-                $summaryDateFrom,
-                $summaryDateTo,
-                $filters
-            );
-            if ($manualProbe !== null) {
-                $manualCost = (float)($manualProbe['manual_cost'] ?? 0);
-                $fbPlusManual = (new FacebookCostAggregator($this->db))->getCampaignTotalCost(
-                    $campaignId,
-                    $utcFrom,
-                    $utcTo,
-                    $userTimezone
-                );
-                $gaCost = (new \SimpleKuma\GoogleAds\GoogleAdsCostAggregator($this->db))
-                    ->getTotalGoogleAdsCost($utcFrom, $utcTo, (string)$campaignId);
-                $apiPlusManual = max((float)$fbPlusManual, $manualCost) + (float)$gaCost;
-                if (abs($apiPlusManual - $manualCost) > 0.02) {
-                    return null;
-                }
-            }
         }
 
         $rows = $this->preAggregateReader->queryChartDailyRows(
@@ -1699,7 +2725,355 @@ class CampaignStatsV2Service
 
         $filled = CampaignStatsExpressions::fillChartDailySeries($dateFrom, $dateTo, $labels, $datasets);
 
+        if ($this->campaignUsesIntegratedApiCost($campaign) && !$filters->requiresScopedCost()) {
+            $apiByDay = $this->metaApiSpendByUserDay(
+                $campaignId,
+                $dateFrom,
+                $dateTo,
+                $utcFrom,
+                $utcTo,
+                $userTimezone,
+                $campaign
+            );
+            $dayIndex = 0;
+            try {
+                $userTz = new \DateTimeZone($userTimezone);
+                $start = new \DateTimeImmutable($dateFrom . ' 00:00:00', $userTz);
+                $end = new \DateTimeImmutable($dateTo . ' 00:00:00', $userTz);
+                for ($d = $start; $d <= $end; $d = $d->modify('+1 day')) {
+                    $key = $d->format('Y-m-d');
+                    if (isset($filled['datasets']['cost'][$dayIndex])) {
+                        $filled['datasets']['cost'][$dayIndex] = round(
+                            (float) $filled['datasets']['cost'][$dayIndex] + (float) ($apiByDay[$key] ?? 0),
+                            4
+                        );
+                    }
+                    $dayIndex++;
+                }
+            } catch (\Exception $e) {
+                // leave manual-only
+            }
+        }
+
         return ['labels' => $filled['labels'], 'datasets' => $filled['datasets'], 'granularity' => 'day'];
+    }
+
+    /**
+     * Meta hourly spend bucketed into user-timezone hours (single calendar day).
+     * Runs over ad_hourly_costs rows only — never scans clicks.
+     *
+     * @param array<string, mixed>|null $campaign
+     * @return array<int, float> hour (0-23) => spend
+     */
+    private function metaApiSpendByUserHour(
+        int $campaignId,
+        string $dateFrom,
+        string $utcFrom,
+        string $utcTo,
+        string $userTimezone,
+        ?array $campaign
+    ): array {
+        $out = array_fill(0, 24, 0.0);
+        $meta = $this->resolveMetaCampaignMapContext($campaign);
+        if ($meta === null) {
+            return $out;
+        }
+
+        $offset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
+        $dateFromDay = substr($utcFrom, 0, 10);
+        $dateToDay = substr($utcTo, 0, 10);
+        $dateFromHour = (int) substr($utcFrom, 11, 2);
+        $dateToHour = (int) substr($utcTo, 11, 2);
+        $accountSql = ($meta['integration_id'] !== null && $meta['integration_id'] > 0)
+            ? ' AND a.ad_account_id = ?'
+            : '';
+
+        $hourExpr = "COALESCE(HOUR(CONVERT_TZ(TIMESTAMP(a.date, MAKETIME(a.hour, 0, 0)), '+00:00', ?)), -1)";
+        $sql = "
+            SELECT {$hourExpr} AS hour, COALESCE(SUM(a.delta_spend), 0) AS spend
+            FROM ad_hourly_costs a
+            INNER JOIN facebook_adset_campaign_map facm
+                ON facm.adset_id = a.adset_id
+                AND facm.meta_campaign_id = ?
+                AND facm.facebook_marketing_ad_account_id = ?
+            WHERE (a.date > ? OR (a.date = ? AND a.hour >= ?))
+              AND (a.date < ? OR (a.date = ? AND a.hour <= ?))
+              {$accountSql}
+            GROUP BY hour
+        ";
+        $types = 'ssississi';
+        $params = [
+            $offset,
+            $meta['meta_campaign_id'],
+            $meta['ad_account_row_id'],
+            $dateFromDay,
+            $dateFromDay,
+            $dateFromHour,
+            $dateToDay,
+            $dateToDay,
+            $dateToHour,
+        ];
+        if ($meta['integration_id'] !== null && $meta['integration_id'] > 0) {
+            $types .= 'i';
+            $params[] = $meta['integration_id'];
+        }
+
+        $stmt = $this->db->prepare($sql);
+        if ($stmt !== false) {
+            $stmt->bind_param($types, ...$params);
+            $stmt->execute();
+            $res = $stmt->get_result();
+            while ($row = $res->fetch_assoc()) {
+                $h = (int) ($row['hour'] ?? -1);
+                if ($h >= 0 && $h <= 23) {
+                    $out[$h] += (float) ($row['spend'] ?? 0);
+                }
+            }
+            $stmt->close();
+        }
+
+        // Adset-only hours (no ad-level cost that hour).
+        $asAccountSql = ($meta['integration_id'] !== null && $meta['integration_id'] > 0)
+            ? ' AND as_cost.ad_account_id = ?'
+            : '';
+        $asHourExpr = "COALESCE(HOUR(CONVERT_TZ(TIMESTAMP(as_cost.date, MAKETIME(as_cost.hour, 0, 0)), '+00:00', ?)), -1)";
+        $asSql = "
+            SELECT {$asHourExpr} AS hour, COALESCE(SUM(as_cost.delta_spend), 0) AS spend
+            FROM adset_hourly_costs as_cost
+            INNER JOIN facebook_adset_campaign_map facm
+                ON facm.adset_id = as_cost.adset_id
+                AND facm.meta_campaign_id = ?
+                AND facm.facebook_marketing_ad_account_id = ?
+            WHERE (as_cost.date > ? OR (as_cost.date = ? AND as_cost.hour >= ?))
+              AND (as_cost.date < ? OR (as_cost.date = ? AND as_cost.hour <= ?))
+              {$asAccountSql}
+              AND NOT EXISTS (
+                SELECT 1 FROM ad_hourly_costs a
+                WHERE a.adset_id = as_cost.adset_id
+                  AND a.date = as_cost.date
+                  AND a.hour = as_cost.hour
+                  " . (($meta['integration_id'] !== null && $meta['integration_id'] > 0)
+                    ? ' AND a.ad_account_id = as_cost.ad_account_id'
+                    : '') . "
+              )
+            GROUP BY hour
+        ";
+        $asTypes = 'ssississi';
+        $asParams = [
+            $offset,
+            $meta['meta_campaign_id'],
+            $meta['ad_account_row_id'],
+            $dateFromDay,
+            $dateFromDay,
+            $dateFromHour,
+            $dateToDay,
+            $dateToDay,
+            $dateToHour,
+        ];
+        if ($meta['integration_id'] !== null && $meta['integration_id'] > 0) {
+            $asTypes .= 'i';
+            $asParams[] = $meta['integration_id'];
+        }
+        $asStmt = $this->db->prepare($asSql);
+        if ($asStmt !== false) {
+            $asStmt->bind_param($asTypes, ...$asParams);
+            $asStmt->execute();
+            $asRes = $asStmt->get_result();
+            while ($row = $asRes->fetch_assoc()) {
+                $h = (int) ($row['hour'] ?? -1);
+                if ($h >= 0 && $h <= 23) {
+                    $out[$h] += (float) ($row['spend'] ?? 0);
+                }
+            }
+            $asStmt->close();
+        }
+
+        return $out;
+    }
+
+    /**
+     * Meta hourly spend bucketed into user calendar days.
+     *
+     * @param array<string, mixed>|null $campaign
+     * @return array<string, float> Y-m-d => spend
+     */
+    private function metaApiSpendByUserDay(
+        int $campaignId,
+        string $dateFrom,
+        string $dateTo,
+        string $utcFrom,
+        string $utcTo,
+        string $userTimezone,
+        ?array $campaign
+    ): array {
+        $out = [];
+        $meta = $this->resolveMetaCampaignMapContext($campaign);
+        if ($meta === null) {
+            return $out;
+        }
+
+        $offset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
+        $dateFromDay = substr($utcFrom, 0, 10);
+        $dateToDay = substr($utcTo, 0, 10);
+        $dateFromHour = (int) substr($utcFrom, 11, 2);
+        $dateToHour = (int) substr($utcTo, 11, 2);
+        $accountSql = ($meta['integration_id'] !== null && $meta['integration_id'] > 0)
+            ? ' AND a.ad_account_id = ?'
+            : '';
+
+        $dayExpr = "DATE(CONVERT_TZ(TIMESTAMP(a.date, MAKETIME(a.hour, 0, 0)), '+00:00', ?))";
+        $sql = "
+            SELECT {$dayExpr} AS day, COALESCE(SUM(a.delta_spend), 0) AS spend
+            FROM ad_hourly_costs a
+            INNER JOIN facebook_adset_campaign_map facm
+                ON facm.adset_id = a.adset_id
+                AND facm.meta_campaign_id = ?
+                AND facm.facebook_marketing_ad_account_id = ?
+            WHERE (a.date > ? OR (a.date = ? AND a.hour >= ?))
+              AND (a.date < ? OR (a.date = ? AND a.hour <= ?))
+              {$accountSql}
+            GROUP BY day
+        ";
+        $types = 'ssississi';
+        $params = [
+            $offset,
+            $meta['meta_campaign_id'],
+            $meta['ad_account_row_id'],
+            $dateFromDay,
+            $dateFromDay,
+            $dateFromHour,
+            $dateToDay,
+            $dateToDay,
+            $dateToHour,
+        ];
+        if ($meta['integration_id'] !== null && $meta['integration_id'] > 0) {
+            $types .= 'i';
+            $params[] = $meta['integration_id'];
+        }
+
+        $stmt = $this->db->prepare($sql);
+        if ($stmt !== false) {
+            $stmt->bind_param($types, ...$params);
+            $stmt->execute();
+            $res = $stmt->get_result();
+            while ($row = $res->fetch_assoc()) {
+                $day = (string) ($row['day'] ?? '');
+                if ($day !== '') {
+                    $out[$day] = ($out[$day] ?? 0.0) + (float) ($row['spend'] ?? 0);
+                }
+            }
+            $stmt->close();
+        }
+
+        $asAccountSql = ($meta['integration_id'] !== null && $meta['integration_id'] > 0)
+            ? ' AND as_cost.ad_account_id = ?'
+            : '';
+        $asDayExpr = "DATE(CONVERT_TZ(TIMESTAMP(as_cost.date, MAKETIME(as_cost.hour, 0, 0)), '+00:00', ?))";
+        $asSql = "
+            SELECT {$asDayExpr} AS day, COALESCE(SUM(as_cost.delta_spend), 0) AS spend
+            FROM adset_hourly_costs as_cost
+            INNER JOIN facebook_adset_campaign_map facm
+                ON facm.adset_id = as_cost.adset_id
+                AND facm.meta_campaign_id = ?
+                AND facm.facebook_marketing_ad_account_id = ?
+            WHERE (as_cost.date > ? OR (as_cost.date = ? AND as_cost.hour >= ?))
+              AND (as_cost.date < ? OR (as_cost.date = ? AND as_cost.hour <= ?))
+              {$asAccountSql}
+              AND NOT EXISTS (
+                SELECT 1 FROM ad_hourly_costs a
+                WHERE a.adset_id = as_cost.adset_id
+                  AND a.date = as_cost.date
+                  AND a.hour = as_cost.hour
+                  " . (($meta['integration_id'] !== null && $meta['integration_id'] > 0)
+                    ? ' AND a.ad_account_id = as_cost.ad_account_id'
+                    : '') . "
+              )
+            GROUP BY day
+        ";
+        $asTypes = 'ssississi';
+        $asParams = [
+            $offset,
+            $meta['meta_campaign_id'],
+            $meta['ad_account_row_id'],
+            $dateFromDay,
+            $dateFromDay,
+            $dateFromHour,
+            $dateToDay,
+            $dateToDay,
+            $dateToHour,
+        ];
+        if ($meta['integration_id'] !== null && $meta['integration_id'] > 0) {
+            $asTypes .= 'i';
+            $asParams[] = $meta['integration_id'];
+        }
+        $asStmt = $this->db->prepare($asSql);
+        if ($asStmt !== false) {
+            $asStmt->bind_param($asTypes, ...$asParams);
+            $asStmt->execute();
+            $asRes = $asStmt->get_result();
+            while ($row = $asRes->fetch_assoc()) {
+                $day = (string) ($row['day'] ?? '');
+                if ($day !== '') {
+                    $out[$day] = ($out[$day] ?? 0.0) + (float) ($row['spend'] ?? 0);
+                }
+            }
+            $asStmt->close();
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed>|null $campaign
+     * @return array{meta_campaign_id: string, ad_account_row_id: int, integration_id: int|null}|null
+     */
+    private function resolveMetaCampaignMapContext(?array $campaign): ?array
+    {
+        if ($campaign === null || empty($campaign['facebook_marketing_campaign_id'])) {
+            return null;
+        }
+        $mapCheck = $this->db->query("SHOW TABLES LIKE 'facebook_adset_campaign_map'");
+        if (!$mapCheck || $mapCheck->num_rows === 0) {
+            return null;
+        }
+
+        $adAccountRowId = (int) ($campaign['facebook_marketing_ad_account_id'] ?? 0);
+        $stmt = $this->db->prepare(
+            'SELECT meta_campaign_id FROM facebook_marketing_campaigns WHERE id = ? LIMIT 1'
+        );
+        if ($stmt === false) {
+            return null;
+        }
+        $fmcId = (int) $campaign['facebook_marketing_campaign_id'];
+        $stmt->bind_param('i', $fmcId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$row || empty($row['meta_campaign_id'])) {
+            return null;
+        }
+
+        $integrationId = null;
+        if ($adAccountRowId > 0) {
+            $s = $this->db->prepare(
+                'SELECT facebook_marketing_integration_id FROM facebook_marketing_ad_accounts WHERE id = ? LIMIT 1'
+            );
+            if ($s !== false) {
+                $s->bind_param('i', $adAccountRowId);
+                $s->execute();
+                $ar = $s->get_result()->fetch_assoc();
+                $s->close();
+                if ($ar && $ar['facebook_marketing_integration_id'] !== null) {
+                    $integrationId = (int) $ar['facebook_marketing_integration_id'];
+                }
+            }
+        }
+
+        return [
+            'meta_campaign_id' => (string) $row['meta_campaign_id'],
+            'ad_account_row_id' => $adAccountRowId,
+            'integration_id' => $integrationId,
+        ];
     }
 
     private function calendarDaysBetween(string $dateFrom, string $dateTo): int

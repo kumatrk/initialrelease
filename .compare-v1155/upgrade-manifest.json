@@ -1,0 +1,148 @@
+{
+  "schema": "simplekuma-upgrade-manifest",
+  "schema_version": 1,
+  "release": {
+    "version": "1.1.5.5",
+    "release_date": "2026-07-23",
+    "channel": "stable"
+  },
+  "purpose": "Overlay this release onto an existing install without replacing config, storage, or database data.",
+  "runbook": "UPGRADE.md",
+  "upgrade_tool": {
+    "script": "scripts/apply-release-upgrade.php",
+    "modes": ["preview", "apply", "migrations", "apply+migrations"],
+    "json_output": true
+  },
+  "preserved_always": [
+    "config/config.php",
+    ".env",
+    "storage/logs/",
+    "storage/cache/",
+    "storage/google_ads_configs/",
+    "database tables and rows (campaigns, clicks, conversions, users)"
+  ],
+  "skipped_on_production_when_installed": [
+    "public/install.php"
+  ],
+  "never_do": [
+    "overwrite config/config.php",
+    "run public/install.php on production",
+    "delete storage/ or database",
+    "change BASE_URL without operator approval"
+  ],
+  "backward_compatible": {
+    "legacy_click_urls": "/km/{campaign_key} continue to work after upgrade",
+    "optional_new_click_format": {
+      "defines": {
+        "CLICK_URL_STYLE": "query",
+        "CLICK_ENTRY_SCRIPT": "go.php",
+        "CLICK_PATH_PREFIX": "go"
+      },
+      "example": "https://tracking.example.com/go.php?k={campaign_key}",
+      "required": false
+    }
+  },
+  "migrations_in_release": [
+    {
+      "file": "database/migrations/061_rename_cloaking_mode_to_referrer_mode.sql",
+      "description": "Rename campaigns.cloaking_mode to referrer_mode (data unchanged)"
+    },
+    {
+      "file": "database/migrations/062_add_theme_to_users.sql",
+      "description": "Persist admin UI theme preference per user"
+    },
+    {
+      "file": "database/migrations/063_create_campaign_stats_saved_views_table.sql",
+      "description": "Server-persisted Campaign Stats V2 saved views (per user + campaign)"
+    },
+    {
+      "file": "database/migrations/064_add_tiktok_traffic_source.sql",
+      "description": "Preconfigure TikTok traffic source with TikTok Ads URL macros"
+    },
+    {
+      "file": "database/migrations/065_add_zeropark_traffic_source.sql",
+      "description": "Preconfigure Zeropark traffic source with Zeropark URL macros"
+    },
+    {
+      "file": "database/migrations/066_add_taboola_traffic_source.sql",
+      "description": "Preconfigure Taboola traffic source with Taboola URL macros"
+    },
+    {
+      "file": "database/migrations/067_align_traffic_source_core_token_order.sql",
+      "description": "Align TikTok, Zeropark, and Taboola core token order (keyword, cost, external ID)"
+    },
+    {
+      "file": "database/migrations/068_add_rumble_traffic_source.sql",
+      "description": "Preconfigure Rumble traffic source (API cost, no URL cost token)"
+    },
+    {
+      "file": "database/migrations/069_add_rollerads_traffic_source.sql",
+      "description": "Preconfigure RollerAds traffic source with RollerAds URL macros"
+    },
+    {
+      "file": "database/migrations/070_add_richads_traffic_source.sql",
+      "description": "Preconfigure RichAds traffic source with RichAds URL macros"
+    },
+    {
+      "file": "database/migrations/071_add_outbrain_traffic_source.sql",
+      "description": "Preconfigure Outbrain traffic source (API cost, no URL cost token)"
+    },
+    {
+      "file": "database/migrations/072_unseed_optional_traffic_sources.sql",
+      "description": "Remove unused optional traffic source seeds; templates remain in UI"
+    }
+  ],
+  "agent_workflow": [
+    {
+      "step": 1,
+      "action": "backup",
+      "commands": [
+        "mysqldump -u USER -p DATABASE > backup-$(date +%Y%m%d)-pre-upgrade.sql",
+        "cp config/config.php config/config.php.bak-$(date +%Y%m%d)"
+      ]
+    },
+    {
+      "step": 2,
+      "action": "preview",
+      "command": "php scripts/apply-release-upgrade.php --source=/path/to/simplekuma-v1.1.5.2.zip --json"
+    },
+    {
+      "step": 3,
+      "action": "apply_files",
+      "command": "php scripts/apply-release-upgrade.php --source=/path/to/simplekuma-v1.1.5.2.zip --apply --json"
+    },
+    {
+      "step": 4,
+      "action": "run_migrations",
+      "command": "php scripts/apply-release-upgrade.php --migrations --json"
+    },
+    {
+      "step": 5,
+      "action": "verify",
+      "commands": [
+        "php scripts/verify-production-security.php",
+        "php scripts/verify-campaign-stats-v2.php --campaign-id=ID --from=YYYY-MM-DD --to=YYYY-MM-DD (dev/staging — scripts not in production zip)",
+        "confirm version.php shows 1.1.5.2",
+        "confirm /km/{campaign_key} still redirects",
+        "confirm admin campaign-list loads"
+      ]
+    }
+  ],
+  "success_criteria": [
+    "config/config.php SHA-256 unchanged after --apply",
+    "version.php reports 1.1.5.2",
+    "migration 061 applied or already present",
+    "campaigns visible in admin",
+    "legacy /km/ tracking links still work"
+  ],
+  "key_files_added_or_changed": [
+    "public/go.php",
+    "public/api-campaign-tracking-link.php",
+    "src/Campaign/CampaignTrackingLinkPayloadService.php",
+    "src/Tracking/ClickPath.php",
+    "views/campaigns.php",
+    "public/robots.txt",
+    "UPGRADE.md",
+    "scripts/apply-release-upgrade.php"
+  ]
+}

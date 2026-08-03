@@ -1,4 +1,13 @@
-# Simple Kuma Tracker Version 1.1.5.11
+# Simple Kuma Tracker Version 1.1.5.12
+
+## Changes in 1.1.5.12
+
+### Fix: Campaign Stats / dashboard speed at large click volume
+- Restored Hermes-style **summary-first** reporting: daily/token summary tables when eligible, covering-index lean scans as fallback
+- Meta spend uses hourly/map overlay instead of per-click cost joins on unfiltered reports (prevents 20s timeouts around ~50k–100k clicks)
+- Campaign Stats breakdown (Ad Set → Landing → Region), KPI summary, and charts no longer time out when rapidly changing date ranges
+- Abort/stale request handling improved so abandoned date switches do not flash false error banners over good KPIs
+- Migration **086**: covering index on `clicks (click_id, exclude_from_stats, ts, campaign_id)` for fast conversion attribution joins
 
 ## Changes in 1.1.5.11
 

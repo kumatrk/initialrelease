@@ -912,6 +912,9 @@ window.addEventListener('kuma-theme-change', function() {
 
 <script>
 (function() {
+    var activeCampaignsAbort = null;
+    var activeCampaignsPageHide = null;
+
     function loadDashboardCampaigns(url) {
         var body = document.getElementById('dashboard-campaigns-body');
         var loading = document.getElementById('dashboard-campaigns-loading');
@@ -924,6 +927,16 @@ window.addEventListener('kuma-theme-change', function() {
         }
         if (!url) return;
 
+        // Abort any in-flight campaigns fetch (pagination / rapid reloads).
+        if (activeCampaignsAbort) {
+            try { activeCampaignsAbort.abort(); } catch (ignore) {}
+            activeCampaignsAbort = null;
+        }
+        if (activeCampaignsPageHide) {
+            window.removeEventListener('pagehide', activeCampaignsPageHide);
+            activeCampaignsPageHide = null;
+        }
+
         if (loading) loading.style.display = 'block';
         if (errorEl) {
             errorEl.style.display = 'none';
@@ -932,9 +945,11 @@ window.addEventListener('kuma-theme-change', function() {
         content.innerHTML = '';
 
         var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        activeCampaignsAbort = controller;
         var onPageHide = function() {
             if (controller) controller.abort();
         };
+        activeCampaignsPageHide = onPageHide;
         window.addEventListener('pagehide', onPageHide);
 
         function fetchCampaigns(attempt) {
@@ -958,7 +973,13 @@ window.addEventListener('kuma-theme-change', function() {
 
         fetchCampaigns(0)
             .then(function(result) {
-                window.removeEventListener('pagehide', onPageHide);
+                if (activeCampaignsPageHide === onPageHide) {
+                    window.removeEventListener('pagehide', onPageHide);
+                    activeCampaignsPageHide = null;
+                }
+                if (activeCampaignsAbort === controller) {
+                    activeCampaignsAbort = null;
+                }
                 if (loading) loading.style.display = 'none';
                 if (!result.ok || !result.data || !result.data.ok) {
                     var msg = (result.data && result.data.error) ? result.data.error : 'Failed to load campaign performance';
@@ -973,7 +994,13 @@ window.addEventListener('kuma-theme-change', function() {
                 wireDashboardCampaignPagination(content);
             })
             .catch(function(err) {
-                window.removeEventListener('pagehide', onPageHide);
+                if (activeCampaignsPageHide === onPageHide) {
+                    window.removeEventListener('pagehide', onPageHide);
+                    activeCampaignsPageHide = null;
+                }
+                if (activeCampaignsAbort === controller) {
+                    activeCampaignsAbort = null;
+                }
                 if (err && (err.name === 'AbortError' || err.code === 20)) {
                     return;
                 }

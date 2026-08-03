@@ -1,0 +1,4 @@
+# This file ensures the storage/geoip directory is tracked by git
+# Alternative location for geolocation databases
+
+

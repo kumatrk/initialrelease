@@ -1,0 +1,33 @@
+{
+    "name": "simplekuma/tracker",
+    "description": "Simple KUMA - Self-hosted affiliate tracker",
+    "type": "project",
+    "require": {
+        "php": ">=8.2",
+        "ext-mysqli": "*",
+        "ext-pdo": "*",
+        "ext-json": "*",
+        "ext-mbstring": "*",
+        "ext-curl": "*",
+        "ext-openssl": "*",
+        "phpmailer/phpmailer": "^6.9",
+        "matomo/device-detector": "^6.0",
+        "googleads/google-ads-php": "^26.0",
+        "geoip2/geoip2": "^3.0",
+        "ip2location/ip2location-php": "^9.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "SimpleKuma\\": "src/"
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": "dist",
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
+
+

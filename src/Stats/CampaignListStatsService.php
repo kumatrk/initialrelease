@@ -352,13 +352,14 @@ final class CampaignListStatsService
 
         $convTypes = 'ss' . $idTypes;
         $convParams = array_merge([$utcFrom, $utcTo], $campaignIds);
+        $clCover = ClicksIndexHints::clickIdCoverAlias($this->db, 'cl', $clicksTable);
         $convSql = "
             SELECT
                 cl.campaign_id,
                 COUNT(*) AS conversions,
                 COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
             FROM conversions cv
-            INNER JOIN {$clicksTable} cl ON cl.click_id = cv.click_id
+            INNER JOIN {$clicksTable} {$clCover} ON cl.click_id = cv.click_id
             WHERE cl.ts >= ? AND cl.ts <= ?
               AND cl.campaign_id IN ({$placeholders})
               {$includedSql}

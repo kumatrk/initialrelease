@@ -1,0 +1,1170 @@
+<?php
+
+declare(strict_types=1);
+
+namespace SimpleKuma\Stats;
+
+use mysqli;
+use SimpleKuma\Database\ClicksTableResolver;
+use SimpleKuma\Facebook\FacebookCostAggregator;
+use SimpleKuma\GoogleAds\GoogleAdsCostAggregator;
+use SimpleKuma\Utils\Formatter;
+
+/**
+ * Dashboard overview, campaign table, and charts — prefers clicks_daily_summary.
+ *
+ * Overview+chart load separately from the campaign table so first paint does not
+ * wait on per-campaign Facebook cost allocation.
+ */
+final class DashboardStatsService
+{
+    public const DEFAULT_PER_PAGE = 25;
+
+    private mysqli $db;
+    private ?bool $summaryExists = null;
+
+    private function clicksTable(): string
+    {
+        return ClicksTableResolver::getStatsTable($this->db);
+    }
+
+    private function includedClickSql(string $alias = 'cl', ?string $table = null): string
+    {
+        $predicate = StatsExclusionFlag::includedWhere(
+            $this->db,
+            $alias,
+            $table ?? $this->clicksTable()
+        );
+
+        return $predicate !== '' ? ' AND ' . $predicate : '';
+    }
+
+    public function __construct(mysqli $db)
+    {
+        $this->db = $db;
+    }
+
+    /**
+     * Full payload used by CSV export (includes all campaign rows with costs).
+     *
+     * @param list<string>|null $allowedStatuses null = all
+     * @return array<string, mixed>
+     */
+    public function load(
+        string $dateFrom,
+        string $dateTo,
+        string $userTimezone,
+        ?array $allowedStatuses,
+        int $page = 1,
+        int $perPage = self::DEFAULT_PER_PAGE,
+        bool $exportAll = false
+    ): array {
+        $overview = $this->loadOverviewAndChart($dateFrom, $dateTo, $userTimezone, $allowedStatuses);
+        $table = $this->loadCampaignTable(
+            $dateFrom,
+            $dateTo,
+            $userTimezone,
+            $allowedStatuses,
+            $page,
+            $perPage,
+            $exportAll
+        );
+
+        return array_merge($overview, $table);
+    }
+
+    /**
+     * Lightweight first paint: KPI totals + optional chart (no campaign table / per-row FB costs).
+     *
+     * @param list<string>|null $allowedStatuses
+     * @return array<string, mixed>
+     */
+    public function loadOverviewAndChart(
+        string $dateFrom,
+        string $dateTo,
+        string $userTimezone,
+        ?array $allowedStatuses,
+        bool $includeChart = true
+    ): array {
+        $utcRange = Formatter::convertDateRangeToUTC($dateFrom, $dateTo, $userTimezone);
+        $utcFrom = $utcRange['from'];
+        $utcTo = $utcRange['to'];
+        // summary_date is UTC date of click — only safe when it aligns with the user calendar span
+        $summaryDateFrom = substr($utcFrom, 0, 10);
+        $summaryDateTo = substr($utcTo, 0, 10);
+        $segments = TimezoneSummaryBlend::segments($utcFrom, $utcTo);
+
+        if (!$this->dailySummaryExists()) {
+            $totals = $this->queryOverviewTotalsFromRaw($utcFrom, $utcTo, $allowedStatuses);
+            $source = 'raw_clicks';
+        } elseif (Formatter::canUseUtcSummaryDateRange($dateFrom, $dateTo, $utcFrom, $utcTo)) {
+            $scopeIds = $this->campaignIdsForScope($allowedStatuses);
+            if (TimezoneSummaryBlend::isSummaryReliable($this->db, $scopeIds, $summaryDateFrom, $summaryDateTo)) {
+                $totals = $this->queryOverviewTotalsFromSummary($summaryDateFrom, $summaryDateTo, $allowedStatuses);
+                $source = 'pre_aggregate';
+            } else {
+                $totals = $this->queryOverviewTotalsFromRaw($utcFrom, $utcTo, $allowedStatuses);
+                $source = 'raw_clicks';
+            }
+        } else {
+            $scopeIds = $this->campaignIdsForScope($allowedStatuses);
+            if (!TimezoneSummaryBlend::areSegmentsReliable($this->db, $scopeIds, $segments)) {
+                $totals = $this->queryOverviewTotalsFromRaw($utcFrom, $utcTo, $allowedStatuses);
+                $source = 'raw_clicks';
+            } else {
+                $totals = $this->queryOverviewTotalsBlended($segments, $allowedStatuses);
+                $source = TimezoneSummaryBlend::resolveSource($segments);
+            }
+        }
+
+        $clicks = (int)($totals['views'] ?? 0);
+        $lpClicks = (int)($totals['lp_clicks'] ?? 0);
+        $conversions = (int)($totals['conversions'] ?? 0);
+        $revenue = (float)($totals['revenue'] ?? 0);
+        $activeCampaigns = (int)($totals['active_campaigns'] ?? 0);
+
+        $overviewCost = $this->resolveOverviewCost($utcFrom, $utcTo, $userTimezone, $allowedStatuses);
+
+        $isSingleDay = ($dateFrom === $dateTo);
+        if ($includeChart) {
+            $chart = $isSingleDay
+                ? $this->chartHourly($utcFrom, $utcTo, $userTimezone, $dateFrom)
+                : $this->chartDaily($summaryDateFrom, $summaryDateTo, $dateFrom, $dateTo, $userTimezone, $utcFrom, $utcTo);
+        } else {
+            $chart = [
+                'labels' => [],
+                'clicks' => [],
+                'conversions' => [],
+                'revenue' => [],
+            ];
+        }
+
+        $profit = $revenue - $overviewCost;
+        $roi = $overviewCost > 0 ? (($revenue - $overviewCost) / $overviewCost) * 100 : 0.0;
+        $epc = $clicks > 0 ? $revenue / $clicks : 0.0;
+        $ctr = $clicks > 0 ? ($lpClicks / $clicks) * 100 : 0.0;
+        $cr = $clicks > 0 ? ($conversions / $clicks) * 100 : 0.0;
+
+        return [
+            'source' => $source,
+            'stats' => [
+                'total_clicks' => $clicks,
+                'lp_clicks' => $lpClicks,
+                'conversions' => $conversions,
+                'total_cost' => $overviewCost,
+                'total_revenue' => $revenue,
+                'active_campaigns' => $activeCampaigns,
+            ],
+            'clicks' => $clicks,
+            'lpClicks' => $lpClicks,
+            'conversions' => $conversions,
+            'revenue' => $revenue,
+            'cost' => $overviewCost,
+            'profit' => $profit,
+            'roi' => $roi,
+            'epc' => $epc,
+            'ctr' => $ctr,
+            'cr' => $cr,
+            'chartLabels' => $chart['labels'],
+            'clicksData' => $chart['clicks'],
+            'conversionsData' => $chart['conversions'],
+            'revenueData' => $chart['revenue'],
+            'isSingleDay' => $isSingleDay,
+            'utcDateFrom' => $utcFrom,
+            'utcDateTo' => $utcTo,
+            'chartIncluded' => $includeChart,
+        ];
+    }
+
+    /**
+     * Campaign Performance table data (paginated). Costs only for rows being returned.
+     *
+     * @param list<string>|null $allowedStatuses
+     * @return array<string, mixed>
+     */
+    public function loadCampaignTable(
+        string $dateFrom,
+        string $dateTo,
+        string $userTimezone,
+        ?array $allowedStatuses,
+        int $page = 1,
+        int $perPage = self::DEFAULT_PER_PAGE,
+        bool $exportAll = false
+    ): array {
+        $page = max(1, $page);
+        $perPage = max(1, min(100, $perPage));
+        $utcRange = Formatter::convertDateRangeToUTC($dateFrom, $dateTo, $userTimezone);
+        $utcFrom = $utcRange['from'];
+        $utcTo = $utcRange['to'];
+        $summaryDateFrom = substr($utcFrom, 0, 10);
+        $summaryDateTo = substr($utcTo, 0, 10);
+        $segments = TimezoneSummaryBlend::segments($utcFrom, $utcTo);
+
+        if (!$this->dailySummaryExists()) {
+            $campaignRows = $this->queryCampaignRowsFromRaw($utcFrom, $utcTo, $allowedStatuses);
+            $source = 'raw_clicks';
+        } elseif (Formatter::canUseUtcSummaryDateRange($dateFrom, $dateTo, $utcFrom, $utcTo)) {
+            $scopeIds = $this->campaignIdsForScope($allowedStatuses);
+            if (TimezoneSummaryBlend::isSummaryReliable($this->db, $scopeIds, $summaryDateFrom, $summaryDateTo)) {
+                $campaignRows = $this->queryCampaignRowsFromSummary($summaryDateFrom, $summaryDateTo, $allowedStatuses);
+                $source = 'pre_aggregate';
+            } else {
+                $campaignRows = $this->queryCampaignRowsFromRaw($utcFrom, $utcTo, $allowedStatuses);
+                $source = 'raw_clicks';
+            }
+        } else {
+            $scopeIds = $this->campaignIdsForScope($allowedStatuses);
+            if (!TimezoneSummaryBlend::areSegmentsReliable($this->db, $scopeIds, $segments)) {
+                $campaignRows = $this->queryCampaignRowsFromRaw($utcFrom, $utcTo, $allowedStatuses);
+                $source = 'raw_clicks';
+            } else {
+                $campaignRows = $this->queryCampaignRowsBlended($segments, $allowedStatuses);
+                $source = TimezoneSummaryBlend::resolveSource($segments);
+            }
+        }
+
+        $totalRows = count($campaignRows);
+        if (!$exportAll) {
+            usort($campaignRows, static function (array $a, array $b): int {
+                $va = (int)($a['views'] ?? 0);
+                $vb = (int)($b['views'] ?? 0);
+                if ($va !== $vb) {
+                    return $vb <=> $va;
+                }
+                $ga = (string)($a['campaign_group_name'] ?? '');
+                $gb = (string)($b['campaign_group_name'] ?? '');
+                if ($ga !== $gb) {
+                    return strcmp($ga, $gb);
+                }
+
+                return strcmp((string)($a['name'] ?? ''), (string)($b['name'] ?? ''));
+            });
+            $offset = ($page - 1) * $perPage;
+            $pageRows = array_slice($campaignRows, $offset, $perPage);
+        } else {
+            $pageRows = $campaignRows;
+        }
+
+        // Cost only campaigns that have activity (zeros stay on manual_cost)
+        $idsForCost = [];
+        foreach ($pageRows as $row) {
+            if ((int)($row['views'] ?? 0) > 0 || (float)($row['manual_cost'] ?? 0) > 0 || (float)($row['revenue'] ?? 0) > 0) {
+                $idsForCost[] = (int)$row['id'];
+            }
+        }
+        $costMap = $this->batchCampaignCosts($idsForCost, $utcFrom, $utcTo, $userTimezone);
+        $fbCostMap = $costMap['fb'] ?? [];
+        $gaCostMap = $costMap['ga'] ?? [];
+
+        foreach ($pageRows as &$row) {
+            $cid = (int)$row['id'];
+            $manual = (float)($row['manual_cost'] ?? 0);
+            $gaCost = (float)($gaCostMap[$cid] ?? 0.0);
+            if (isset($fbCostMap[$cid])) {
+                $fbPlusManual = (float)$fbCostMap[$cid];
+                $row['fb_cost'] = max(0.0, $fbPlusManual - $manual);
+                $row['cost'] = $fbPlusManual + $gaCost;
+            } else {
+                $row['fb_cost'] = 0.0;
+                $row['cost'] = $manual + $gaCost;
+            }
+            $row['ga_cost'] = $gaCost;
+            $row['invalid_clicks'] = (int)($row['invalid_clicks'] ?? 0);
+        }
+        unset($row);
+
+        $this->attachAutoDetectTrafficSourceStats($pageRows, $utcFrom, $utcTo);
+
+        return [
+            'source' => $source,
+            'campaignStats' => $pageRows,
+            'campaignStatsAll' => $exportAll ? $pageRows : null,
+            'campaignStatsTotal' => $totalRows,
+            'campaignsPage' => $page,
+            'campaignsPerPage' => $perPage,
+            'utcDateFrom' => $utcFrom,
+            'utcDateTo' => $utcTo,
+        ];
+    }
+
+    /**
+     * Overview spend: same allocator as Campaign Performance (batched per-campaign FB + GA).
+     *
+     * Do not use FacebookCostAggregator::getAggregatedCost() overall / no-filter path — its
+     * midnight-safety branch can lock in a tiny delta (~$0.00–$0.10) while the table shows
+     * real hourly spend.
+     *
+     * @param list<string>|null $allowedStatuses
+     */
+    private function resolveOverviewCost(
+        string $utcFrom,
+        string $utcTo,
+        string $userTimezone,
+        ?array $allowedStatuses
+    ): float {
+        $ids = ($allowedStatuses === null || $allowedStatuses === [])
+            ? $this->allCampaignIds()
+            : $this->campaignIdsForStatuses($allowedStatuses);
+        if ($ids === []) {
+            return 0.0;
+        }
+
+        $costMap = $this->batchCampaignCosts($ids, $utcFrom, $utcTo, $userTimezone);
+        $total = 0.0;
+        foreach ($costMap['fb'] as $amount) {
+            $total += (float)$amount;
+        }
+        foreach ($costMap['ga'] as $amount) {
+            $total += (float)$amount;
+        }
+
+        return $total;
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function allCampaignIds(): array
+    {
+        $result = $this->db->query('SELECT id FROM campaigns');
+        if ($result === false) {
+            return [];
+        }
+        $ids = [];
+        while ($row = $result->fetch_assoc()) {
+            $ids[] = (int)$row['id'];
+        }
+
+        return $ids;
+    }
+
+    /**
+     * @param list<string>|null $allowedStatuses
+     * @return list<int>
+     */
+    private function campaignIdsForScope(?array $allowedStatuses): array
+    {
+        if ($allowedStatuses === null || $allowedStatuses === [] || count($allowedStatuses) >= 2) {
+            return $this->allCampaignIds();
+        }
+
+        return $this->campaignIdsForStatuses($allowedStatuses);
+    }
+
+    /**
+     * @param list<string> $statuses
+     * @return list<int>
+     */
+    private function campaignIdsForStatuses(array $statuses): array
+    {
+        $placeholders = implode(',', array_fill(0, count($statuses), '?'));
+        $types = str_repeat('s', count($statuses));
+        $stmt = $this->db->prepare("SELECT id FROM campaigns WHERE status IN ({$placeholders})");
+        if ($stmt === false) {
+            return [];
+        }
+        $stmt->bind_param($types, ...$statuses);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $ids = [];
+        while ($row = $result->fetch_assoc()) {
+            $ids[] = (int)$row['id'];
+        }
+        $stmt->close();
+
+        return $ids;
+    }
+
+    /**
+     * Auto-detect traffic source breakdown without per-source FB cost N+1 (manual cost only).
+     *
+     * @param list<array<string, mixed>> $pageRows
+     */
+    private function attachAutoDetectTrafficSourceStats(array &$pageRows, string $utcFrom, string $utcTo): void
+    {
+        foreach ($pageRows as &$camp) {
+            $isAutoDetect = empty($camp['traffic_source_id']) || (int)$camp['traffic_source_id'] === 0;
+            if (!$isAutoDetect) {
+                continue;
+            }
+            $campaignId = (int)$camp['id'];
+            $stmt = $this->db->prepare("
+                SELECT
+                    cl.traffic_source_id,
+                    ts.name AS traffic_source_name,
+                    COUNT(DISTINCT cl.id) AS views,
+                    COUNT(DISTINCT CASE WHEN cl.lp_click = 1 AND cl.landing_page_id IS NOT NULL THEN cl.id END) AS lp_clicks,
+                    COUNT(DISTINCT CASE WHEN cl.lp_click = 1 AND cl.landing_page_id IS NULL THEN cl.id END) AS direct_clicks,
+                    " . CampaignStatsExpressions::conversionsCountExpr('cl', 'ts') . " AS conversions,
+                    COALESCE(SUM(cl.cost), 0) AS manual_cost,
+                    COALESCE(SUM(conv.revenue_sum), 0) AS revenue
+                FROM " . $this->clicksTable() . " cl
+                LEFT JOIN traffic_sources ts ON cl.traffic_source_id = ts.id
+                " . CampaignStatsExpressions::conversionsAggJoin() . "
+                WHERE cl.campaign_id = ?
+                  AND cl.ts >= ? AND cl.ts <= ?
+                  AND cl.traffic_source_id IS NOT NULL
+                GROUP BY cl.traffic_source_id, ts.name
+                ORDER BY ts.name ASC
+            ");
+            if ($stmt === false) {
+                $camp['traffic_source_stats'] = [];
+                continue;
+            }
+            $stmt->bind_param('iss', $campaignId, $utcFrom, $utcTo);
+            $stmt->execute();
+            $tsStats = $stmt->get_result()->fetch_all(MYSQLI_ASSOC) ?: [];
+            $stmt->close();
+
+            foreach ($tsStats as &$tsStat) {
+                // Manual only — avoids getAggregatedCost N+1 on the campaign page
+                $tsStat['cost'] = (float)($tsStat['manual_cost'] ?? 0);
+            }
+            unset($tsStat);
+
+            $camp['traffic_source_stats'] = $tsStats;
+        }
+        unset($camp);
+    }
+
+    /**
+     * @param list<string>|null $allowedStatuses
+     * @return array{views: int, lp_clicks: int, conversions: int, revenue: float, active_campaigns: int}
+     */
+    private function queryOverviewTotalsFromSummary(string $dateFrom, string $dateTo, ?array $allowedStatuses): array
+    {
+        $statusSql = '';
+        $types = 'ss';
+        $params = [$dateFrom, $dateTo];
+        if ($allowedStatuses !== null && $allowedStatuses !== []) {
+            $placeholders = implode(',', array_fill(0, count($allowedStatuses), '?'));
+            $statusSql = " AND cp.status IN ({$placeholders})";
+            $types .= str_repeat('s', count($allowedStatuses));
+            $params = array_merge($params, $allowedStatuses);
+        }
+
+        $sql = "
+            SELECT
+                COALESCE(SUM(s.clicks), 0) AS views,
+                COALESCE(SUM(s.lp_clicks), 0) AS lp_clicks,
+                COALESCE(SUM(s.conversions), 0) AS conversions,
+                COALESCE(SUM(s.revenue), 0) AS revenue,
+                COUNT(DISTINCT CASE WHEN s.clicks > 0 THEN s.campaign_id END) AS active_campaigns
+            FROM clicks_daily_summary s
+            INNER JOIN campaigns cp ON cp.id = s.campaign_id
+            WHERE s.summary_date >= ? AND s.summary_date <= ?
+            {$statusSql}
+        ";
+
+        $stmt = $this->db->prepare($sql);
+        if ($stmt === false) {
+            return ['views' => 0, 'lp_clicks' => 0, 'conversions' => 0, 'revenue' => 0.0, 'active_campaigns' => 0];
+        }
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc() ?: [];
+        $stmt->close();
+
+        return [
+            'views' => (int)($row['views'] ?? 0),
+            'lp_clicks' => (int)($row['lp_clicks'] ?? 0),
+            'conversions' => (int)($row['conversions'] ?? 0),
+            'revenue' => (float)($row['revenue'] ?? 0),
+            'active_campaigns' => (int)($row['active_campaigns'] ?? 0),
+        ];
+    }
+
+    /**
+     * @param list<string>|null $allowedStatuses
+     * @return array{views: int, lp_clicks: int, conversions: int, revenue: float, active_campaigns: int}
+     */
+    private function queryOverviewTotalsFromRaw(string $utcFrom, string $utcTo, ?array $allowedStatuses): array
+    {
+        // Aggregate on indexed clicks.ts first — never COUNT(DISTINCT) + full conversions subquery.
+        $statusJoin = '';
+        $statusSql = '';
+        $types = 'ss';
+        $params = [$utcFrom, $utcTo];
+        if ($allowedStatuses !== null && $allowedStatuses !== []) {
+            $placeholders = implode(',', array_fill(0, count($allowedStatuses), '?'));
+            $statusJoin = ' INNER JOIN campaigns cp ON cp.id = cl.campaign_id ';
+            $statusSql = " AND cp.status IN ({$placeholders})";
+            $types .= str_repeat('s', count($allowedStatuses));
+            $params = array_merge($params, $allowedStatuses);
+        }
+        $includedSql = $this->includedClickSql('cl', 'clicks');
+
+        $sql = "
+            SELECT
+                COUNT(*) AS views,
+                SUM(CASE WHEN cl.lp_click = 1 AND cl.landing_page_id IS NOT NULL THEN 1 ELSE 0 END) AS lp_clicks,
+                SUM(CASE WHEN cl.lp_click = 1 AND cl.landing_page_id IS NULL THEN 1 ELSE 0 END) AS direct_clicks,
+                COUNT(DISTINCT cl.campaign_id) AS active_campaigns
+            FROM clicks cl
+            {$statusJoin}
+            WHERE cl.ts >= ? AND cl.ts <= ?
+            {$includedSql}
+            {$statusSql}
+        ";
+        $stmt = $this->db->prepare($sql);
+        if ($stmt === false) {
+            return ['views' => 0, 'lp_clicks' => 0, 'conversions' => 0, 'revenue' => 0.0, 'active_campaigns' => 0];
+        }
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc() ?: [];
+        $stmt->close();
+
+        $convTypes = 'ss';
+        $convParams = [$utcFrom, $utcTo];
+        $convStatusJoin = '';
+        $convStatusSql = '';
+        if ($allowedStatuses !== null && $allowedStatuses !== []) {
+            $placeholders = implode(',', array_fill(0, count($allowedStatuses), '?'));
+            $convStatusJoin = ' INNER JOIN campaigns cp ON cp.id = cl.campaign_id ';
+            $convStatusSql = " AND cp.status IN ({$placeholders})";
+            $convTypes .= str_repeat('s', count($allowedStatuses));
+            $convParams = array_merge($convParams, $allowedStatuses);
+        }
+        $convSql = "
+            SELECT COUNT(*) AS conversions,
+                   COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
+            FROM conversions cv
+            INNER JOIN clicks cl ON cl.click_id = cv.click_id
+            {$convStatusJoin}
+            WHERE cl.ts >= ? AND cl.ts <= ?
+            {$includedSql}
+            {$convStatusSql}
+        ";
+        $conversions = 0;
+        $revenue = 0.0;
+        $convStmt = $this->db->prepare($convSql);
+        if ($convStmt !== false) {
+            $convStmt->bind_param($convTypes, ...$convParams);
+            $convStmt->execute();
+            $convRow = $convStmt->get_result()->fetch_assoc() ?: [];
+            $convStmt->close();
+            $conversions = (int)($convRow['conversions'] ?? 0);
+            $revenue = (float)($convRow['revenue'] ?? 0);
+        }
+
+        return [
+            'views' => (int)($row['views'] ?? 0),
+            'lp_clicks' => (int)($row['lp_clicks'] ?? 0),
+            'conversions' => $conversions,
+            'revenue' => $revenue,
+            'active_campaigns' => (int)($row['active_campaigns'] ?? 0),
+        ];
+    }
+
+    private function dailySummaryExists(): bool
+    {
+        if ($this->summaryExists !== null) {
+            return $this->summaryExists;
+        }
+        $result = $this->db->query(
+            "SELECT 1 FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clicks_daily_summary' LIMIT 1"
+        );
+        $this->summaryExists = $result !== false && $result->num_rows > 0;
+
+        return $this->summaryExists;
+    }
+
+    /**
+     * @param list<array{type: 'preagg'|'raw', from: string, to: string}> $segments
+     * @param list<string>|null $allowedStatuses
+     * @return array{views: int, lp_clicks: int, conversions: int, revenue: float, active_campaigns: int}
+     */
+    private function queryOverviewTotalsBlended(array $segments, ?array $allowedStatuses): array
+    {
+        $scopeIds = $this->campaignIdsForScope($allowedStatuses);
+        foreach ($segments as $segment) {
+            if ($segment['type'] === 'preagg'
+                && !TimezoneSummaryBlend::isSummaryReliable($this->db, $scopeIds, $segment['from'], $segment['to'])
+            ) {
+                return $this->queryOverviewTotalsFromRaw(
+                    $this->blendWindowStart($segments),
+                    $this->blendWindowEnd($segments),
+                    $allowedStatuses
+                );
+            }
+        }
+
+        $parts = [];
+        foreach ($segments as $segment) {
+            if ($segment['type'] === 'preagg') {
+                $parts[] = $this->queryOverviewTotalsFromSummary($segment['from'], $segment['to'], $allowedStatuses);
+            } else {
+                $parts[] = $this->queryOverviewTotalsFromRaw($segment['from'], $segment['to'], $allowedStatuses);
+            }
+        }
+
+        $merged = TimezoneSummaryBlend::mergeOverviewTotals(...$parts);
+        $merged['active_campaigns'] = $this->countActiveCampaignsBlended($segments, $allowedStatuses);
+
+        return $merged;
+    }
+
+    /**
+     * @param list<array{type: 'preagg'|'raw', from: string, to: string}> $segments
+     */
+    private function blendWindowStart(array $segments): string
+    {
+        $first = $segments[0];
+        return $first['type'] === 'preagg' ? $first['from'] . ' 00:00:00' : $first['from'];
+    }
+
+    /**
+     * @param list<array{type: 'preagg'|'raw', from: string, to: string}> $segments
+     */
+    private function blendWindowEnd(array $segments): string
+    {
+        $last = $segments[count($segments) - 1];
+        return $last['type'] === 'preagg' ? $last['to'] . ' 23:59:59' : $last['to'];
+    }
+
+    /**
+     * @param list<array{type: 'preagg'|'raw', from: string, to: string}> $segments
+     * @param list<string>|null $allowedStatuses
+     */
+    private function countActiveCampaignsBlended(array $segments, ?array $allowedStatuses): int
+    {
+        $ids = [];
+        foreach ($segments as $segment) {
+            if ($segment['type'] === 'preagg') {
+                foreach ($this->queryActiveCampaignIdsFromSummary($segment['from'], $segment['to'], $allowedStatuses) as $id) {
+                    $ids[$id] = true;
+                }
+            } else {
+                foreach ($this->queryActiveCampaignIdsFromRaw($segment['from'], $segment['to'], $allowedStatuses) as $id) {
+                    $ids[$id] = true;
+                }
+            }
+        }
+
+        return count($ids);
+    }
+
+    /**
+     * @param list<string>|null $allowedStatuses
+     * @return list<int>
+     */
+    private function queryActiveCampaignIdsFromSummary(string $dateFrom, string $dateTo, ?array $allowedStatuses): array
+    {
+        $statusSql = '';
+        $types = 'ss';
+        $params = [$dateFrom, $dateTo];
+        if ($allowedStatuses !== null && $allowedStatuses !== []) {
+            $placeholders = implode(',', array_fill(0, count($allowedStatuses), '?'));
+            $statusSql = " AND cp.status IN ({$placeholders})";
+            $types .= str_repeat('s', count($allowedStatuses));
+            $params = array_merge($params, $allowedStatuses);
+        }
+
+        $sql = "
+            SELECT DISTINCT s.campaign_id
+            FROM clicks_daily_summary s
+            INNER JOIN campaigns cp ON cp.id = s.campaign_id
+            WHERE s.summary_date >= ? AND s.summary_date <= ? AND s.clicks > 0
+            {$statusSql}
+        ";
+        $stmt = $this->db->prepare($sql);
+        if ($stmt === false) {
+            return [];
+        }
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC) ?: [];
+        $stmt->close();
+
+        return array_map(static fn(array $row): int => (int)$row['campaign_id'], $rows);
+    }
+
+    /**
+     * @param list<string>|null $allowedStatuses
+     * @return list<int>
+     */
+    private function queryActiveCampaignIdsFromRaw(string $utcFrom, string $utcTo, ?array $allowedStatuses): array
+    {
+        $clicksTable = $this->clicksTable();
+        $includedSql = $this->includedClickSql('cl', $clicksTable);
+        $statusSql = '';
+        $types = 'ss';
+        $params = [$utcFrom, $utcTo];
+        if ($allowedStatuses !== null && $allowedStatuses !== []) {
+            $placeholders = implode(',', array_fill(0, count($allowedStatuses), '?'));
+            $statusSql = " AND cp.status IN ({$placeholders})";
+            $types .= str_repeat('s', count($allowedStatuses));
+            $params = array_merge($params, $allowedStatuses);
+        }
+
+        $sql = "
+            SELECT DISTINCT cl.campaign_id
+            FROM {$clicksTable} cl
+            INNER JOIN campaigns cp ON cp.id = cl.campaign_id
+            WHERE cl.ts >= ? AND cl.ts <= ?
+            {$includedSql}
+            {$statusSql}
+        ";
+        $stmt = $this->db->prepare($sql);
+        if ($stmt === false) {
+            return [];
+        }
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC) ?: [];
+        $stmt->close();
+
+        return array_map(static fn(array $row): int => (int)$row['campaign_id'], $rows);
+    }
+
+    /**
+     * @param list<array{type: 'preagg'|'raw', from: string, to: string}> $segments
+     * @param list<string>|null $allowedStatuses
+     * @return list<array<string, mixed>>
+     */
+    private function queryCampaignRowsBlended(array $segments, ?array $allowedStatuses): array
+    {
+        $scopeIds = $this->campaignIdsForScope($allowedStatuses);
+        foreach ($segments as $segment) {
+            if ($segment['type'] === 'preagg'
+                && !TimezoneSummaryBlend::isSummaryReliable($this->db, $scopeIds, $segment['from'], $segment['to'])
+            ) {
+                return $this->queryCampaignRowsFromRaw(
+                    $this->blendWindowStart($segments),
+                    $this->blendWindowEnd($segments),
+                    $allowedStatuses
+                );
+            }
+        }
+
+        $parts = [];
+        foreach ($segments as $segment) {
+            if ($segment['type'] === 'preagg') {
+                $parts[] = $this->queryCampaignRowsFromSummary($segment['from'], $segment['to'], $allowedStatuses);
+            } else {
+                $parts[] = $this->queryCampaignRowsFromRaw($segment['from'], $segment['to'], $allowedStatuses);
+            }
+        }
+
+        return TimezoneSummaryBlend::mergeCampaignTableRows(...$parts);
+    }
+
+    /**
+     * @param list<string>|null $allowedStatuses
+     * @return list<array<string, mixed>>
+     */
+    private function queryCampaignRowsFromSummary(string $dateFrom, string $dateTo, ?array $allowedStatuses): array
+    {
+        $statusSql = '';
+        $types = 'ss';
+        $params = [$dateFrom, $dateTo];
+        if ($allowedStatuses !== null && $allowedStatuses !== []) {
+            $placeholders = implode(',', array_fill(0, count($allowedStatuses), '?'));
+            $statusSql = " AND cp.status IN ({$placeholders})";
+            $types .= str_repeat('s', count($allowedStatuses));
+            $params = array_merge($params, $allowedStatuses);
+        }
+
+        $sql = "
+            SELECT
+                cp.id,
+                cp.name,
+                cp.status,
+                cp.flow_type,
+                cp.traffic_source_id,
+                cg.name AS campaign_group_name,
+                ts.name AS traffic_source_name,
+                COALESCE(SUM(s.clicks), 0) AS views,
+                COALESCE(SUM(s.lp_clicks), 0) AS lp_clicks,
+                COALESCE(SUM(s.direct_clicks), 0) AS direct_clicks,
+                COALESCE(SUM(s.conversions), 0) AS conversions,
+                COALESCE(SUM(s.cost), 0) AS manual_cost,
+                COALESCE(SUM(s.revenue), 0) AS revenue,
+                0 AS invalid_clicks
+            FROM campaigns cp
+            LEFT JOIN campaign_groups cg ON cp.campaign_group_id = cg.id
+            LEFT JOIN traffic_sources ts ON cp.traffic_source_id = ts.id
+            LEFT JOIN clicks_daily_summary s
+                ON s.campaign_id = cp.id
+                AND s.summary_date >= ?
+                AND s.summary_date <= ?
+            WHERE 1=1 {$statusSql}
+            GROUP BY cp.id, cp.name, cp.status, cp.flow_type, cp.traffic_source_id, cg.name, ts.name
+            ORDER BY campaign_group_name ASC, cp.name ASC
+        ";
+
+        $stmt = $this->db->prepare($sql);
+        if ($stmt === false) {
+            return [];
+        }
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+
+        return $rows ?: [];
+    }
+
+    /**
+     * @param list<string>|null $allowedStatuses
+     * @return list<array<string, mixed>>
+     */
+    private function queryCampaignRowsFromRaw(string $utcFrom, string $utcTo, ?array $allowedStatuses): array
+    {
+        // Pre-aggregate clicks by campaign_id on the indexed table, then join metadata.
+        // The old COUNT(DISTINCT) + conversionsAggJoin pattern scanned for minutes on large installs.
+        $statusSql = '';
+        $types = 'ssss';
+        $params = [$utcFrom, $utcTo, $utcFrom, $utcTo];
+        if ($allowedStatuses !== null && $allowedStatuses !== []) {
+            $placeholders = implode(',', array_fill(0, count($allowedStatuses), '?'));
+            $statusSql = " AND cp.status IN ({$placeholders})";
+            $types .= str_repeat('s', count($allowedStatuses));
+            $params = array_merge($params, $allowedStatuses);
+        }
+        $includedSql = $this->includedClickSql('cl', 'clicks');
+
+        $sql = "
+            SELECT
+                cp.id,
+                cp.name,
+                cp.status,
+                cp.flow_type,
+                cp.traffic_source_id,
+                cg.name AS campaign_group_name,
+                ts.name AS traffic_source_name,
+                COALESCE(agg.views, 0) AS views,
+                COALESCE(agg.lp_clicks, 0) AS lp_clicks,
+                COALESCE(agg.direct_clicks, 0) AS direct_clicks,
+                COALESCE(conv.conversions, 0) AS conversions,
+                COALESCE(agg.manual_cost, 0) AS manual_cost,
+                COALESCE(conv.revenue, 0) AS revenue,
+                0 AS invalid_clicks
+            FROM campaigns cp
+            LEFT JOIN campaign_groups cg ON cp.campaign_group_id = cg.id
+            LEFT JOIN traffic_sources ts ON cp.traffic_source_id = ts.id
+            LEFT JOIN (
+                SELECT
+                    cl.campaign_id,
+                    COUNT(*) AS views,
+                    SUM(CASE WHEN cl.lp_click = 1 AND cl.landing_page_id IS NOT NULL THEN 1 ELSE 0 END) AS lp_clicks,
+                    SUM(CASE WHEN cl.lp_click = 1 AND cl.landing_page_id IS NULL THEN 1 ELSE 0 END) AS direct_clicks,
+                    COALESCE(SUM(cl.cost), 0) AS manual_cost
+                FROM clicks cl
+                WHERE cl.ts >= ? AND cl.ts <= ?
+                {$includedSql}
+                GROUP BY cl.campaign_id
+            ) agg ON agg.campaign_id = cp.id
+            LEFT JOIN (
+                SELECT
+                    cl.campaign_id,
+                    COUNT(*) AS conversions,
+                    COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
+                FROM conversions cv
+                INNER JOIN clicks cl ON cl.click_id = cv.click_id
+                WHERE cl.ts >= ? AND cl.ts <= ?
+                {$includedSql}
+                GROUP BY cl.campaign_id
+            ) conv ON conv.campaign_id = cp.id
+            WHERE 1=1 {$statusSql}
+            ORDER BY campaign_group_name ASC, cp.name ASC
+        ";
+
+        $stmt = $this->db->prepare($sql);
+        if ($stmt === false) {
+            return [];
+        }
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+
+        return $rows ?: [];
+    }
+
+    /**
+     * @param list<int> $campaignIds
+     * @return array<int, float>
+     */
+    /**
+     * @param list<int> $campaignIds
+     * @return array{fb: array<int, float>, ga: array<int, float>}
+     */
+    private function batchCampaignCosts(array $campaignIds, string $utcFrom, string $utcTo, string $userTimezone): array
+    {
+        if ($campaignIds === []) {
+            return ['fb' => [], 'ga' => []];
+        }
+
+        $fbIds = [];
+        $gaIds = [];
+        $manualIds = [];
+        $placeholders = implode(',', array_fill(0, count($campaignIds), '?'));
+        $types = str_repeat('i', count($campaignIds));
+        $stmt = $this->db->prepare(
+            "SELECT id,
+                    facebook_marketing_ad_account_id,
+                    google_ads_integration_id
+             FROM campaigns
+             WHERE id IN ({$placeholders})"
+        );
+        if ($stmt !== false) {
+            $stmt->bind_param($types, ...$campaignIds);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            while ($row = $result->fetch_assoc()) {
+                $id = (int)$row['id'];
+                $needsFb = !empty($row['facebook_marketing_ad_account_id']);
+                $needsGa = !empty($row['google_ads_integration_id']);
+                if ($needsFb) {
+                    $fbIds[] = $id;
+                } else {
+                    // Pure manual + Google-only: cheap SUM(cost). FB path already includes manual.
+                    $manualIds[] = $id;
+                }
+                if ($needsGa) {
+                    $gaIds[] = $id;
+                }
+            }
+            $stmt->close();
+        } else {
+            $manualIds = $campaignIds;
+        }
+
+        $fbMap = [];
+        foreach ($campaignIds as $id) {
+            $fbMap[$id] = 0.0;
+        }
+
+        // Manual / non-API campaigns: indexed SUM(cost) only — never the FB per-click allocator.
+        if ($manualIds !== []) {
+            $mph = implode(',', array_fill(0, count($manualIds), '?'));
+            $mTypes = 'ss' . str_repeat('i', count($manualIds));
+            $mParams = array_merge([$utcFrom, $utcTo], $manualIds);
+            $includedSql = $this->includedClickSql('cl', 'clicks');
+            $mStmt = $this->db->prepare(
+                "SELECT campaign_id, COALESCE(SUM(cost), 0) AS total_cost
+                 FROM clicks cl
+                 WHERE cl.ts >= ? AND cl.ts <= ?
+                   AND cl.campaign_id IN ({$mph})
+                   {$includedSql}
+                 GROUP BY cl.campaign_id"
+            );
+            if ($mStmt !== false) {
+                $mStmt->bind_param($mTypes, ...$mParams);
+                $mStmt->execute();
+                $mRes = $mStmt->get_result();
+                while ($row = $mRes->fetch_assoc()) {
+                    $fbMap[(int)$row['campaign_id']] = (float)$row['total_cost'];
+                }
+                $mStmt->close();
+            }
+        }
+
+        if ($fbIds !== []) {
+            try {
+                $apiFb = (new FacebookCostAggregator($this->db))
+                    ->getAggregatedCostsByCampaignIds($fbIds, $utcFrom, $utcTo, $userTimezone);
+                foreach ($apiFb as $cid => $amount) {
+                    $fbMap[(int)$cid] = (float)$amount;
+                }
+            } catch (\Exception $e) {
+                error_log('DashboardStatsService: batch FB cost error: ' . $e->getMessage());
+            }
+        }
+
+        $gaMap = [];
+        foreach ($campaignIds as $id) {
+            $gaMap[$id] = 0.0;
+        }
+        if ($gaIds !== []) {
+            try {
+                $apiGa = (new GoogleAdsCostAggregator($this->db))
+                    ->getGoogleAdsCostsByCampaignIds($gaIds, $utcFrom, $utcTo);
+                foreach ($apiGa as $cid => $amount) {
+                    $gaMap[(int)$cid] = (float)$amount;
+                }
+            } catch (\Exception $e) {
+                error_log('DashboardStatsService: batch Google Ads cost error: ' . $e->getMessage());
+            }
+        }
+
+        return ['fb' => $fbMap, 'ga' => $gaMap];
+    }
+
+    /**
+     * @return array{labels: list<string>, clicks: list<int>, conversions: list<int>, revenue: list<float>}
+     */
+    private function chartHourly(string $utcFrom, string $utcTo, string $userTimezone, string $dateFrom): array
+    {
+        $labels = [];
+        $clicks = array_fill(0, 24, 0);
+        $conversions = array_fill(0, 24, 0);
+        $revenue = array_fill(0, 24, 0.0);
+        for ($h = 0; $h < 24; $h++) {
+            $labels[] = sprintf('%02d:00', $h);
+        }
+
+        $offset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
+        $hourExpr = "COALESCE(HOUR(CONVERT_TZ(cl.ts, '+00:00', ?)), -1)";
+        $includedSql = $this->includedClickSql('cl', 'clicks');
+        // COUNT(*) on indexed clicks — avoid COUNT(DISTINCT) and full conversions derived table.
+        $sql = "
+            SELECT
+                {$hourExpr} AS hour,
+                COUNT(*) AS clicks
+            FROM clicks cl
+            WHERE cl.ts >= ? AND cl.ts <= ?
+            {$includedSql}
+            GROUP BY {$hourExpr}
+            ORDER BY hour ASC
+        ";
+
+        $stmt = $this->db->prepare($sql);
+        if ($stmt === false) {
+            return ['labels' => $labels, 'clicks' => array_values($clicks), 'conversions' => array_values($conversions), 'revenue' => array_values($revenue)];
+        }
+        $stmt->bind_param('ssss', $offset, $utcFrom, $utcTo, $offset);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        while ($row = $result->fetch_assoc()) {
+            $hour = (int)$row['hour'];
+            if ($hour >= 0 && $hour <= 23) {
+                $clicks[$hour] = (int)$row['clicks'];
+            }
+        }
+        $stmt->close();
+
+        // Conversions/revenue by hour (cheap when conversion volume is small)
+        $convSql = "
+            SELECT
+                {$hourExpr} AS hour,
+                COUNT(*) AS conversions,
+                COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
+            FROM conversions cv
+            INNER JOIN clicks cl ON cl.click_id = cv.click_id
+            WHERE cl.ts >= ? AND cl.ts <= ?
+            {$includedSql}
+            GROUP BY {$hourExpr}
+        ";
+        $convStmt = $this->db->prepare($convSql);
+        if ($convStmt !== false) {
+            $convStmt->bind_param('ssss', $offset, $utcFrom, $utcTo, $offset);
+            $convStmt->execute();
+            $convResult = $convStmt->get_result();
+            while ($row = $convResult->fetch_assoc()) {
+                $hour = (int)$row['hour'];
+                if ($hour >= 0 && $hour <= 23) {
+                    $conversions[$hour] = (int)$row['conversions'];
+                    $revenue[$hour] = (float)$row['revenue'];
+                }
+            }
+            $convStmt->close();
+        }
+
+        return [
+            'labels' => $labels,
+            'clicks' => array_values($clicks),
+            'conversions' => array_values($conversions),
+            'revenue' => array_values($revenue),
+        ];
+    }
+
+    /**
+     * @return array{labels: list<string>, clicks: list<int>, conversions: list<int>, revenue: list<float>}
+     */
+    private function chartDaily(
+        string $summaryFrom,
+        string $summaryTo,
+        string $dateFrom,
+        string $dateTo,
+        string $userTimezone,
+        string $utcFrom,
+        string $utcTo
+    ): array {
+        $labels = [];
+        $clicksMap = [];
+        $convMap = [];
+        $revMap = [];
+
+        try {
+            $tz = new \DateTimeZone($userTimezone);
+            $start = new \DateTime($dateFrom . ' 00:00:00', $tz);
+            $end = new \DateTime($dateTo . ' 23:59:59', $tz);
+            $endForPeriod = clone $end;
+            $endForPeriod->modify('+1 day');
+            $period = new \DatePeriod($start, new \DateInterval('P1D'), $endForPeriod);
+            foreach ($period as $date) {
+                $key = $date->format('Y-m-d');
+                $labels[] = $date->format('M j');
+                $clicksMap[$key] = 0;
+                $convMap[$key] = 0;
+                $revMap[$key] = 0.0;
+            }
+        } catch (\Exception $e) {
+            // leave empty
+        }
+
+        // Daily chart labels are in the user's calendar. Summary rows are keyed by UTC DATE(ts),
+        // so mapping summary_date → user day buckets silently drops/shifts evening traffic.
+        // Aggregate on indexed `clicks` with COUNT(*) — never COUNT(DISTINCT)/unified view.
+        $offset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
+        $includedSql = $this->includedClickSql('cl', 'clicks');
+        $sql = "
+            SELECT DATE(CONVERT_TZ(cl.ts, '+00:00', ?)) AS day,
+                   COUNT(*) AS clicks
+            FROM clicks cl
+            WHERE cl.ts >= ? AND cl.ts <= ?
+            {$includedSql}
+            GROUP BY DATE(CONVERT_TZ(cl.ts, '+00:00', ?))
+            ORDER BY day ASC
+        ";
+        $stmt = $this->db->prepare($sql);
+        if ($stmt) {
+            $stmt->bind_param('ssss', $offset, $utcFrom, $utcTo, $offset);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            while ($row = $result->fetch_assoc()) {
+                $day = (string)$row['day'];
+                if (isset($clicksMap[$day])) {
+                    $clicksMap[$day] = (int)$row['clicks'];
+                }
+            }
+            $stmt->close();
+        }
+
+        $convSql = "
+            SELECT DATE(CONVERT_TZ(cl.ts, '+00:00', ?)) AS day,
+                   COUNT(*) AS conversions,
+                   COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
+            FROM conversions cv
+            INNER JOIN clicks cl ON cl.click_id = cv.click_id
+            WHERE cl.ts >= ? AND cl.ts <= ?
+            {$includedSql}
+            GROUP BY DATE(CONVERT_TZ(cl.ts, '+00:00', ?))
+        ";
+        $convStmt = $this->db->prepare($convSql);
+        if ($convStmt) {
+            $convStmt->bind_param('ssss', $offset, $utcFrom, $utcTo, $offset);
+            $convStmt->execute();
+            $convResult = $convStmt->get_result();
+            while ($row = $convResult->fetch_assoc()) {
+                $day = (string)$row['day'];
+                if (isset($convMap[$day])) {
+                    $convMap[$day] = (int)$row['conversions'];
+                    $revMap[$day] = (float)$row['revenue'];
+                }
+            }
+            $convStmt->close();
+        }
+
+        return [
+            'labels' => $labels,
+            'clicks' => array_values($clicksMap),
+            'conversions' => array_values($convMap),
+            'revenue' => array_values($revMap),
+        ];
+    }
+}

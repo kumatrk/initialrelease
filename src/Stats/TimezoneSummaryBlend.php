@@ -67,12 +67,18 @@ final class TimezoneSummaryBlend
                 ];
                 $i = $j;
             } else {
+                // Merge consecutive partial UTC days into one raw window (e.g. PT calendar day
+                // = evening + morning edges) so KPIs pay one indexed scan, not N.
+                $j = $i;
+                while ($j + 1 < $n && !$dayPieces[$j + 1]['full']) {
+                    $j++;
+                }
                 $segments[] = [
                     'type' => 'raw',
                     'from' => $dayPieces[$i]['from'],
-                    'to' => $dayPieces[$i]['to'],
+                    'to' => $dayPieces[$j]['to'],
                 ];
-                $i++;
+                $i = $j + 1;
             }
         }
 
@@ -229,9 +235,19 @@ final class TimezoneSummaryBlend
         $paramsRaw = array_merge($campaignIds, [$utcFrom, $utcTo]);
         $activeFlag = StatsExclusionFlag::includedWhere($db, 'cl', 'clicks');
         $activeFlagSql = $activeFlag !== '' ? " AND {$activeFlag}" : '';
+        // Covering index keeps this off fat extra_json rows (critical at 100k+).
+        $force = '';
+        $idx = $db->query(
+            "SELECT 1 FROM information_schema.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clicks'
+               AND INDEX_NAME = 'idx_clicks_ts_stats_cover' LIMIT 1"
+        );
+        if ($idx && $idx->num_rows > 0) {
+            $force = ' FORCE INDEX (idx_clicks_ts_stats_cover)';
+        }
         $stmt = $db->prepare("
             SELECT COUNT(*) AS raw_clicks
-            FROM clicks cl
+            FROM clicks cl{$force}
             WHERE cl.campaign_id IN ({$placeholders})
               AND cl.ts >= ?
               AND cl.ts <= ?

@@ -16,6 +16,7 @@ use SimpleKuma\Database\DatabaseCompatibility;
 use SimpleKuma\Stats\CampaignListStatsService;
 use SimpleKuma\Stats\ReportingBusyException;
 use SimpleKuma\Stats\ReportingConcurrencyGuard;
+use SimpleKuma\Stats\ReportingQueryCancel;
 use SimpleKuma\Stats\StatsResponseCache;
 use SimpleKuma\Utils\Formatter;
 
@@ -38,6 +39,7 @@ if ($db->connect_error) {
 }
 $db->query("SET time_zone = '+00:00'");
 DatabaseCompatibility::applyReportingQueryTimeout($db, 20);
+ReportingQueryCancel::arm($db);
 
 $auth = new Auth($db);
 $auth->requireAuth();

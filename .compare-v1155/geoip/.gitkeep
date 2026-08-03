@@ -1,0 +1,4 @@
+# This file ensures the geoip directory is tracked by git
+# Geolocation databases will be stored here
+
+

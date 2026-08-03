@@ -850,12 +850,16 @@ class FacebookCostAggregator
     /**
      * Batch aggregated costs (manual + Facebook API) keyed by campaign_id.
      *
-     * Always uses CampaignStatsCostSql::perClickFacebookCostCase (ad OR adset attribution).
-     * Do not route N=1 through getAggregatedCost() — that path previously required both
-     * ad_id AND adset_id on each click and undercounted when either macro was missing.
+     * Fast path for Meta-mapped campaigns: sum ad/adset hourly costs via
+     * facebook_adset_campaign_map (never scans clicks — critical at 100k+ rows
+     * with large extra_json). Manual cost comes from clicks_daily_summary.
+     *
+     * Unmapped FB campaigns fall back to click-row allocation (pre-agg counts).
+     *
+     * Do not route through getAggregatedCost() — midnight-safety undercounts KPIs.
      *
      * @param list<int> $campaignIds
-     * @return array<int, float> campaign_id => total cost
+     * @return array<int, float> campaign_id => total cost (manual + FB)
      */
     public function getAggregatedCostsByCampaignIds(
         array $campaignIds,
@@ -864,6 +868,281 @@ class FacebookCostAggregator
         ?string $userTimezone = null
     ): array {
         $campaignIds = array_values(array_unique(array_filter(array_map('intval', $campaignIds))));
+        $result = [];
+        foreach ($campaignIds as $id) {
+            $result[$id] = 0.0;
+        }
+        if ($campaignIds === []) {
+            return $result;
+        }
+
+        $manualByCampaign = $this->manualCostFromDailySummary($campaignIds, $dateFrom, $dateTo);
+        foreach ($manualByCampaign as $cid => $manual) {
+            $result[$cid] = (float) $manual;
+        }
+
+        $mappedMeta = $this->loadMappedMetaCampaigns($campaignIds);
+        $mappedIds = array_keys($mappedMeta);
+        $unmappedIds = array_values(array_diff($campaignIds, $mappedIds));
+
+        if ($mappedIds !== []) {
+            $fbByCampaign = $this->sumMappedMetaSpendByCampaign($mappedMeta, $dateFrom, $dateTo);
+            foreach ($fbByCampaign as $cid => $fbSpend) {
+                $result[$cid] = (float) ($result[$cid] ?? 0) + (float) $fbSpend;
+            }
+        }
+
+        if ($unmappedIds !== []) {
+            $legacy = $this->getAggregatedCostsByCampaignIdsFromClicks($unmappedIds, $dateFrom, $dateTo);
+            foreach ($legacy as $cid => $total) {
+                // Legacy already includes click manual + FB; prefer it over summary-only.
+                $result[$cid] = (float) $total;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param list<int> $campaignIds
+     * @return array<int, float>
+     */
+    private function manualCostFromDailySummary(array $campaignIds, string $dateFrom, string $dateTo): array
+    {
+        $out = [];
+        foreach ($campaignIds as $id) {
+            $out[$id] = 0.0;
+        }
+        $check = $this->db->query("SHOW TABLES LIKE 'clicks_daily_summary'");
+        if (!$check || $check->num_rows === 0) {
+            return $out;
+        }
+
+        $dateFromDay = substr($dateFrom, 0, 10);
+        $dateToDay = substr($dateTo, 0, 10);
+        $placeholders = implode(',', array_fill(0, count($campaignIds), '?'));
+        $types = 'ss' . str_repeat('i', count($campaignIds));
+        $params = array_merge([$dateFromDay, $dateToDay], $campaignIds);
+        $stmt = $this->db->prepare(
+            "SELECT campaign_id, COALESCE(SUM(cost), 0) AS manual_cost
+             FROM clicks_daily_summary
+             WHERE summary_date >= ? AND summary_date <= ?
+               AND campaign_id IN ({$placeholders})
+             GROUP BY campaign_id"
+        );
+        if ($stmt === false) {
+            return $out;
+        }
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        while ($row = $res->fetch_assoc()) {
+            $out[(int) $row['campaign_id']] = (float) ($row['manual_cost'] ?? 0);
+        }
+        $stmt->close();
+
+        return $out;
+    }
+
+    /**
+     * @param list<int> $campaignIds
+     * @return array<int, array{meta_campaign_id: string, integration_id: int|null, ad_account_row_id: int}>
+     */
+    private function loadMappedMetaCampaigns(array $campaignIds): array
+    {
+        $out = [];
+        $mapCheck = $this->db->query("SHOW TABLES LIKE 'facebook_adset_campaign_map'");
+        if (!$mapCheck || $mapCheck->num_rows === 0) {
+            return $out;
+        }
+        $placeholders = implode(',', array_fill(0, count($campaignIds), '?'));
+        $types = str_repeat('i', count($campaignIds));
+        $stmt = $this->db->prepare(
+            "SELECT camp.id AS campaign_id,
+                    fmc.meta_campaign_id,
+                    camp.facebook_marketing_ad_account_id AS ad_account_row_id,
+                    fmaa.facebook_marketing_integration_id AS integration_id
+             FROM campaigns camp
+             INNER JOIN facebook_marketing_campaigns fmc
+                ON camp.facebook_marketing_campaign_id = fmc.id
+             LEFT JOIN facebook_marketing_ad_accounts fmaa
+                ON camp.facebook_marketing_ad_account_id = fmaa.id
+             WHERE camp.id IN ({$placeholders})
+               AND camp.facebook_marketing_ad_account_id IS NOT NULL
+               AND fmc.meta_campaign_id IS NOT NULL
+               AND fmc.meta_campaign_id != ''"
+        );
+        if ($stmt === false) {
+            return $out;
+        }
+        $stmt->bind_param($types, ...$campaignIds);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        while ($row = $res->fetch_assoc()) {
+            $cid = (int) $row['campaign_id'];
+            $out[$cid] = [
+                'meta_campaign_id' => (string) $row['meta_campaign_id'],
+                'integration_id' => isset($row['integration_id']) && $row['integration_id'] !== null
+                    ? (int) $row['integration_id']
+                    : null,
+                'ad_account_row_id' => (int) ($row['ad_account_row_id'] ?? 0),
+            ];
+        }
+        $stmt->close();
+
+        return $out;
+    }
+
+    /**
+     * Ad-first Meta spend for mapped campaigns (ad hourly + adset-only hours), no click scan.
+     *
+     * @param array<int, array{meta_campaign_id: string, integration_id: int|null, ad_account_row_id: int}> $mappedMeta
+     * @return array<int, float>
+     */
+    private function sumMappedMetaSpendByCampaign(array $mappedMeta, string $dateFrom, string $dateTo): array
+    {
+        $out = [];
+        foreach (array_keys($mappedMeta) as $cid) {
+            $out[$cid] = 0.0;
+        }
+
+        $dateFromDay = substr($dateFrom, 0, 10);
+        $dateToDay = substr($dateTo, 0, 10);
+        $dateFromHour = (int) substr($dateFrom, 11, 2);
+        $dateToHour = (int) substr($dateTo, 11, 2);
+        if (!preg_match('/^\d{2}/', substr($dateFrom, 11))) {
+            $dateFromHour = 0;
+        }
+        if (!preg_match('/^\d{2}/', substr($dateTo, 11))) {
+            $dateToHour = 23;
+        }
+
+        // Group campaigns by meta_campaign_id + account for batched queries
+        /** @var array<string, list<int>> $groups */
+        $groups = [];
+        foreach ($mappedMeta as $cid => $meta) {
+            $key = $meta['meta_campaign_id'] . '|' . $meta['ad_account_row_id'] . '|' . (string) ($meta['integration_id'] ?? 'null');
+            $groups[$key][] = $cid;
+        }
+
+        foreach ($groups as $key => $cids) {
+            $meta = $mappedMeta[$cids[0]];
+            $metaCampaignId = $meta['meta_campaign_id'];
+            $adAccountRowId = $meta['ad_account_row_id'];
+            $integrationId = $meta['integration_id'];
+
+            $accountFilterAd = '';
+            // ? order: meta(s), account(i), fromDay(s), fromDay(s), fromHour(i), toDay(s), toDay(s), toHour(i)
+            $types = 'sississi';
+            $params = [
+                $metaCampaignId,
+                $adAccountRowId,
+                $dateFromDay,
+                $dateFromDay,
+                $dateFromHour,
+                $dateToDay,
+                $dateToDay,
+                $dateToHour,
+            ];
+            if ($integrationId !== null && $integrationId > 0) {
+                $accountFilterAd = ' AND a.ad_account_id = ?';
+                $types .= 'i';
+                $params[] = $integrationId;
+            }
+
+            // Prefer ad-level spend for mapped adsets
+            $adSql = "
+                SELECT COALESCE(SUM(a.delta_spend), 0) AS total_cost
+                FROM ad_hourly_costs a
+                INNER JOIN facebook_adset_campaign_map facm
+                    ON facm.adset_id = a.adset_id
+                    AND facm.meta_campaign_id = ?
+                    AND facm.facebook_marketing_ad_account_id = ?
+                WHERE (a.date > ? OR (a.date = ? AND a.hour >= ?))
+                  AND (a.date < ? OR (a.date = ? AND a.hour <= ?))
+                  {$accountFilterAd}
+            ";
+            $stmt = $this->db->prepare($adSql);
+            $adSpend = 0.0;
+            if ($stmt !== false) {
+                $stmt->bind_param($types, ...$params);
+                $stmt->execute();
+                $row = $stmt->get_result()->fetch_assoc();
+                $adSpend = (float) ($row['total_cost'] ?? 0);
+                $stmt->close();
+            }
+
+            // Adset spend only for hours with no ad-level rows (same ad-first rule)
+            $adsetTypes = 'sississi';
+            $adsetParams = [
+                $metaCampaignId,
+                $adAccountRowId,
+                $dateFromDay,
+                $dateFromDay,
+                $dateFromHour,
+                $dateToDay,
+                $dateToDay,
+                $dateToHour,
+            ];
+            $adsetAccountSql = '';
+            $notExistsAccountSql = '';
+            if ($integrationId !== null && $integrationId > 0) {
+                $adsetAccountSql = ' AND as_cost.ad_account_id = ?';
+                $notExistsAccountSql = ' AND a.ad_account_id = as_cost.ad_account_id';
+                $adsetTypes .= 'i';
+                $adsetParams[] = $integrationId;
+            }
+
+            $adsetSql = "
+                SELECT COALESCE(SUM(as_cost.delta_spend), 0) AS total_cost
+                FROM adset_hourly_costs as_cost
+                INNER JOIN facebook_adset_campaign_map facm
+                    ON facm.adset_id = as_cost.adset_id
+                    AND facm.meta_campaign_id = ?
+                    AND facm.facebook_marketing_ad_account_id = ?
+                WHERE (as_cost.date > ? OR (as_cost.date = ? AND as_cost.hour >= ?))
+                  AND (as_cost.date < ? OR (as_cost.date = ? AND as_cost.hour <= ?))
+                  {$adsetAccountSql}
+                  AND NOT EXISTS (
+                    SELECT 1 FROM ad_hourly_costs a
+                    WHERE a.adset_id = as_cost.adset_id
+                      AND a.date = as_cost.date
+                      AND a.hour = as_cost.hour
+                      {$notExistsAccountSql}
+                  )
+            ";
+            $adsetSpend = 0.0;
+            $stmt = $this->db->prepare($adsetSql);
+            if ($stmt !== false) {
+                $stmt->bind_param($adsetTypes, ...$adsetParams);
+                $stmt->execute();
+                $row = $stmt->get_result()->fetch_assoc();
+                $adsetSpend = (float) ($row['total_cost'] ?? 0);
+                $stmt->close();
+            }
+
+            $total = $adSpend + $adsetSpend;
+            // If several Kuma campaigns share one Meta campaign (rare), split equally.
+            $share = $total / max(1, count($cids));
+            foreach ($cids as $cid) {
+                $out[$cid] = $share;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Legacy click-row allocator (pre-agg count joins). Used only for unmapped FB campaigns.
+     *
+     * @param list<int> $campaignIds
+     * @return array<int, float>
+     */
+    private function getAggregatedCostsByCampaignIdsFromClicks(
+        array $campaignIds,
+        string $dateFrom,
+        string $dateTo
+    ): array {
         $result = [];
         foreach ($campaignIds as $id) {
             $result[$id] = 0.0;
@@ -887,21 +1166,31 @@ class FacebookCostAggregator
             GROUP BY cl.campaign_id
         ";
 
-        $types = 'ssss' . str_repeat('i', count($campaignIds));
-        $params = array_merge([$dateFrom, $dateTo, $dateFrom, $dateTo], $campaignIds);
+        $types = 'ss' . str_repeat('i', count($campaignIds));
+        $params = array_merge([$dateFrom, $dateTo], $campaignIds);
+        [$types, $params] = \SimpleKuma\Stats\CampaignStatsCostSql::mergeJoinDateBinds(
+            $dateFrom,
+            $dateTo,
+            $types,
+            $params
+        );
 
         $stmt = $this->db->prepare($sql);
         if ($stmt === false) {
-            error_log('FacebookCostAggregator::getAggregatedCostsByCampaignIds prepare failed: ' . $this->db->error);
+            error_log('FacebookCostAggregator::getAggregatedCostsByCampaignIdsFromClicks prepare failed: ' . $this->db->error);
             return $result;
         }
 
         $stmt->bind_param($types, ...$params);
-        $stmt->execute();
-        $rows = $stmt->get_result();
-        while ($row = $rows->fetch_assoc()) {
-            $cid = (int)$row['campaign_id'];
-            $result[$cid] = (float)($row['total_cost'] ?? 0);
+        try {
+            $stmt->execute();
+            $rows = $stmt->get_result();
+            while ($row = $rows->fetch_assoc()) {
+                $cid = (int) $row['campaign_id'];
+                $result[$cid] = (float) ($row['total_cost'] ?? 0);
+            }
+        } catch (\Throwable $e) {
+            error_log('FacebookCostAggregator::getAggregatedCostsByCampaignIdsFromClicks: ' . $e->getMessage());
         }
         $stmt->close();
 

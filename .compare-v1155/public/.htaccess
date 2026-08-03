@@ -1,0 +1,110 @@
+# Simple KUMA - Public Directory Configuration
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Pass Authorization header to PHP (Apache often strips it on rewritten requests)
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # CRITICAL: Allow ALL PHP files FIRST (including km.php when rewritten from root)
+    # When root .htaccess rewrites /km/dnVlJoT7 to public/km.php, Apache processes this .htaccess
+    # REQUEST_FILENAME will be the full path to the PHP file
+    # This MUST be first to prevent any other rules from interfering
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteCond %{REQUEST_FILENAME} \.php$ [NC]
+    RewriteRule . - [L]
+
+    # Allow direct access to static assets (images, CSS, JS, fonts, etc.)
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteCond %{REQUEST_URI} \.(jpg|jpeg|png|gif|ico|css|js|woff|woff2|ttf|svg|eot)$ [NC]
+    RewriteRule . - [L]
+
+    # Handle installer
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^install\.php$ install.php [L]
+
+    # Handle tracking redirector /km/<key-or-slug> and /km/<key>/<slug>
+    # NOTE: This rule is needed when custom tracking domains point directly to public/ directory
+    # This handles both:
+    # - /km/testslugger (custom slug used directly)
+    # - /km/dnVlJoT7 (campaign key)
+    # - /km/dnVlJoT7/testslugger (campaign key + slug for tracking)
+    # Skip this if km.php is being accessed directly (already handled above)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    # Match /km/<key-or-slug> (single segment)
+    RewriteCond %{REQUEST_URI} ^/km/([^/]+)/?$
+    RewriteRule ^km/([^/]+)/?$ km.php?key=$1 [QSA,L]
+    # Match /km/<key>/<slug> (two segments)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} ^/km/([^/]+)/(.+)$
+    RewriteRule ^km/([^/]+)/(.+)$ km.php?key=$1&slug=$2 [QSA,L]
+
+    # Pretty click path /go/{key} when CLICK_URL_STYLE=path (legacy /km/ and /c/ above remain)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} ^/go/([^/]+)/?$
+    RewriteRule ^go/([^/]+)/?$ km.php?key=$1 [QSA,L]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} ^/go/([^/]+)/(.+)$
+    RewriteRule ^go/([^/]+)/(.+)$ km.php?key=$1&slug=$2 [QSA,L]
+
+    # Legacy /c/ short path (CPV-style installs that set CLICK_PATH_PREFIX=c)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} ^/c/([^/]+)/?$
+    RewriteRule ^c/([^/]+)/?$ km.php?key=$1 [QSA,L]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} ^/c/([^/]+)/(.+)$
+    RewriteRule ^c/([^/]+)/(.+)$ km.php?key=$1&slug=$2 [QSA,L]
+
+    # REST API v1 — route to front controller
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^api/v1(/.*)?$ api/v1/index.php [L,QSA]
+    
+    # Route everything else to index.php (only if file doesn't exist)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ index.php [QSA,L]
+</IfModule>
+
+# Security headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+    # HSTS only when request is HTTPS (safe for local HTTP dev)
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains" env=HTTPS
+</IfModule>
+
+# PHP settings (Note: mod_php may not work with PHP-FPM, but harmless if not available)
+<IfModule mod_php.c>
+    php_value upload_max_filesize 10M
+    php_value post_max_size 10M
+    php_value max_execution_time 60
+    php_value memory_limit 128M
+</IfModule>
+
+# Protect sensitive files from public access
+<FilesMatch "^(config\.php|\.env|\.git)">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Block access to test, debug, utility, and migration scripts (production security)
+<FilesMatch "^(test-|debug-|check-|diagnose\.php|diagnose-|fix-|clear-|backfill-|backup-|convert-|revert-|set-|sync-|remove-|run-migration-|analyze-|find-|modsecurity-).*\.php$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Block access to scripts directory if somehow accessible
+<IfModule mod_rewrite.c>
+    RewriteCond %{REQUEST_URI} ^/scripts/
+    RewriteRule .* - [F,L]
+</IfModule>
