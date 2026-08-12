@@ -1,0 +1,41 @@
+# Simple KUMA — Docker Compose MVP (app + MySQL)
+# Usage:
+#   docker compose up -d
+#   open http://localhost:8080/install.php
+# Installer DB settings: host=mysql, database/user/password from below.
+# BASE_URL must be https:// (product rule). For local HTTP labs, after install set
+# SESSION_COOKIE_SECURE to false in config/config.php, or put TLS in front for production.
+
+services:
+  app:
+    build: .
+    ports:
+      - "8080:80"
+    volumes:
+      - kuma_config:/var/www/html/config
+      - kuma_storage:/var/www/html/storage
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: simplekuma
+      MYSQL_USER: kuma
+      MYSQL_PASSWORD: kuma
+      MYSQL_ROOT_PASSWORD: rootsecret
+    volumes:
+      - kuma_mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-prootsecret"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  kuma_config:
+  kuma_storage:
+  kuma_mysql:

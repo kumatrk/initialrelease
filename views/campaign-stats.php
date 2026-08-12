@@ -205,6 +205,7 @@ $statsJsVer = file_exists($statsJsPath) ? (string)filemtime($statsJsPath) : '1';
                 <label><input type="checkbox" class="col-toggle" data-col="lp_clicks" checked> Clicks</label>
                 <label><input type="checkbox" class="col-toggle" data-col="ctr" checked> CTR</label>
                 <label><input type="checkbox" class="col-toggle" data-col="conversions" checked> Conversions</label>
+                <label><input type="checkbox" class="col-toggle" data-col="optins" checked> Opt-ins</label>
                 <label><input type="checkbox" class="col-toggle" data-col="cr" checked> CR</label>
                 <label><input type="checkbox" class="col-toggle" data-col="cost" checked> Cost</label>
                 <label><input type="checkbox" class="col-toggle" data-col="revenue" checked> Revenue</label>
@@ -221,6 +222,7 @@ $statsJsVer = file_exists($statsJsPath) ? (string)filemtime($statsJsPath) : '1';
                             <th class="num" data-col="lp_clicks">Clicks</th>
                             <th class="num" data-col="ctr">CTR</th>
                             <th class="num" data-col="conversions">Conv.</th>
+                            <th class="num" data-col="optins">Opt-ins</th>
                             <th class="num" data-col="cr">CR</th>
                             <th class="num" data-col="cost">Cost</th>
                             <th class="num" data-col="revenue">Revenue</th>

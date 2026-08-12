@@ -46,7 +46,13 @@ class ConversionTracker
         $data['event_key'] = $eventKey;
 
         // Check for duplicate
-        if ($this->isDuplicate($clickId, $data['txid'] ?? null, $data['event_id'] ?? null, $eventKey)) {
+        if ($this->isDuplicate(
+            $clickId,
+            $data['txid'] ?? null,
+            $data['event_id'] ?? null,
+            $eventKey,
+            $click
+        )) {
             return ['success' => false, 'message' => 'Duplicate conversion'];
         }
 
@@ -102,10 +108,18 @@ class ConversionTracker
      * - Same inbound event_id → duplicate
      * - Same click + same txid + same event_key → duplicate
      * - Same click + same txid + different event_key → allowed
-     * - No txid/event_id: same click + same event_key (or both null) → duplicate (legacy)
+     * - No txid/event_id: same click + same event_key (or both null) → duplicate (legacy),
+     *   unless the campaign has allow_multiple_conversions enabled (Propush-style multi-earn)
+     *
+     * @param array<string, mixed> $click
      */
-    private function isDuplicate(string $clickId, ?string $txid, ?string $eventId, ?string $eventKey): bool
-    {
+    private function isDuplicate(
+        string $clickId,
+        ?string $txid,
+        ?string $eventId,
+        ?string $eventKey,
+        array $click
+    ): bool {
         if ($eventId) {
             $stmt = $this->db->prepare(
                 "SELECT COUNT(*) as count FROM conversions WHERE event_id = ?"
@@ -150,8 +164,12 @@ class ConversionTracker
             }
         }
 
-        // No txid or event_id: preserve one-conversion-per-click for same event_key (legacy)
+        // No txid or event_id: preserve one-conversion-per-click for same event_key (legacy),
+        // unless campaign allows multiple conversions on the same click.
         if (!$txid && !$eventId) {
+            if ($this->campaignAllowsMultipleConversions($click)) {
+                return false;
+            }
             if ($hasEventKeyColumn) {
                 if ($eventKey === null) {
                     $stmt = $this->db->prepare(
@@ -181,6 +199,43 @@ class ConversionTracker
         }
 
         return false;
+    }
+
+    /**
+     * @param array<string, mixed> $click
+     */
+    private function campaignAllowsMultipleConversions(array $click): bool
+    {
+        if (!$this->campaignsTableHasAllowMultipleConversions()) {
+            return false;
+        }
+        $campaignId = isset($click['campaign_id']) ? (int)$click['campaign_id'] : 0;
+        if ($campaignId <= 0) {
+            return false;
+        }
+        $stmt = $this->db->prepare(
+            'SELECT allow_multiple_conversions FROM campaigns WHERE id = ? LIMIT 1'
+        );
+        if (!$stmt) {
+            return false;
+        }
+        $stmt->bind_param('i', $campaignId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        return !empty($row['allow_multiple_conversions']);
+    }
+
+    private function campaignsTableHasAllowMultipleConversions(): bool
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+        $check = $this->db->query("SHOW COLUMNS FROM campaigns LIKE 'allow_multiple_conversions'");
+        $cached = ($check && $check->num_rows > 0);
+        return $cached;
     }
 
     /**
@@ -244,7 +299,7 @@ class ConversionTracker
             $stmt->close();
             $this->firePostbacks($conversionId);
             $updater = new DailySummaryUpdater($this->db);
-            $updater->upsertConversion($clickId, $payout, $value);
+            $updater->upsertConversion($clickId, $payout, $value, $eventKey);
         } else {
             error_log('ConversionTracker: INSERT failed: ' . $stmt->error);
             $stmt->close();

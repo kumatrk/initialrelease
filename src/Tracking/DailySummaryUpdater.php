@@ -118,8 +118,9 @@ class DailySummaryUpdater
      * Single multi-row INSERT per call. Pass extraData as array when available to avoid JSON decode.
      *
      * @param array|null $extraDataAsArray extra_json as array (e.g. $extraData), or null to skip
-     * @param int $conversionsDelta 1 for conversion event, 0 for click-only
-     * @param float $revenueDelta revenue for conversion event, 0 for click-only
+     * @param int $conversionsDelta 1 for conversion event, 0 for click-only or opt-in
+     * @param float $revenueDelta revenue for conversion event, 0 for click-only or opt-in
+     * @param int $optinsDelta 1 for opt-in event, 0 otherwise
      */
     public function upsertTokenAggregatesForClick(
         int $campaignId,
@@ -132,7 +133,8 @@ class DailySummaryUpdater
         float $revenueDelta = 0.0,
         ?string $ua = null,
         ?string $ip = null,
-        bool $forceInclude = false
+        bool $forceInclude = false,
+        int $optinsDelta = 0
     ): void {
         if (!$this->tokenTableExists() || $extraDataAsArray === null) {
             return;
@@ -147,37 +149,69 @@ class DailySummaryUpdater
         }
         $cost = $cost !== null ? (float) $cost : 0.0;
         $lpInc = ($lpClick === 1) ? 1 : 0;
-        $visitors = $conversionsDelta === 0 ? 1 : 0;
+        $visitors = ($conversionsDelta === 0 && $optinsDelta === 0) ? 1 : 0;
+        $hasOptins = $this->tokenTableHasOptinsColumn();
 
-        // Negative conversion deltas must UPDATE only — INSERT of -1 into UNSIGNED fails
-        if ($conversionsDelta < 0) {
+        // Negative conversion/optin deltas must UPDATE only — INSERT of -1 into UNSIGNED fails
+        if ($conversionsDelta < 0 || $optinsDelta < 0) {
             foreach ($tokens as $t) {
-                $stmt = $this->db->prepare("
-                    UPDATE clicks_stats_by_token_daily
-                    SET conversions = GREATEST(0, CAST(conversions AS SIGNED) + ?),
-                        revenue = GREATEST(0, revenue + ?),
-                        updated_at = NOW()
-                    WHERE campaign_id = ?
-                      AND summary_date = ?
-                      AND token_param = ?
-                      AND token_value = ?
-                      AND (traffic_source_id <=> ?)
-                ");
-                if (!$stmt) {
-                    continue;
+                if ($hasOptins) {
+                    $stmt = $this->db->prepare("
+                        UPDATE clicks_stats_by_token_daily
+                        SET conversions = GREATEST(0, CAST(conversions AS SIGNED) + ?),
+                            optins = GREATEST(0, CAST(optins AS SIGNED) + ?),
+                            revenue = GREATEST(0, revenue + ?),
+                            updated_at = NOW()
+                        WHERE campaign_id = ?
+                          AND summary_date = ?
+                          AND token_param = ?
+                          AND token_value = ?
+                          AND (traffic_source_id <=> ?)
+                    ");
+                    if (!$stmt) {
+                        continue;
+                    }
+                    $param = $t['param'];
+                    $value = $t['value'];
+                    $stmt->bind_param(
+                        'iidisssi',
+                        $conversionsDelta,
+                        $optinsDelta,
+                        $revenueDelta,
+                        $campaignId,
+                        $summaryDate,
+                        $param,
+                        $value,
+                        $trafficSourceId
+                    );
+                } else {
+                    $stmt = $this->db->prepare("
+                        UPDATE clicks_stats_by_token_daily
+                        SET conversions = GREATEST(0, CAST(conversions AS SIGNED) + ?),
+                            revenue = GREATEST(0, revenue + ?),
+                            updated_at = NOW()
+                        WHERE campaign_id = ?
+                          AND summary_date = ?
+                          AND token_param = ?
+                          AND token_value = ?
+                          AND (traffic_source_id <=> ?)
+                    ");
+                    if (!$stmt) {
+                        continue;
+                    }
+                    $param = $t['param'];
+                    $value = $t['value'];
+                    $stmt->bind_param(
+                        'idisssi',
+                        $conversionsDelta,
+                        $revenueDelta,
+                        $campaignId,
+                        $summaryDate,
+                        $param,
+                        $value,
+                        $trafficSourceId
+                    );
                 }
-                $param = $t['param'];
-                $value = $t['value'];
-                $stmt->bind_param(
-                    'idisssi',
-                    $conversionsDelta,
-                    $revenueDelta,
-                    $campaignId,
-                    $summaryDate,
-                    $param,
-                    $value,
-                    $trafficSourceId
-                );
                 $stmt->execute();
                 $stmt->close();
             }
@@ -193,9 +227,10 @@ class DailySummaryUpdater
                 'token_value' => $t['value'],
                 'traffic_source_id' => $trafficSourceId,
                 'visitors' => $visitors,
-                'lp_clicks' => $conversionsDelta === 0 ? $lpInc : 0,
-                'cost' => $conversionsDelta === 0 ? $cost : 0.0,
+                'lp_clicks' => ($conversionsDelta === 0 && $optinsDelta === 0) ? $lpInc : 0,
+                'cost' => ($conversionsDelta === 0 && $optinsDelta === 0) ? $cost : 0.0,
                 'conversions' => $conversionsDelta,
+                'optins' => $optinsDelta,
                 'revenue' => $revenueDelta,
             ];
         }
@@ -204,37 +239,66 @@ class DailySummaryUpdater
         $types = '';
         $params = [];
         foreach ($rows as $u) {
-            $values[] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-            $types .= 'isssiiidid';
-            $params[] = $u['campaign_id'];
-            $params[] = $u['summary_date'];
-            $params[] = $u['token_param'];
-            $params[] = $u['token_value'];
-            $params[] = $u['traffic_source_id'];
-            $params[] = $u['visitors'];
-            $params[] = $u['lp_clicks'];
-            $params[] = $u['cost'];
-            $params[] = $u['conversions'];
-            $params[] = $u['revenue'];
+            if ($hasOptins) {
+                $values[] = '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+                $types .= 'isssiiididi';
+                $params[] = $u['campaign_id'];
+                $params[] = $u['summary_date'];
+                $params[] = $u['token_param'];
+                $params[] = $u['token_value'];
+                $params[] = $u['traffic_source_id'];
+                $params[] = $u['visitors'];
+                $params[] = $u['lp_clicks'];
+                $params[] = $u['cost'];
+                $params[] = $u['conversions'];
+                $params[] = $u['optins'];
+                $params[] = $u['revenue'];
+            } else {
+                $values[] = '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+                $types .= 'isssiiidid';
+                $params[] = $u['campaign_id'];
+                $params[] = $u['summary_date'];
+                $params[] = $u['token_param'];
+                $params[] = $u['token_value'];
+                $params[] = $u['traffic_source_id'];
+                $params[] = $u['visitors'];
+                $params[] = $u['lp_clicks'];
+                $params[] = $u['cost'];
+                $params[] = $u['conversions'];
+                $params[] = $u['revenue'];
+            }
         }
 
-        $sql = "INSERT INTO clicks_stats_by_token_daily (campaign_id, summary_date, token_param, token_value, traffic_source_id, visitors, lp_clicks, cost, conversions, revenue)
-                VALUES " . implode(', ', $values) . "
+        if ($hasOptins) {
+            $sql = 'INSERT INTO clicks_stats_by_token_daily (campaign_id, summary_date, token_param, token_value, traffic_source_id, visitors, lp_clicks, cost, conversions, optins, revenue)
+                VALUES ' . implode(', ', $values) . '
+                ON DUPLICATE KEY UPDATE
+                    visitors = GREATEST(0, CAST(visitors AS SIGNED) + VALUES(visitors)),
+                    lp_clicks = GREATEST(0, CAST(lp_clicks AS SIGNED) + VALUES(lp_clicks)),
+                    cost = GREATEST(0, cost + VALUES(cost)),
+                    conversions = GREATEST(0, CAST(conversions AS SIGNED) + VALUES(conversions)),
+                    optins = GREATEST(0, CAST(optins AS SIGNED) + VALUES(optins)),
+                    revenue = GREATEST(0, revenue + VALUES(revenue)),
+                    updated_at = NOW()';
+        } else {
+            $sql = 'INSERT INTO clicks_stats_by_token_daily (campaign_id, summary_date, token_param, token_value, traffic_source_id, visitors, lp_clicks, cost, conversions, revenue)
+                VALUES ' . implode(', ', $values) . '
                 ON DUPLICATE KEY UPDATE
                     visitors = GREATEST(0, CAST(visitors AS SIGNED) + VALUES(visitors)),
                     lp_clicks = GREATEST(0, CAST(lp_clicks AS SIGNED) + VALUES(lp_clicks)),
                     cost = GREATEST(0, cost + VALUES(cost)),
                     conversions = GREATEST(0, CAST(conversions AS SIGNED) + VALUES(conversions)),
                     revenue = GREATEST(0, revenue + VALUES(revenue)),
-                    updated_at = NOW()";
+                    updated_at = NOW()';
+        }
         $stmt = $this->db->prepare($sql);
         if (!$stmt) {
-            error_log("DailySummaryUpdater::upsertTokenAggregatesForClick prepare failed: " . $this->db->error);
+            error_log('DailySummaryUpdater::upsertTokenAggregatesForClick prepare failed: ' . $this->db->error);
             return;
         }
         $stmt->bind_param($types, ...$params);
         if (!$stmt->execute()) {
-            error_log("DailySummaryUpdater::upsertTokenAggregatesForClick execute failed: " . $stmt->error);
+            error_log('DailySummaryUpdater::upsertTokenAggregatesForClick execute failed: ' . $stmt->error);
         }
         $stmt->close();
     }
@@ -546,14 +610,23 @@ class DailySummaryUpdater
     }
 
     /**
-     * After a conversion insert: load click by click_id, then UPSERT clicks_daily_summary (conversions += 1, revenue += payout/value).
+     * After a conversion insert: load click by click_id, then UPSERT clicks_daily_summary.
+     * Opt-in event keys increment optins (not conversions/revenue).
      */
-    public function upsertConversion(string $clickId, ?float $payout, ?float $value): void
+    public function upsertConversion(string $clickId, ?float $payout, ?float $value, ?string $eventKey = null): void
     {
         if (!$this->tableExists()) {
             return;
         }
-        $revenue = $payout !== null ? (float) $payout : ($value !== null ? (float) $value : 0.0);
+        $isOptIn = ConversionOptInClassifier::isOptIn($eventKey);
+        $revenue = $isOptIn ? 0.0 : ($payout !== null ? (float) $payout : ($value !== null ? (float) $value : 0.0));
+        $conversionsDelta = $isOptIn ? 0 : 1;
+        $optinsDelta = $isOptIn ? 1 : 0;
+        $hasOptinsCol = $this->summaryTableHasOptinsColumn();
+        if ($isOptIn && !$hasOptinsCol) {
+            // Column missing: still store conversion row, but skip summary until migration runs
+            return;
+        }
 
         $row = null;
         $rowTable = null;
@@ -595,7 +668,6 @@ class DailySummaryUpdater
         $promoted = false;
 
         if ($hasPersistedFlag) {
-            // A conversion proves the visitor is real, but never overrides an explicit hidden-IP rule.
             if ($isHiddenIp) {
                 return;
             }
@@ -634,8 +706,6 @@ class DailySummaryUpdater
         $summaryDate = $row['summary_date'];
 
         if ($promoted) {
-            // The click was intentionally skipped at ingest. Add it exactly once before
-            // recording the conversion so views/clicks/cost and conversion stay aligned.
             $this->upsertClickForSummaryDate(
                 $campaignId,
                 $trafficSourceId,
@@ -657,62 +727,98 @@ class DailySummaryUpdater
                     0.0,
                     $ua,
                     $ip,
-                    true
+                    true,
+                    0
                 );
             }
         }
 
-        $upd = $this->db->prepare("
-            UPDATE clicks_daily_summary
-            SET conversions = conversions + 1,
-                revenue = revenue + ?,
-                profit = (revenue + ?) - cost,
-                roi = CASE WHEN cost > 0 THEN (((revenue + ?) - cost) / cost) * 100 ELSE NULL END,
-                updated_at = NOW()
-            WHERE campaign_id = ?
-              AND (traffic_source_id <=> ?)
-              AND (offer_id <=> ?)
-              AND (landing_page_id <=> ?)
-              AND summary_date = ?
-            LIMIT 1
-        ");
-        if ($upd) {
-            $upd->bind_param(
-                'dddiiiis',
-                $revenue,
-                $revenue,
-                $revenue,
-                $campaignId,
-                $trafficSourceId,
-                $offerId,
-                $landingPageId,
-                $summaryDate
-            );
-            $upd->execute();
-            $updated = $upd->affected_rows > 0;
-            $upd->close();
-        } else {
-            $updated = false;
-        }
-
-        if (!$updated) {
-            $ins = $this->db->prepare("
-                INSERT INTO clicks_daily_summary
-                (campaign_id, traffic_source_id, offer_id, landing_page_id, summary_date, conversions, revenue)
-                VALUES (?, ?, ?, ?, ?, 1, ?)
+        if ($isOptIn) {
+            $upd = $this->db->prepare("
+                UPDATE clicks_daily_summary
+                SET optins = optins + 1,
+                    updated_at = NOW()
+                WHERE campaign_id = ?
+                  AND (traffic_source_id <=> ?)
+                  AND (offer_id <=> ?)
+                  AND (landing_page_id <=> ?)
+                  AND summary_date = ?
+                LIMIT 1
             ");
-            if (!$ins) {
-                error_log("DailySummaryUpdater::upsertConversion prepare failed: " . $this->db->error);
-                return;
+            if ($upd) {
+                $upd->bind_param('iiiis', $campaignId, $trafficSourceId, $offerId, $landingPageId, $summaryDate);
+                $upd->execute();
+                $updated = $upd->affected_rows > 0;
+                $upd->close();
+            } else {
+                $updated = false;
             }
-            $ins->bind_param('iiiisd', $campaignId, $trafficSourceId, $offerId, $landingPageId, $summaryDate, $revenue);
-            if (!$ins->execute()) {
-                error_log("DailySummaryUpdater::upsertConversion execute failed: " . $ins->error);
+            if (!$updated) {
+                $ins = $this->db->prepare("
+                    INSERT INTO clicks_daily_summary
+                    (campaign_id, traffic_source_id, offer_id, landing_page_id, summary_date, conversions, optins, revenue)
+                    VALUES (?, ?, ?, ?, ?, 0, 1, 0)
+                ");
+                if ($ins) {
+                    $ins->bind_param('iiiis', $campaignId, $trafficSourceId, $offerId, $landingPageId, $summaryDate);
+                    if (!$ins->execute()) {
+                        error_log('DailySummaryUpdater::upsertConversion optin insert failed: ' . $ins->error);
+                    }
+                    $ins->close();
+                }
             }
-            $ins->close();
+        } else {
+            $upd = $this->db->prepare("
+                UPDATE clicks_daily_summary
+                SET conversions = conversions + 1,
+                    revenue = revenue + ?,
+                    profit = (revenue + ?) - cost,
+                    roi = CASE WHEN cost > 0 THEN (((revenue + ?) - cost) / cost) * 100 ELSE NULL END,
+                    updated_at = NOW()
+                WHERE campaign_id = ?
+                  AND (traffic_source_id <=> ?)
+                  AND (offer_id <=> ?)
+                  AND (landing_page_id <=> ?)
+                  AND summary_date = ?
+                LIMIT 1
+            ");
+            if ($upd) {
+                $upd->bind_param(
+                    'dddiiiis',
+                    $revenue,
+                    $revenue,
+                    $revenue,
+                    $campaignId,
+                    $trafficSourceId,
+                    $offerId,
+                    $landingPageId,
+                    $summaryDate
+                );
+                $upd->execute();
+                $updated = $upd->affected_rows > 0;
+                $upd->close();
+            } else {
+                $updated = false;
+            }
+
+            if (!$updated) {
+                $ins = $this->db->prepare("
+                    INSERT INTO clicks_daily_summary
+                    (campaign_id, traffic_source_id, offer_id, landing_page_id, summary_date, conversions, revenue)
+                    VALUES (?, ?, ?, ?, ?, 1, ?)
+                ");
+                if (!$ins) {
+                    error_log('DailySummaryUpdater::upsertConversion prepare failed: ' . $this->db->error);
+                    return;
+                }
+                $ins->bind_param('iiiisd', $campaignId, $trafficSourceId, $offerId, $landingPageId, $summaryDate, $revenue);
+                if (!$ins->execute()) {
+                    error_log('DailySummaryUpdater::upsertConversion execute failed: ' . $ins->error);
+                }
+                $ins->close();
+            }
         }
 
-        // On-write: update token aggregates for this conversion (one query when click has tokens)
         if ($this->tokenTableExists() && is_array($extraData)) {
             $this->upsertTokenAggregatesForClick(
                 $campaignId,
@@ -721,11 +827,12 @@ class DailySummaryUpdater
                 $extraData,
                 0,
                 null,
-                1,
+                $conversionsDelta,
                 $revenue,
                 $ua,
                 $ip,
-                $hasPersistedFlag
+                $hasPersistedFlag,
+                $optinsDelta
             );
         }
     }
@@ -734,12 +841,19 @@ class DailySummaryUpdater
      * After a conversion delete: subtract from clicks_daily_summary so Offer/Landing Page Performance stay in sync.
      * Call this BEFORE deleting the conversion record so we have click_id and revenue.
      */
-    public function removeConversion(string $clickId, ?float $payout, ?float $value): void
+    public function removeConversion(string $clickId, ?float $payout, ?float $value, ?string $eventKey = null): void
     {
         if (!$this->tableExists()) {
             return;
         }
-        $revenue = $payout !== null ? (float) $payout : ($value !== null ? (float) $value : 0.0);
+        $isOptIn = ConversionOptInClassifier::isOptIn($eventKey);
+        $revenue = $isOptIn ? 0.0 : ($payout !== null ? (float) $payout : ($value !== null ? (float) $value : 0.0));
+        $conversionsDelta = $isOptIn ? 0 : -1;
+        $optinsDelta = $isOptIn ? -1 : 0;
+        $hasOptinsCol = $this->summaryTableHasOptinsColumn();
+        if ($isOptIn && !$hasOptinsCol) {
+            return;
+        }
 
         $row = $this->loadClickSummaryRow($clickId);
         if (!$row) {
@@ -752,22 +866,36 @@ class DailySummaryUpdater
         $landingPageId = $row['landing_page_id'] !== null ? (int) $row['landing_page_id'] : null;
         $summaryDate = $row['summary_date'];
 
-        $upd = $this->db->prepare("
-            UPDATE clicks_daily_summary SET
-                conversions = GREATEST(0, CAST(conversions AS SIGNED) - 1),
-                revenue = GREATEST(0, revenue - ?),
-                profit = GREATEST(0, revenue - ?) - cost,
-                roi = CASE WHEN cost > 0 THEN ((GREATEST(0, revenue - ?) - cost) / cost) * 100 ELSE NULL END,
-                updated_at = NOW()
-            WHERE campaign_id = ? AND (traffic_source_id <=> ?) AND (offer_id <=> ?) AND (landing_page_id <=> ?) AND summary_date = ?
-        ");
-        if (!$upd) {
-            error_log("DailySummaryUpdater::removeConversion prepare failed: " . $this->db->error);
-            return;
+        if ($isOptIn) {
+            $upd = $this->db->prepare("
+                UPDATE clicks_daily_summary SET
+                    optins = GREATEST(0, CAST(optins AS SIGNED) - 1),
+                    updated_at = NOW()
+                WHERE campaign_id = ? AND (traffic_source_id <=> ?) AND (offer_id <=> ?) AND (landing_page_id <=> ?) AND summary_date = ?
+            ");
+            if (!$upd) {
+                error_log('DailySummaryUpdater::removeConversion optin prepare failed: ' . $this->db->error);
+                return;
+            }
+            $upd->bind_param('iiiis', $campaignId, $trafficSourceId, $offerId, $landingPageId, $summaryDate);
+        } else {
+            $upd = $this->db->prepare("
+                UPDATE clicks_daily_summary SET
+                    conversions = GREATEST(0, CAST(conversions AS SIGNED) - 1),
+                    revenue = GREATEST(0, revenue - ?),
+                    profit = GREATEST(0, revenue - ?) - cost,
+                    roi = CASE WHEN cost > 0 THEN ((GREATEST(0, revenue - ?) - cost) / cost) * 100 ELSE NULL END,
+                    updated_at = NOW()
+                WHERE campaign_id = ? AND (traffic_source_id <=> ?) AND (offer_id <=> ?) AND (landing_page_id <=> ?) AND summary_date = ?
+            ");
+            if (!$upd) {
+                error_log('DailySummaryUpdater::removeConversion prepare failed: ' . $this->db->error);
+                return;
+            }
+            $upd->bind_param('dddiiiis', $revenue, $revenue, $revenue, $campaignId, $trafficSourceId, $offerId, $landingPageId, $summaryDate);
         }
-        $upd->bind_param('dddiiiis', $revenue, $revenue, $revenue, $campaignId, $trafficSourceId, $offerId, $landingPageId, $summaryDate);
         if (!$upd->execute()) {
-            error_log("DailySummaryUpdater::removeConversion execute failed: " . $upd->error);
+            error_log('DailySummaryUpdater::removeConversion execute failed: ' . $upd->error);
         }
         $upd->close();
 
@@ -780,14 +908,41 @@ class DailySummaryUpdater
                 $extraData,
                 0,
                 null,
-                -1,
+                $conversionsDelta,
                 -$revenue,
                 $row['ua'] ?? null,
                 $row['ip'] ?? null,
                 !empty($row['_stats_flag_present'])
-                    && (int)($row['exclude_from_stats'] ?? 1) === 0
+                    && (int)($row['exclude_from_stats'] ?? 1) === 0,
+                $optinsDelta
             );
         }
+    }
+
+    private function summaryTableHasOptinsColumn(): bool
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+        if (!$this->tableExists()) {
+            return $cached = false;
+        }
+        $check = $this->db->query("SHOW COLUMNS FROM clicks_daily_summary LIKE 'optins'");
+        return $cached = ($check && $check->num_rows > 0);
+    }
+
+    private function tokenTableHasOptinsColumn(): bool
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+        if (!$this->tokenTableExists()) {
+            return $cached = false;
+        }
+        $check = $this->db->query("SHOW COLUMNS FROM clicks_stats_by_token_daily LIKE 'optins'");
+        return $cached = ($check && $check->num_rows > 0);
     }
 
     /**

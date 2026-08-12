@@ -1,4 +1,21 @@
-# Simple Kuma Tracker Version 1.1.5.12
+# Simple Kuma Tracker Version 1.1.5.13
+
+## Changes in 1.1.5.13
+
+### Email opt-ins (BeMob-style)
+- Fire opt-ins with `et=optin` (also `lead`, `email`, `subscribe`, `opt-in`) plus a unique `txid`
+- Opt-ins count separately in Campaign Stats (**Opt-ins** KPI/column) and do **not** inflate Conversions, CR, or revenue
+- Migration **088** adds `optins` to daily/token summary tables (summary-first / Hermes fast path preserved)
+- Conversion Log: teal **Opt-in** badge, row highlight, and Event type filter (All / Opt-ins only / Conversions only); CSV includes Event
+
+### Multiple conversions per click (Propush-style)
+- Campaign setting **Allow multiple conversions** for multi-earn postbacks on the same `click_id`
+- Migration **087**; still dedupes identical `txid` + event (and `event_id`) so retries stay safe
+- Available in campaign edit, create wizard, API, and clone
+
+### Docker (optional)
+- `Dockerfile` + `docker-compose.yml` for app + MySQL (zip/Apache install remains primary)
+- Compose DB host is `mysql`; use HTTPS for secure session cookies in production
 
 ## Changes in 1.1.5.12
 

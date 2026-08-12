@@ -105,3 +105,24 @@
     background: #f8d7da;
     color: #721c24;
 }
+
+.badge-optin {
+    background: #d6f0f5;
+    color: #0b5f6b;
+    text-transform: none;
+    letter-spacing: 0.02em;
+}
+
+.conversion-log-table tbody tr.conversion-row-optin {
+    background: #eef9fb;
+    box-shadow: inset 3px 0 0 #2a9aad;
+}
+
+.conversion-log-table tbody tr.conversion-row-optin:hover {
+    background: #e2f4f7;
+}
+
+.conversion-log-table .conversion-event-key {
+    color: #0b5f6b;
+    font-weight: 600;
+}

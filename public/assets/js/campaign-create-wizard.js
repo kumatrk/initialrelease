@@ -205,6 +205,8 @@
             const sel = row.querySelector('select[name="offer_id[]"]');
             if (cb && cb.checked && sel && sel.value) offers++;
         });
+        const multiConvCb = form.querySelector('[name="allow_multiple_conversions"]');
+        const multiConv = multiConvCb && multiConvCb.checked ? 'Yes' : 'No';
         dl.innerHTML =
             '<dt>Campaign name</dt><dd>' + escapeHtml(name) + '</dd>' +
             '<dt>Status</dt><dd>' + escapeHtml(status) + '</dd>' +
@@ -213,7 +215,8 @@
             '<dt>Facebook ad account</dt><dd>' + escapeHtml(fbAcct) + '</dd>' +
             '<dt>Meta campaign</dt><dd>' + escapeHtml(fbCamp) + '</dd>' +
             '<dt>Flow type</dt><dd>' + escapeHtml(flow) + '</dd>' +
-            '<dt>Enabled offers</dt><dd>' + offers + '</dd>';
+            '<dt>Enabled offers</dt><dd>' + offers + '</dd>' +
+            '<dt>Multiple conversions / click</dt><dd>' + multiConv + '</dd>';
     }
 
     function goNext() {

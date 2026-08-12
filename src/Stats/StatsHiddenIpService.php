@@ -292,7 +292,7 @@ final class StatsHiddenIpService
     private function omitConversionsForClick(DailySummaryUpdater $updater, string $clickId): int
     {
         $count = 0;
-        $stmt = $this->db->prepare('SELECT payout, value FROM conversions WHERE click_id = ?');
+        $stmt = $this->db->prepare('SELECT payout, value, event_key FROM conversions WHERE click_id = ?');
         if (!$stmt) {
             return 0;
         }
@@ -302,7 +302,8 @@ final class StatsHiddenIpService
         while ($row = $result->fetch_assoc()) {
             $payout = $row['payout'] !== null ? (float) $row['payout'] : null;
             $value = $row['value'] !== null ? (float) $row['value'] : null;
-            $updater->removeConversion($clickId, $payout, $value);
+            $eventKey = isset($row['event_key']) ? (string) $row['event_key'] : null;
+            $updater->removeConversion($clickId, $payout, $value, $eventKey);
             $count++;
         }
         $stmt->close();
@@ -313,7 +314,7 @@ final class StatsHiddenIpService
     private function restoreConversionsForClick(DailySummaryUpdater $updater, string $clickId): int
     {
         $count = 0;
-        $stmt = $this->db->prepare('SELECT payout, value FROM conversions WHERE click_id = ?');
+        $stmt = $this->db->prepare('SELECT payout, value, event_key FROM conversions WHERE click_id = ?');
         if (!$stmt) {
             return 0;
         }
@@ -323,7 +324,8 @@ final class StatsHiddenIpService
         while ($row = $result->fetch_assoc()) {
             $payout = $row['payout'] !== null ? (float) $row['payout'] : null;
             $value = $row['value'] !== null ? (float) $row['value'] : null;
-            $updater->upsertConversion($clickId, $payout, $value);
+            $eventKey = isset($row['event_key']) ? (string) $row['event_key'] : null;
+            $updater->upsertConversion($clickId, $payout, $value, $eventKey);
             $count++;
         }
         $stmt->close();

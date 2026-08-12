@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace SimpleKuma\Stats;
 
+use SimpleKuma\Tracking\ConversionOptInClassifier;
+
 /**
  * Shared SQL fragments for API stats (aligned with campaign-stats.php semantics).
  */
@@ -284,13 +286,41 @@ class CampaignStatsExpressions
      */
     public static function conversionsAggJoin(string $clAlias = 'cl'): string
     {
+        $optInList = ConversionOptInClassifier::sqlInList();
+
         return "LEFT JOIN (
             SELECT click_id,
-                   COUNT(*) AS conversion_count,
-                   SUM(COALESCE(payout, value)) AS revenue_sum
+                   SUM(CASE WHEN event_key IS NULL OR event_key NOT IN ({$optInList}) THEN 1 ELSE 0 END) AS conversion_count,
+                   SUM(CASE WHEN event_key IN ({$optInList}) THEN 1 ELSE 0 END) AS optin_count,
+                   SUM(CASE WHEN event_key IS NULL OR event_key NOT IN ({$optInList}) THEN COALESCE(payout, value) ELSE 0 END) AS revenue_sum
             FROM conversions
             GROUP BY click_id
         ) conv ON conv.click_id = {$clAlias}.click_id";
+    }
+
+    public static function optinsCountExpr(
+        string $clAlias = 'cl',
+        string $tsAlias = 'ts',
+        bool $usePersistedFlag = false
+    ): string {
+        if ($usePersistedFlag) {
+            return "COALESCE(SUM(CASE
+                WHEN {$clAlias}.exclude_from_stats = 0 THEN COALESCE(conv.optin_count, 0)
+                ELSE 0
+            END), 0)";
+        }
+
+        $fb = self::facebookTrafficCondition($tsAlias);
+        $validIds = self::validFacebookIdsCondition($clAlias);
+
+        return "COALESCE(SUM(CASE
+            WHEN {$fb} THEN
+                CASE
+                    WHEN {$validIds} THEN COALESCE(conv.optin_count, 0)
+                    ELSE 0
+                END
+            ELSE COALESCE(conv.optin_count, 0)
+        END), 0)";
     }
 
     public static function revenueSumExpr(string $convAlias = 'conv'): string
@@ -472,6 +502,7 @@ class CampaignStatsExpressions
         $clicks = (int)($raw['clicks'] ?? 0);
         $lpClicks = (int)($raw['lp_clicks'] ?? 0);
         $conversions = (int)($raw['conversions'] ?? 0);
+        $optins = (int)($raw['optins'] ?? 0);
         $cost = (float)($raw['cost'] ?? 0);
         $revenue = (float)($raw['revenue'] ?? 0);
         $profit = $revenue - $cost;
@@ -484,6 +515,7 @@ class CampaignStatsExpressions
             'clicks' => $clicks,
             'lp_clicks' => $lpClicks,
             'conversions' => $conversions,
+            'optins' => $optins,
             'cost' => round($cost, 4),
             'revenue' => round($revenue, 4),
             'profit' => round($profit, 4),
@@ -508,6 +540,7 @@ class CampaignStatsExpressions
         $clicks = 0;
         $lpClicks = 0;
         $conversions = 0;
+        $optins = 0;
         $cost = 0.0;
         $revenue = 0.0;
 
@@ -515,6 +548,7 @@ class CampaignStatsExpressions
             $clicks += (int)($row['clicks'] ?? 0);
             $lpClicks += (int)($row['lp_clicks'] ?? 0);
             $conversions += (int)($row['conversions'] ?? 0);
+            $optins += (int)($row['optins'] ?? 0);
             $cost += (float)($row['cost'] ?? 0);
             $revenue += (float)($row['revenue'] ?? 0);
         }
@@ -523,6 +557,7 @@ class CampaignStatsExpressions
             'clicks' => $clicks,
             'lp_clicks' => $lpClicks,
             'conversions' => $conversions,
+            'optins' => $optins,
             'cost' => $cost,
             'revenue' => $revenue,
         ]);
@@ -541,6 +576,7 @@ class CampaignStatsExpressions
             'lp_clicks' => 'lp_clicks',
             'ctr' => 'ctr',
             'conversions' => 'conversions',
+            'optins' => 'optins',
             'cost' => 'cost',
             'revenue' => 'revenue',
             'profit' => 'profit',

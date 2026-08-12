@@ -356,6 +356,10 @@ if ($page === 'conversions' && isset($_GET['export']) && $_GET['export'] === 'cs
     if ($campaignFilter === 0) {
         $campaignFilter = null;
     }
+    $eventTypeFilter = isset($_GET['event_type']) ? (string) $_GET['event_type'] : 'all';
+    if (!in_array($eventTypeFilter, ['all', 'optins', 'conversions'], true)) {
+        $eventTypeFilter = 'all';
+    }
 
     $service = new \SimpleKuma\Stats\ConversionsQueryService($db);
     $result = $service->listConversionsForLog(
@@ -366,7 +370,8 @@ if ($page === 'conversions' && isset($_GET['export']) && $_GET['export'] === 'cs
         1,
         500,
         100000,
-        0
+        0,
+        $eventTypeFilter
     );
 
     header('Content-Type: text/csv');
@@ -386,6 +391,7 @@ if ($page === 'conversions' && isset($_GET['export']) && $_GET['export'] === 'cs
         'Revenue',
         'Currency',
         'TXID',
+        'Event',
         'Event ID',
         'Traffic Source',
         'Country',
@@ -409,6 +415,7 @@ if ($page === 'conversions' && isset($_GET['export']) && $_GET['export'] === 'cs
             $row['revenue'],
             $row['currency'] ?? '',
             $row['txid'] ?? '',
+            $row['event_key'] ?? '',
             $row['event_id'] ?? '',
             $row['traffic_source_name'] ?? '',
             $row['country'] ?? '',

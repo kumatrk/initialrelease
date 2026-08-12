@@ -346,6 +346,7 @@ JSON,
   "status": "active",
   "default_cpc": 1.25,
   "min_postback_payout": 10.00,
+  "allow_multiple_conversions": false,
   "referrer_mode": "blank",
   "rotation": {
     "landing_pages": [

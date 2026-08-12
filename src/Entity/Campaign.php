@@ -215,6 +215,7 @@ class Campaign
         $newId = $stmt->insert_id;
         if ($newId > 0) {
             $this->saveMinPostbackPayout((int)$newId, $data);
+            $this->persistAllowMultipleConversions((int)$newId, $data);
             $this->persistEdgeFlags((int)$newId, $data);
             \SimpleKuma\Edge\EdgeCampaignSync::hookAfterSave($this->db, (int)$newId);
         }
@@ -722,6 +723,7 @@ class Campaign
         
         if ($result) {
             $this->saveMinPostbackPayout($id, $data);
+            $this->persistAllowMultipleConversions($id, $data);
             $this->persistEdgeFlags($id, $data);
             \SimpleKuma\Edge\EdgeCampaignSync::hookAfterSave($this->db, $id);
         }
@@ -775,6 +777,40 @@ class Campaign
         $stmt = $this->db->prepare("DELETE FROM campaigns WHERE id = ?");
         $stmt->bind_param('i', $id);
         return $stmt->execute();
+    }
+
+    /**
+     * Persist allow_multiple_conversions after main INSERT/UPDATE (migration 087).
+     *
+     * @param array<string, mixed> $data
+     */
+    private function persistAllowMultipleConversions(int $campaignId, array $data): void
+    {
+        if (!$this->campaignsTableHasAllowMultipleConversions()) {
+            return;
+        }
+        if (!array_key_exists('allow_multiple_conversions', $data)) {
+            return;
+        }
+        $flag = !empty($data['allow_multiple_conversions']) ? 1 : 0;
+        $stmt = $this->db->prepare('UPDATE campaigns SET allow_multiple_conversions = ? WHERE id = ?');
+        if (!$stmt) {
+            return;
+        }
+        $stmt->bind_param('ii', $flag, $campaignId);
+        $stmt->execute();
+        $stmt->close();
+    }
+
+    private function campaignsTableHasAllowMultipleConversions(): bool
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+        $result = $this->db->query("SHOW COLUMNS FROM campaigns LIKE 'allow_multiple_conversions'");
+        $cached = $result && $result->num_rows > 0;
+        return $cached;
     }
 
     /**

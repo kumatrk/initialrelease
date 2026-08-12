@@ -982,6 +982,24 @@ body.auth-page .login-header .retro-text {
     background: #2a3139;
 }
 
+[data-theme-base="dark"] .conversion-log-table tbody tr.conversion-row-optin {
+    background: #1a2e33;
+    box-shadow: inset 3px 0 0 #3db8c9;
+}
+
+[data-theme-base="dark"] .conversion-log-table tbody tr.conversion-row-optin:hover {
+    background: #213840;
+}
+
+[data-theme-base="dark"] .badge-optin {
+    background: #1e3d44;
+    color: #7ed4e0;
+}
+
+[data-theme-base="dark"] .conversion-log-table .conversion-event-key {
+    color: #7ed4e0;
+}
+
 [data-theme-base="dark"] .conversion-log-table .conversion-revenue {
     color: var(--color-forest);
 }

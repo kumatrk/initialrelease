@@ -101,6 +101,9 @@ if ($action === 'clone' && $id && $_SERVER['REQUEST_METHOD'] === 'POST') {
             'google_ads_integration_id' => $originalCampaign['google_ads_integration_id'],
             'status' => 'paused', // Clone as paused by default
             'default_cpc' => $originalCampaign['default_cpc'],
+            'min_postback_payout' => $originalCampaign['min_postback_payout'] ?? null,
+            'allow_multiple_conversions' => !empty($originalCampaign['allow_multiple_conversions']),
+            'fallback_offer_id' => $originalCampaign['fallback_offer_id'] ?? null,
             'custom_tokens' => $originalCampaign['custom_tokens_json'] ?? [],
             'redirect_rules' => $originalCampaign['redirect_rules_json'] ?? []
         ];
@@ -444,6 +447,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'default_cpc' => !empty($_POST['default_cpc']) ? (float)$_POST['default_cpc'] : null,
         'min_postback_payout' => (isset($_POST['min_postback_payout']) && $_POST['min_postback_payout'] !== '' && (float)$_POST['min_postback_payout'] >= 0)
             ? (float)$_POST['min_postback_payout'] : null,
+        'allow_multiple_conversions' => !empty($_POST['allow_multiple_conversions']),
         'fallback_offer_id' => !empty($_POST['fallback_offer_id']) ? (int)$_POST['fallback_offer_id'] : null,
     ];
 
@@ -2290,6 +2294,21 @@ if ($editCampaign && isset($editCampaign['id'])) {
                             <p style="font-size: 12px; color: #666; margin-top: 6px; line-height: 1.45;">
                                 Optional. All conversions always appear in Kuma. When set, outbound postbacks only fire when value or payout meets this minimum.
                             </p>
+                        </div>
+
+                        <div style="margin-bottom: 20px; padding: 14px; background: #f9faf7; border: 1px solid #e0e6d8; border-radius: 6px;">
+                            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                                <input type="checkbox" name="allow_multiple_conversions" value="1"
+                                       <?= !empty($editCampaign['allow_multiple_conversions']) ? 'checked' : '' ?>
+                                       style="margin-top: 3px;">
+                                <span>
+                                    <span style="display: block; font-weight: 600; color: #333; margin-bottom: 4px;">Allow multiple conversions on the same click</span>
+                                    <span style="display: block; font-size: 12px; color: #666; line-height: 1.45;">
+                                        For networks like Propush that can send several payouts on one click ID.
+                                        Prefer a unique <code>txid</code> when the network provides one. Same <code>txid</code>/<code>event_id</code> is still treated as a duplicate.
+                                    </span>
+                                </span>
+                            </label>
                         </div>
 
                         <!-- Tracking Domain Selection -->

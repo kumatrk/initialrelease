@@ -293,7 +293,7 @@ class DataManagementCleanup
 
             if ($adjustAggregates) {
                 $select = $this->db->prepare(
-                    "SELECT click_id, payout, value FROM conversions WHERE click_id IN ({$placeholders})"
+                    "SELECT click_id, payout, value, event_key FROM conversions WHERE click_id IN ({$placeholders})"
                 );
                 if ($select) {
                     $select->bind_param($types, ...$chunk);
@@ -302,7 +302,8 @@ class DataManagementCleanup
                     while ($row = $result->fetch_assoc()) {
                         $payout = $row['payout'] !== null ? (float) $row['payout'] : null;
                         $value = $row['value'] !== null ? (float) $row['value'] : null;
-                        $this->summaryUpdater->removeConversion((string) $row['click_id'], $payout, $value);
+                        $eventKey = isset($row['event_key']) ? (string) $row['event_key'] : null;
+                        $this->summaryUpdater->removeConversion((string) $row['click_id'], $payout, $value, $eventKey);
                     }
                     $select->close();
                 }

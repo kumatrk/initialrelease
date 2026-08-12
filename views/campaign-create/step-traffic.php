@@ -40,6 +40,21 @@ use SimpleKuma\Release\TrafficSourceReleaseHelper;
     </p>
 </div>
 
+<div style="margin-bottom: 20px; padding: 14px; background: #f9faf7; border: 1px solid #e0e6d8; border-radius: 6px;">
+    <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+        <input type="checkbox" name="allow_multiple_conversions" value="1"
+               <?= cc_checked(!empty(cc_input('allow_multiple_conversions'))) ?>
+               style="margin-top: 3px;">
+        <span>
+            <span style="display: block; font-weight: 600; margin-bottom: 4px;">Allow multiple conversions on the same click</span>
+            <span style="display: block; font-size: 12px; color: #666; line-height: 1.45;">
+                For networks like Propush that can send several payouts on one click ID.
+                Prefer a unique <code>txid</code> when available. Same <code>txid</code>/<code>event_id</code> remains a duplicate.
+            </span>
+        </span>
+    </label>
+</div>
+
 <div id="facebook_integration_field" style="margin-bottom: 20px; display: none;">
     <label style="display: block; font-weight: 600; margin-bottom: 8px;">Facebook CAPI Integration (Optional)</label>
     <select name="facebook_capi_integration_id" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:4px;">

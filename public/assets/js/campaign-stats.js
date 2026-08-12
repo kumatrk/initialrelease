@@ -23,7 +23,7 @@
     }
     const PREFS_KEY = 'stats_v2_prefs';
     const SAVED_VIEWS_KEY = 'stats_v2_saved_views_v1';
-    const defaultColumns = ['visitors', 'lp_clicks', 'ctr', 'conversions', 'cr', 'cost', 'revenue', 'profit', 'roi'];
+    const defaultColumns = ['visitors', 'lp_clicks', 'ctr', 'conversions', 'optins', 'cr', 'cost', 'revenue', 'profit', 'roi'];
     const ALL_METRIC_COLS = defaultColumns.slice();
 
     function ensureColumnOrder(columns) {
@@ -59,6 +59,7 @@
         lp_clicks: 'lp_clicks',
         ctr: 'ctr',
         conversions: 'conversions',
+        optins: 'optins',
         cr: 'cr',
         cost: 'cost',
         revenue: 'revenue',
@@ -841,6 +842,7 @@
             { key: 'visitors', label: 'Visitors', value: data.visitors, compareKey: 'visitors', fmt: (v) => v.toLocaleString(), icon: 'visitors', tone: 'stats-v2-kpi-icon--visitors' },
             { key: 'clicks', label: 'Clicks', value: data.clicks, compareKey: 'clicks', fmt: (v) => v.toLocaleString(), icon: 'clicks', tone: 'stats-v2-kpi-icon--clicks' },
             { key: 'conversions', label: 'Conversions', value: data.conversions, compareKey: 'conversions', fmt: (v) => v.toLocaleString(), icon: 'conversions', tone: 'stats-v2-kpi-icon--conversions' },
+            { key: 'optins', label: 'Opt-ins', value: data.optins || 0, compareKey: 'optins', fmt: (v) => v.toLocaleString(), icon: 'conversions', tone: 'stats-v2-kpi-icon--conversions' },
             { key: 'cr', label: 'Conversion Rate', value: data.conversion_rate, compareKey: 'conversion_rate', fmt: fmtPct, icon: 'cr', tone: 'stats-v2-kpi-icon--cr' },
             { key: 'cost', label: 'Cost', value: data.cost, compareKey: 'cost', fmt: fmtMoney, icon: 'cost', tone: 'stats-v2-kpi-icon--cost' },
             { key: 'revenue', label: 'Revenue', value: data.revenue, compareKey: 'revenue', fmt: fmtMoney, icon: 'revenue', tone: 'stats-v2-kpi-icon--revenue' },
@@ -914,6 +916,7 @@
             <td class="num" data-col="lp_clicks">${actionClicks.toLocaleString()}</td>
             <td class="num" data-col="ctr">${fmtPct(ctr)}</td>
             <td class="num" data-col="conversions">${Number(t.conversions).toLocaleString()}</td>
+            <td class="num" data-col="optins">${Number(t.optins || 0).toLocaleString()}</td>
             <td class="num" data-col="cr">${fmtPct(t.conversion_rate)}</td>
             <td class="num" data-col="cost">${fmtMoney(t.cost)}</td>
             <td class="num" data-col="revenue">${fmtMoney(t.revenue)}</td>
@@ -938,7 +941,7 @@
             return;
         }
 
-        const header = ['Name', 'Visitors', 'Clicks', 'CTR', 'Conversions', 'CR', 'Cost', 'Revenue', 'Profit', 'ROI'];
+        const header = ['Name', 'Visitors', 'Clicks', 'CTR', 'Conversions', 'Opt-ins', 'CR', 'Cost', 'Revenue', 'Profit', 'ROI'];
         const lines = [header.filter((_, i) => i === 0 || state.visibleColumns.includes(ALL_METRIC_COLS[i - 1])).join(',')];
         rows.forEach((r) => {
             const cells = [r.name];
@@ -946,6 +949,7 @@
             if (state.visibleColumns.includes('lp_clicks')) cells.push(r.action_clicks != null ? r.action_clicks : ((r.lp_clicks || 0) + (r.direct_clicks || 0)));
             if (state.visibleColumns.includes('ctr')) cells.push(r.ctr != null ? r.ctr : rowCtr(r));
             if (state.visibleColumns.includes('conversions')) cells.push(r.conversions);
+            if (state.visibleColumns.includes('optins')) cells.push(r.optins || 0);
             if (state.visibleColumns.includes('cr')) cells.push(r.conversion_rate);
             if (state.visibleColumns.includes('cost')) cells.push(r.cost);
             if (state.visibleColumns.includes('revenue')) cells.push(r.revenue);
@@ -985,6 +989,7 @@
                     lp_clicks: row.lp_clicks,
                     ctr: row.ctr != null ? row.ctr : rowCtr(row),
                     conversions: row.conversions,
+                    optins: row.optins || 0,
                     conversion_rate: row.conversion_rate,
                     cost: row.cost,
                     revenue: row.revenue,
@@ -1338,6 +1343,7 @@
             <td class="num" data-col="lp_clicks">${Number(row.action_clicks != null ? row.action_clicks : ((row.lp_clicks || 0) + (row.direct_clicks || 0))).toLocaleString()}</td>
             <td class="num" data-col="ctr">${fmtPct(rowCtr(row))}</td>
             <td class="num" data-col="conversions">${Number(row.conversions).toLocaleString()}</td>
+            <td class="num" data-col="optins">${Number(row.optins || 0).toLocaleString()}</td>
             <td class="num" data-col="cr">${fmtPct(row.conversion_rate)}</td>
             <td class="num" data-col="cost">${fmtMoney(row.cost)}</td>
             <td class="num" data-col="revenue">${fmtMoney(row.revenue)}</td>

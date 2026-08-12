@@ -1021,17 +1021,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     continue;
                 }
 
-                // Check if conversion already exists (to avoid duplicates)
-                $checkStmt = $db->prepare("SELECT id FROM conversions WHERE click_id = ? LIMIT 1");
-                $checkStmt->bind_param('s', $clickId);
-                $checkStmt->execute();
-                $checkResult = $checkStmt->get_result();
-                if ($checkResult->num_rows > 0) {
-                    $checkStmt->close();
-                    $errorsList[] = "Conversion for click ID '{$clickId}' already exists";
-                    continue;
+                // Check if conversion already exists (to avoid duplicates),
+                // unless the campaign allows multiple conversions on the same click.
+                $allowMultiple = false;
+                $campaignIdForClick = isset($click['campaign_id']) ? (int)$click['campaign_id'] : 0;
+                if ($campaignIdForClick > 0) {
+                    $colCheck = $db->query("SHOW COLUMNS FROM campaigns LIKE 'allow_multiple_conversions'");
+                    if ($colCheck && $colCheck->num_rows > 0) {
+                        $flagStmt = $db->prepare(
+                            'SELECT allow_multiple_conversions FROM campaigns WHERE id = ? LIMIT 1'
+                        );
+                        if ($flagStmt) {
+                            $flagStmt->bind_param('i', $campaignIdForClick);
+                            $flagStmt->execute();
+                            $flagRow = $flagStmt->get_result()->fetch_assoc();
+                            $flagStmt->close();
+                            $allowMultiple = !empty($flagRow['allow_multiple_conversions']);
+                        }
+                    }
                 }
-                $checkStmt->close();
+
+                if (!$allowMultiple) {
+                    $checkStmt = $db->prepare("SELECT id FROM conversions WHERE click_id = ? LIMIT 1");
+                    $checkStmt->bind_param('s', $clickId);
+                    $checkStmt->execute();
+                    $checkResult = $checkStmt->get_result();
+                    if ($checkResult->num_rows > 0) {
+                        $checkStmt->close();
+                        $errorsList[] = "Conversion for click ID '{$clickId}' already exists";
+                        continue;
+                    }
+                    $checkStmt->close();
+                }
 
                 // Insert directly to bypass attribution window, then fire postbacks + update stats
                 $stmt = $db->prepare(

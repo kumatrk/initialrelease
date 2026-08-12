@@ -6,6 +6,7 @@ namespace SimpleKuma\Stats;
 
 use mysqli;
 use SimpleKuma\Database\ClicksTableResolver;
+use SimpleKuma\Tracking\ConversionOptInClassifier;
 use SimpleKuma\Utils\Formatter;
 
 class ConversionsQueryService
@@ -21,10 +22,16 @@ class ConversionsQueryService
     }
 
     /**
+     * @param 'all'|'optins'|'conversions' $eventTypeFilter
      * @return array{where: string, params: list<mixed>, types: string}
      */
-    private function buildLogWhere(?int $campaignId, string $dateFrom, string $dateTo, string $timezone): array
-    {
+    private function buildLogWhere(
+        ?int $campaignId,
+        string $dateFrom,
+        string $dateTo,
+        string $timezone,
+        string $eventTypeFilter = 'all'
+    ): array {
         $utcRange = Formatter::convertDateRangeToUTC($dateFrom, $dateTo, $timezone);
 
         $where = ['conv.ts >= ?', 'conv.ts <= ?'];
@@ -35,6 +42,13 @@ class ConversionsQueryService
             $where[] = 'cl.campaign_id = ?';
             $params[] = $campaignId;
             $types .= 'i';
+        }
+
+        $optInList = ConversionOptInClassifier::sqlInList();
+        if ($eventTypeFilter === 'optins') {
+            $where[] = "LOWER(COALESCE(conv.event_key, '')) IN ({$optInList})";
+        } elseif ($eventTypeFilter === 'conversions') {
+            $where[] = "(conv.event_key IS NULL OR LOWER(conv.event_key) NOT IN ({$optInList}))";
         }
 
         return [
@@ -109,6 +123,7 @@ class ConversionsQueryService
             'click_id' => $row['click_id'],
             'txid' => $row['txid'],
             'event_id' => $row['event_id'],
+            'event_key' => $row['event_key'] ?? null,
             'status' => $row['status'],
             'currency' => $row['currency'],
             'ts' => $row['ts'],
@@ -130,6 +145,7 @@ class ConversionsQueryService
     }
 
     /**
+     * @param 'all'|'optins'|'conversions' $eventTypeFilter
      * @return array{rows: list<array<string, mixed>>, total: int, total_revenue: float}
      */
     public function listConversionsForLog(
@@ -140,9 +156,13 @@ class ConversionsQueryService
         int $page,
         int $perPage,
         ?int $limit = null,
-        ?int $offset = null
+        ?int $offset = null,
+        string $eventTypeFilter = 'all'
     ): array {
-        $filter = $this->buildLogWhere($campaignId, $dateFrom, $dateTo, $timezone);
+        if (!in_array($eventTypeFilter, ['all', 'optins', 'conversions'], true)) {
+            $eventTypeFilter = 'all';
+        }
+        $filter = $this->buildLogWhere($campaignId, $dateFrom, $dateTo, $timezone, $eventTypeFilter);
         $clause = $this->buildLogFromClause();
 
         $perPage = min(max(1, $perPage), 500);
@@ -165,7 +185,7 @@ class ConversionsQueryService
         $totalRevenue = (float) ($countRow['total_revenue'] ?? 0);
 
         $selectSql = "
-            SELECT conv.id, conv.click_id, conv.txid, conv.event_id, conv.value, conv.currency,
+            SELECT conv.id, conv.click_id, conv.txid, conv.event_id, conv.event_key, conv.value, conv.currency,
                    conv.status, conv.ts, conv.payout,
                    JSON_UNQUOTE(JSON_EXTRACT(conv.source_json, '$.source')) AS source,
                    cl.campaign_id, cl.offer_id, cl.country, cl.region, cl.city, cl.ip,

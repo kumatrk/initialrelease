@@ -263,6 +263,7 @@ class CampaignStatsV2Service
         $lpClicksCount = (int)($totals['lp_clicks'] ?? 0);
         $directClicksCount = (int)($totals['direct_clicks'] ?? 0);
         $conversionsCount = (int)($totals['conversions'] ?? 0);
+        $optinsCount = (int)($totals['optins'] ?? 0);
         $revenue = (float)($totals['revenue'] ?? 0);
         $profit = $revenue - $totalCost;
         $roi = $totalCost > 0 ? (($revenue - $totalCost) / $totalCost) * 100 : 0.0;
@@ -281,6 +282,7 @@ class CampaignStatsV2Service
             'lp_clicks' => $lpClicksCount,
             'direct_clicks' => $directClicksCount,
             'conversions' => $conversionsCount,
+            'optins' => $optinsCount,
             'conversion_rate' => round($cr, 2),
             'ctr' => round($ctr, 2),
             'cost' => round($totalCost, 4),
@@ -317,6 +319,7 @@ class CampaignStatsV2Service
             'lp_clicks' => 0,
             'direct_clicks' => 0,
             'conversions' => 0,
+            'optins' => 0,
             'manual_cost' => 0.0,
             'revenue' => 0.0,
         ];
@@ -347,6 +350,7 @@ class CampaignStatsV2Service
             $totals['lp_clicks'] += (int)($part['lp_clicks'] ?? 0);
             $totals['direct_clicks'] += (int)($part['direct_clicks'] ?? 0);
             $totals['conversions'] += (int)($part['conversions'] ?? 0);
+            $totals['optins'] += (int)($part['optins'] ?? 0);
             $totals['manual_cost'] += (float)($part['manual_cost'] ?? 0);
             $totals['revenue'] += (float)($part['revenue'] ?? 0);
         }
@@ -375,6 +379,7 @@ class CampaignStatsV2Service
         $visitors = CampaignStatsExpressions::visitorCountExpr('cl', 'ts', $usePersistedFlag);
         $lpClicks = CampaignStatsExpressions::lpClicksCountExpr('cl', 'ts', $usePersistedFlag);
         $conversions = CampaignStatsExpressions::conversionsCountExpr('cl', 'ts', $usePersistedFlag);
+        $optins = CampaignStatsExpressions::optinsCountExpr('cl', 'ts', $usePersistedFlag);
         $lpValid = CampaignStatsExpressions::validClickCase('cl', 'ts', $usePersistedFlag);
         [$filterSql, $filterTypes, $filterParams] = $filters->clickFilterSql($this->db, 'cl', $filterKeys);
 
@@ -384,6 +389,7 @@ class CampaignStatsV2Service
                 {$lpClicks} AS lp_clicks,
                 COUNT(DISTINCT CASE WHEN cl.lp_click = 1 AND cl.landing_page_id IS NULL THEN {$lpValid} ELSE NULL END) AS direct_clicks,
                 {$conversions} AS conversions,
+                {$optins} AS optins,
                 COALESCE(SUM(cl.cost), 0) AS manual_cost,
                 COALESCE(SUM(conv.revenue_sum), 0) AS revenue
             FROM {$clicksTable} cl
@@ -406,6 +412,7 @@ class CampaignStatsV2Service
             'lp_clicks' => (int)($row['lp_clicks'] ?? 0),
             'direct_clicks' => (int)($row['direct_clicks'] ?? 0),
             'conversions' => (int)($row['conversions'] ?? 0),
+            'optins' => (int)($row['optins'] ?? 0),
             'manual_cost' => (float)($row['manual_cost'] ?? 0),
             'revenue' => (float)($row['revenue'] ?? 0),
         ];
@@ -1040,6 +1047,7 @@ class CampaignStatsV2Service
                 'lp_clicks' => $summary['lp_clicks'] ?? 0,
                 'direct_clicks' => $summary['direct_clicks'] ?? 0,
                 'conversions' => $summary['conversions'],
+                'optins' => $summary['optins'] ?? 0,
                 'conversion_rate' => $summary['conversion_rate'],
                 'ctr' => $summary['ctr'],
                 'cost' => $summary['cost'],

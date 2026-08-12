@@ -133,6 +133,21 @@ chmod 755 config storage storage/logs storage/cache
 */15 * * * * php /path/to/scripts/google_ads_conversion_uploader.php >> /path/to/storage/logs/google_ads_conversion_uploader.log 2>&1
 ```
 
+### Docker (Compose MVP)
+
+Alternate install path — same app as the zip; no special Kuma build.
+
+```bash
+docker compose up -d --build
+```
+
+1. Open `http://localhost:8080/install.php` (or your mapped host/port).
+2. In the wizard, use database host **`mysql`**, database **`simplekuma`**, user **`kuma`**, password **`kuma`** (defaults from `docker-compose.yml`).
+3. **BASE_URL must be `https://…`** (Simple KUMA requires SSL for sessions). Put a reverse proxy with TLS in front for real use. For a local HTTP-only lab, after install set `SESSION_COOKIE_SECURE` to `false` in `config/config.php` (via the `kuma_config` volume) so login works over plain HTTP.
+4. Cost / summary jobs are not run by Compose yet — schedule the same PHP crons from above against the app container when you need them (`docker compose exec app php scripts/…`).
+
+Persist `config/` and `storage/` via the named volumes in `docker-compose.yml`. Zip install on a normal VPS remains the primary supported path.
+
 ### Upgrading
 
 Preferred: open **Kuma admin → Settings → Updates**, click **Check for updates**, then
@@ -172,6 +187,9 @@ simplekuma/
 ├── geoip/            # GeoIP DBs in the Release zip (omitted from git — size limits)
 ├── storage/          # logs, cache, GeoLite DB in zip
 ├── vendor/           # Composer dependencies (bundled in zip)
+├── docker/           # Compose entrypoint helper
+├── Dockerfile        # Optional container image (PHP 8.2 + Apache)
+├── docker-compose.yml
 ├── version.php
 ├── release-notes.md
 └── LICENSE

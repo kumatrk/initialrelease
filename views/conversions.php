@@ -5,6 +5,7 @@ require_once __DIR__ . '/../src/Utils/Formatter.php';
 require_once __DIR__ . '/../src/Stats/ConversionsQueryService.php';
 
 use SimpleKuma\Stats\ConversionsQueryService;
+use SimpleKuma\Tracking\ConversionOptInClassifier;
 use SimpleKuma\Utils\Formatter;
 
 function renderClickLookupLink(string $clickId): string
@@ -35,6 +36,21 @@ function renderConversionStatusBadge(string $status): string
     return '<span class="' . htmlspecialchars($class) . '">' . htmlspecialchars($status) . '</span>';
 }
 
+function renderConversionEventCell(?string $eventKey): string
+{
+    if (ConversionOptInClassifier::isOptIn($eventKey)) {
+        $key = htmlspecialchars((string) $eventKey);
+        return '<span class="badge badge-optin" title="Counted as Opt-in (not a purchase conversion)">Opt-in</span>'
+            . ' <span class="conversion-mono conversion-event-key">' . $key . '</span>';
+    }
+
+    if ($eventKey === null || $eventKey === '') {
+        return '<span class="conversion-mono">-</span>';
+    }
+
+    return '<span class="conversion-mono">' . htmlspecialchars($eventKey) . '</span>';
+}
+
 $db = $GLOBALS['db'] ?? new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
 $userTimezone = $GLOBALS['userTimezone'] ?? 'UTC';
 $userCurrency = $GLOBALS['userCurrency'] ?? 'USD';
@@ -46,6 +62,11 @@ $perPage = in_array($perPage, [50, 100, 200, 500], true) ? $perPage : 50;
 $campaignFilter = isset($_GET['campaign']) && $_GET['campaign'] !== '' ? (int) $_GET['campaign'] : null;
 if ($campaignFilter === 0) {
     $campaignFilter = null;
+}
+
+$eventTypeFilter = isset($_GET['event_type']) ? (string) $_GET['event_type'] : 'all';
+if (!in_array($eventTypeFilter, ['all', 'optins', 'conversions'], true)) {
+    $eventTypeFilter = 'all';
 }
 
 $todayInUserTz = Formatter::getTodayInTimezone($userTimezone);
@@ -64,7 +85,10 @@ $result = $service->listConversionsForLog(
     $dateTo,
     $userTimezone,
     $pageNum,
-    $perPage
+    $perPage,
+    null,
+    null,
+    $eventTypeFilter
 );
 
 $conversions = $result['rows'];
@@ -191,7 +215,7 @@ $exportUrl = '?' . http_build_query($exportParams);
 
 <div class="page-header">
     <h1 class="page-title">Conversion Log</h1>
-    <p class="page-description">Spreadsheet-style view of all conversions with full attribution details.</p>
+    <p class="page-description">Spreadsheet-style view of all conversions with full attribution details. Opt-ins show a teal badge and can be filtered separately.</p>
 </div>
 
 <div class="card conversion-log-filters" style="margin-bottom: 24px;">
@@ -231,6 +255,15 @@ $exportUrl = '?' . http_build_query($exportParams);
                             <?= htmlspecialchars($camp['name']) ?>
                         </option>
                     <?php endforeach; ?>
+                </select>
+            </div>
+
+            <div>
+                <label style="display: block; font-weight: 600; margin-bottom: 8px; font-size: 14px;">Event type</label>
+                <select name="event_type" style="width: 100%; padding: 8px; border: 2px solid #ddd; border-radius: 4px;">
+                    <option value="all" <?= $eventTypeFilter === 'all' ? 'selected' : '' ?>>All events</option>
+                    <option value="optins" <?= $eventTypeFilter === 'optins' ? 'selected' : '' ?>>Opt-ins only</option>
+                    <option value="conversions" <?= $eventTypeFilter === 'conversions' ? 'selected' : '' ?>>Conversions only</option>
                 </select>
             </div>
 
@@ -362,6 +395,7 @@ function setConversionDate(preset) {
                             <th>Revenue</th>
                             <th>Currency</th>
                             <th>TXID</th>
+                            <th>Event</th>
                             <th>Event ID</th>
                             <th>Traffic Source</th>
                             <th>Country</th>
@@ -373,7 +407,12 @@ function setConversionDate(preset) {
                     </thead>
                     <tbody>
                         <?php foreach ($conversions as $index => $conv): ?>
-                        <tr class="<?= $index % 2 === 0 ? 'conversion-row-even' : 'conversion-row-odd' ?>">
+                        <?php
+                            $isOptIn = ConversionOptInClassifier::isOptIn($conv['event_key'] ?? null);
+                            $rowClass = ($index % 2 === 0 ? 'conversion-row-even' : 'conversion-row-odd')
+                                . ($isOptIn ? ' conversion-row-optin' : '');
+                        ?>
+                        <tr class="<?= $rowClass ?>">
                             <td class="conversion-mono"><?= (int) $conv['id'] ?></td>
                             <td class="conversion-mono conversion-nowrap"><?= htmlspecialchars(Formatter::formatDateTime($conv['ts'], $userTimezone)) ?></td>
                             <td>
@@ -397,6 +436,7 @@ function setConversionDate(preset) {
                             <td class="conversion-num conversion-revenue"><?= Formatter::formatCurrency($conv['revenue'], $conv['currency'] ?? $userCurrency) ?></td>
                             <td class="conversion-mono"><?= htmlspecialchars($conv['currency'] ?? '-') ?></td>
                             <td class="conversion-mono"><?= htmlspecialchars($conv['txid'] ?? '-') ?></td>
+                            <td><?= renderConversionEventCell($conv['event_key'] ?? null) ?></td>
                             <td class="conversion-mono"><?= htmlspecialchars($conv['event_id'] ?? '-') ?></td>
                             <td><?= htmlspecialchars($conv['traffic_source_name'] ?? '-') ?></td>
                             <td><?= htmlspecialchars($conv['country'] ?? '-') ?></td>

@@ -124,6 +124,28 @@ $defaultHost = parse_url(BASE_URL, PHP_URL_HOST) ?: 'Current Domain';
                 </div>
             </section>
 
+            <section class="postback-doc-section postback-doc-section--info">
+                <h3 class="postback-section-heading postback-section-heading--info">Multiple payouts on the same click (Propush-style)</h3>
+                <p class="postback-example-text">
+                    Prefer a unique <code class="postback-inline-code">txid</code> on each earn when the network provides one — that already records multiple conversions.
+                    If the network reuses the same click ID without a new transaction ID, enable
+                    <strong>Allow multiple conversions on the same click</strong> on the campaign.
+                    Identical <code class="postback-inline-code">txid</code> or <code class="postback-inline-code">event_id</code> values are still rejected as duplicates.
+                </p>
+            </section>
+
+            <section class="postback-doc-section postback-doc-section--info">
+                <h3 class="postback-section-heading postback-section-heading--info">Email opt-ins (BeMob-style)</h3>
+                <p class="postback-example-text">
+                    Fire an opt-in with <code class="postback-inline-code">et=optin</code> (also accepted: <code class="postback-inline-code">lead</code>, <code class="postback-inline-code">email</code>, <code class="postback-inline-code">subscribe</code>, <code class="postback-inline-code">opt-in</code>).
+                    Use a unique <code class="postback-inline-code">txid</code> per opt-in. Opt-ins appear as <strong>Opt-ins</strong> in Campaign Stats and do <strong>not</strong> inflate Conversions / CR / revenue.
+                </p>
+                <div class="postback-network-examples">
+                    <div>Pixel: .../pixel.php?click_id=<strong>{click_id}</strong>&amp;et=<strong>optin</strong>&amp;txid=<strong>opt-123</strong></div>
+                    <div>Postback: .../postback.php?click_id=<strong>{click_id}</strong>&amp;et=<strong>optin</strong>&amp;txid=<strong>opt-123</strong></div>
+                </div>
+            </section>
+
             <section class="postback-doc-section postback-doc-section--warn">
                 <h3 class="postback-section-heading postback-section-heading--warn">Example Network Configuration</h3>
                 <p class="postback-example-text">
