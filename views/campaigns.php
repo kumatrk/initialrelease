@@ -581,7 +581,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors['traffic_source_id'] = 'Please select a traffic source.';
             } elseif ($trafficSourceId > 0) {
                 if (!$tsData || !TrafficSourceReleaseHelper::isSelectableForRelease($tsData)) {
-                    $errors['traffic_source_id'] = 'Please select Facebook, Google Ads, YouTube, or a custom traffic source (cost via URL).';
+                    $errors['traffic_source_id'] = 'Please select a traffic source (Bing is not available for campaigns yet).';
                 }
             }
         }

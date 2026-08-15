@@ -396,8 +396,8 @@ $db->close();
                         </option>
                     </select>
                     <div style="font-size: 12px; color: #666; margin-top: 4px; padding: 12px; background: #f9f9f9; border-radius: 4px; border-left: 3px solid #3d5a26;">
-                        <strong>Manual Token:</strong> Cost passed as URL parameter (e.g., ?cost=10.50). You specify the parameter name.<br>
-                        <strong>Integrated API:</strong> Live cost sync for Facebook and Google/YouTube (Settings → Integrations). For Rumble, Outbrain, etc., this means <em>variables only</em> — tokens work but API cost is not synced yet.
+                        <strong>Manual Token:</strong> Cost passed as URL parameter (e.g., ?cost=10.50). Best for custom networks — campaigns work either way.<br>
+                        <strong>Integrated API:</strong> Live cost sync for Facebook and Google/YouTube (Settings → API Cost Updates). For other networks this is variables only until cost API ships — you can still create campaigns and keep cost manual.
                     </div>
                 </div>
 
@@ -475,18 +475,16 @@ $db->close();
                     
                     const nameValue = nameInput.value.toLowerCase().trim();
                     
-                    // Auto-select integrated_api for Facebook or Google/YouTube
-                    if (nameValue.includes('facebook')) {
-                        costMethodSelect.value = 'integrated_api';
-                        toggleCostParamFields(); // Update visibility
-                    } else if (nameValue.includes('google') || nameValue.includes('youtube')) {
-                        costMethodSelect.value = 'integrated_api';
-                        toggleCostParamFields(); // Update visibility
-                    } else if (nameValue === '') {
-                        // Reset to manual_token if name is cleared
-                        costMethodSelect.value = 'manual_token';
-                        toggleCostParamFields(); // Update visibility
-                    }
+                    // Live API or variables-only seeded networks → integrated_api.
+                    // Everything else → manual_token (clears sticky integrated_api after rename).
+                    const useIntegratedApi = nameValue.includes('facebook')
+                        || nameValue.includes('google')
+                        || nameValue.includes('youtube')
+                        || nameValue.includes('rumble')
+                        || nameValue.includes('outbrain')
+                        || nameValue.includes('newsbreak');
+                    costMethodSelect.value = useIntegratedApi ? 'integrated_api' : 'manual_token';
+                    toggleCostParamFields();
                 }
                 
                 // Initialize on page load

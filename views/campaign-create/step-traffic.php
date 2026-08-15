@@ -24,8 +24,9 @@ use SimpleKuma\Release\TrafficSourceReleaseHelper;
         <?php endforeach; ?>
     </select>
     <p style="font-size: 12px; color: #666; margin-top: 6px; line-height: 1.45;">
-        Facebook, Google Ads, YouTube, or a custom source with manual cost in the URL.
-        Google/YouTube conversions export via scheduled CSV import (Settings → Integrations). API cost sync is separate and optional.
+        Facebook, Google Ads, YouTube, or any custom source (including ones you add yourself).
+        Cost can stay manual/URL until a live cost API exists for that network.
+        Google/YouTube conversions export via scheduled CSV import (Settings → Integrations).
     </p>
 </div>
 

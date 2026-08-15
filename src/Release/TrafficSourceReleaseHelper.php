@@ -6,9 +6,8 @@ namespace SimpleKuma\Release;
 
 /**
  * Traffic source rules for campaign create/edit.
- * Selectable: Facebook, Google Ads, YouTube (live API cost), Rumble/Outbrain/NewsBreak (variables only),
- * TikTok, Zeropark, Taboola, RollerAds, RichAds, PropellerAds (manual URL cost). Bing: seeded, not selectable in campaigns yet.
- * Bing is shown in lists as disabled with "(Coming soon)" until supported.
+ * Selectable: any non-Bing source — including user-added customs without live cost API
+ * (manual / URL cost still works). Bing is seeded but shown as "(Coming soon)" until supported.
  * Google/YouTube: clicks and conversions track normally; conversions export via scheduled CSV import.
  */
 class TrafficSourceReleaseHelper
@@ -38,33 +37,12 @@ class TrafficSourceReleaseHelper
 
     /**
      * Returns true if the traffic source can be selected for new/edited campaigns.
+     * Cost API readiness must not block create — customs can run with manual/URL cost.
      */
     public static function isSelectableForRelease(array $ts): bool
     {
-        if (self::isBingTrafficSource($ts)) {
-            return false;
-        }
-
-        $name = strtolower($ts['name'] ?? '');
-        $costMethod = $ts['cost_tracking_method'] ?? 'manual_token';
-
-        if (strpos($name, 'facebook') !== false) {
-            return true;
-        }
-
-        if (self::usesGoogleAdsIntegration($ts)) {
-            return true;
-        }
-
-        if (strpos($name, 'rumble') !== false || strpos($name, 'outbrain') !== false || strpos($name, 'newsbreak') !== false) {
-            return true;
-        }
-
-        if ($costMethod === 'manual_token') {
-            return true;
-        }
-
-        return false;
+        // Bing is the only intentional holdout until campaign support ships.
+        return !self::isBingTrafficSource($ts);
     }
 
     /**

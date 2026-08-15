@@ -189,20 +189,23 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'fetch_fb_ad_accounts') {
     $accessToken = trim((string) ($_POST['access_token'] ?? ''));
     $integrationId = !empty($_POST['integration_id']) ? (int) $_POST['integration_id'] : 0;
     
-    if (empty($accessToken)) {
-        echo json_encode(['success' => false, 'error' => 'Access token required']);
-        exit;
-    }
-    
     if ($integrationId <= 0) {
         echo json_encode(['success' => false, 'error' => 'Integration ID required']);
         exit;
     }
     
-    // Get integration to get proxy config
+    // Get integration for proxy config + stored token (blank POST = keep existing)
     $integration = $facebookMarketing->getById($integrationId, true);
     if (!$integration) {
         echo json_encode(['success' => false, 'error' => 'Integration not found']);
+        exit;
+    }
+
+    if ($accessToken === '') {
+        $accessToken = trim((string) ($integration['access_token'] ?? ''));
+    }
+    if ($accessToken === '') {
+        echo json_encode(['success' => false, 'error' => 'Access token required']);
         exit;
     }
     
@@ -1913,7 +1916,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'proxy_pass' => $proxyPass
                         ];
                     }
-                    fetchAndSyncFacebookAdAccounts($db, $id, $accessToken, $proxyConfig);
+                    // Blank form token = keep existing; resolve before Graph sync
+                    $tokenForSync = $accessToken;
+                    if ($tokenForSync === '') {
+                        $fresh = $facebookMarketing->getById($id, true);
+                        $tokenForSync = is_array($fresh) ? trim((string) ($fresh['access_token'] ?? '')) : '';
+                    }
+                    if ($tokenForSync !== '') {
+                        fetchAndSyncFacebookAdAccounts($db, $id, $tokenForSync, $proxyConfig);
+                    }
                     
                     header('Location: ?page=settings&tab=api-costs&success=fm_integration_updated');
                     exit;
@@ -4478,14 +4489,19 @@ $settingsTabs = array_values(array_filter(
                     const accessTokenInput = document.querySelector('input[name="fm_access_token"]');
                     const accessToken = accessTokenInput ? accessTokenInput.value.trim() : '';
                     
+                    <?php if ($editingFacebookMarketingIntegration): ?>
+                    const integrationId = <?= (int) $editingFacebookMarketingIntegration['id'] ?>;
+                    const hasStoredToken = <?= !empty($editingFacebookMarketingIntegration['access_token_set']) ? 'true' : 'false' ?>;
+                    // Leave blank to keep existing — only require a typed token when none is stored
+                    if (!accessToken && !hasStoredToken) {
+                        alert('Please enter an access token first');
+                        return;
+                    }
+                    <?php else: ?>
                     if (!accessToken) {
                         alert('Please enter an access token first');
                         return;
                     }
-                    
-                    <?php if ($editingFacebookMarketingIntegration): ?>
-                    const integrationId = <?= $editingFacebookMarketingIntegration['id'] ?>;
-                    <?php else: ?>
                     // For new integrations, we need to save first
                     if (!confirm('Please save the integration first. After saving, you can fetch ad accounts.\n\nWould you like to save the integration now?')) {
                         return;
@@ -4521,6 +4537,7 @@ $settingsTabs = array_values(array_filter(
                     fetchBtn.textContent = '🔄 Fetching & Saving...';
                     
                     // Fetch and save ad accounts via AJAX (POST — never put token in URL/logs)
+                    // Empty access_token is OK when editing: server uses the stored token.
                     const formData = new FormData();
                     formData.append('access_token', accessToken);
                     formData.append('integration_id', String(integrationId));

@@ -146,8 +146,9 @@ $extraJs = ASSETS_BASE_URL . '/assets/js/campaign-create-wizard.js?v=' . (file_e
             <div class="campaign-wizard-progress-step" data-step="5" data-step-num="5"><span class="step-label">Review</span></div>
         </nav>
 
-        <form method="post" action="?page=campaign-create" id="campaign-create-form">
+        <form method="post" action="?page=campaign-create" id="campaign-create-form" novalidate>
             <input type="hidden" name="action" value="add">
+            <input type="hidden" name="save_campaign" value="1">
 
             <div class="campaign-wizard-steps">
                 <section class="wizard-step is-active" data-step="1" aria-hidden="false"><?php include __DIR__ . '/campaign-create/step-basics.php'; ?></section>

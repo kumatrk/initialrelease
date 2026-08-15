@@ -1,4 +1,14 @@
-# Simple Kuma Tracker Version 1.1.5.13
+# Simple Kuma Tracker Version 1.1.5.14
+
+## Changes in 1.1.5.14
+
+### Fix: Create campaign with custom traffic sources
+- User-added sources (e.g. Tacolo) are selectable for campaigns even when live cost API is not integrated yet
+- Manual / URL cost still works; Bing remains the only “(Coming soon)” holdout
+- Campaign create wizard: avoid silent Create failures (`novalidate`, hidden `save_campaign`, clearer validation feedback); clear Facebook fields when leaving Facebook
+
+### Fix: Facebook Marketing API resync with hidden token
+- “Leave blank to keep existing token” now applies to Fetch & Save / resync (JS + AJAX + post-update sync use the stored token)
 
 ## Changes in 1.1.5.13
 

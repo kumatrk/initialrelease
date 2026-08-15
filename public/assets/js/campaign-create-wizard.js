@@ -247,6 +247,7 @@
                 if (!validateStep(s)) {
                     e.preventDefault();
                     showStep(s);
+                    alert('Please fix the highlighted fields before creating the campaign.');
                     return;
                 }
             }
@@ -302,6 +303,21 @@
         fb.style.display = isFacebook ? 'block' : 'none';
         if (metaBlock) {
             metaBlock.style.display = isFacebook ? 'block' : 'none';
+        }
+        if (!isFacebook) {
+            const capi = fb.querySelector('[name="facebook_capi_integration_id"]');
+            const adAcct = document.getElementById('facebook_marketing_ad_account_id');
+            const metaCamp = document.getElementById('facebook_marketing_campaign_id');
+            const metaStatus = document.getElementById('fb_meta_campaign_status');
+            if (capi) capi.value = '';
+            if (adAcct) adAcct.value = '';
+            if (metaCamp) {
+                metaCamp.innerHTML = '<option value="">Select ad account first</option>';
+                metaCamp.disabled = true;
+            }
+            if (metaStatus) {
+                metaStatus.textContent = '';
+            }
         }
     };
 
