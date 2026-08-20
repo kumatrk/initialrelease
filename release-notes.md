@@ -1,4 +1,11 @@
-# Simple Kuma Tracker Version 1.1.5.14
+# Simple Kuma Tracker Version 1.1.5.15
+
+## Changes in 1.1.5.15
+
+### Fix: Restore tracking domain Bypass Verification
+- Settings → Domains again shows **Bypass Verification** when automated DNS/SSL checks fail or stay pending
+- Manually approved domains get status **Verified (Manual)** and can be selected on campaigns and postbacks
+- Confirms at your own risk before enabling a domain that did not pass automated verification
 
 ## Changes in 1.1.5.14
 

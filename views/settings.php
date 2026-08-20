@@ -295,6 +295,7 @@ if (isset($_GET['success'])) {
         'domain_updated' => 'Tracking domain updated successfully',
         'domain_deleted' => 'Tracking domain deleted successfully',
         'domain_tested' => 'Domain verification completed',
+        'domain_bypassed' => 'Domain verification bypassed — domain is now available for use',
         'update_settings_saved' => 'Update settings saved successfully',
         'update_check_complete' => 'Update check completed',
         'application_updated' => 'Simple Kuma updated successfully',
@@ -472,6 +473,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'create_domain',
             'update_domain',
             'delete_domain',
+            'bypass_domain_verification',
         ], true) && !$canEditSettings
     ) {
         $errors['general'] = 'You do not have permission to edit settings.';
@@ -2140,6 +2142,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $errors['general'] = 'Failed to delete domain';
         }
+    } elseif ($action === 'bypass_domain_verification') {
+        $id = (int)($_POST['domain_id'] ?? 0);
+        $domain = $trackingDomainEntity->getById($id);
+        if (!$domain) {
+            $errors['general'] = 'Domain not found';
+        } elseif (!TrackingDomain::canBypassVerification($domain['status'] ?? '')) {
+            $errors['general'] = 'This domain is already verified.';
+        } elseif ($trackingDomainEntity->bypassVerification($id)) {
+            $auditLogger->log('update', 'tracking_domain', $id, "Tracking domain verification manually bypassed: {$domain['domain']}");
+            header('Location: ?page=settings&tab=domains&success=domain_bypassed');
+            exit;
+        } else {
+            $errors['general'] = 'Failed to bypass domain verification';
+        }
     }
 }
 
@@ -2382,19 +2398,23 @@ $settingsTabs = array_values(array_filter(
                 <?php else: ?>
                     <!-- Test Result Alert -->
                     <?php if ($testResult !== null && is_array($testResult)): ?>
-                        <!-- Debug: Test result found, displaying -->
-                        <div style="background: <?= $testResult['status'] === 'verified' ? '#d4edda' : ($testResult['status'] === 'failed' ? '#f8d7da' : '#fff3cd') ?>; 
-                                    border: 2px solid <?= $testResult['status'] === 'verified' ? '#28a745' : ($testResult['status'] === 'failed' ? '#dc3545' : '#ffc107') ?>; 
+                        <?php
+                        $testStatusDisplay = TrackingDomain::statusDisplay($testResult['status'] ?? 'pending');
+                        $testIsFailed = ($testResult['status'] ?? '') === 'failed';
+                        $testIsSuccess = in_array($testResult['status'] ?? '', TrackingDomain::usableStatuses(), true);
+                        ?>
+                        <div style="background: <?= $testIsSuccess ? '#d4edda' : ($testIsFailed ? '#f8d7da' : '#fff3cd') ?>; 
+                                    border: 2px solid <?= $testIsSuccess ? '#28a745' : ($testIsFailed ? '#dc3545' : '#ffc107') ?>; 
                                     border-radius: 6px; padding: 16px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
                             <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
                                 <span style="font-size: 24px;">
-                                    <?= $testResult['status'] === 'verified' ? '✅' : ($testResult['status'] === 'failed' ? '❌' : '⚠️') ?>
+                                    <?= $testIsSuccess ? '✅' : ($testIsFailed ? '❌' : '⚠️') ?>
                                 </span>
-                                <h4 style="margin: 0; color: <?= $testResult['status'] === 'verified' ? '#155724' : ($testResult['status'] === 'failed' ? '#721c24' : '#856404') ?>;">
+                                <h4 style="margin: 0; color: <?= $testIsSuccess ? '#155724' : ($testIsFailed ? '#721c24' : '#856404') ?>;">
                                     Domain Test Results
                                 </h4>
                             </div>
-                            <div style="font-size: 13px; color: <?= $testResult['status'] === 'verified' ? '#155724' : ($testResult['status'] === 'failed' ? '#721c24' : '#856404') ?>;">
+                            <div style="font-size: 13px; color: <?= $testIsSuccess ? '#155724' : ($testIsFailed ? '#721c24' : '#856404') ?>;">
                                 <div style="margin-bottom: 8px; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 4px; border-left: 3px solid <?= $testResult['dns_ok'] ? '#28a745' : '#dc3545' ?>;">
                                     <strong>DNS Check:</strong> 
                                     <?php if ($testResult['dns_ok']): ?>
@@ -2418,7 +2438,7 @@ $settingsTabs = array_values(array_filter(
                                     </div>
                                 </div>
                                 <div style="padding: 10px; background: rgba(255,255,255,0.5); border-radius: 4px;">
-                                    <strong>Overall Status:</strong> <span style="font-weight: 600; text-transform: uppercase;"><?= ucfirst($testResult['status']) ?></span>
+                                    <strong>Overall Status:</strong> <span style="font-weight: 600;"><?= htmlspecialchars($testStatusDisplay['label']) ?></span>
                                 </div>
                                 <?php if (!empty($testResult['error'])): ?>
                                     <div style="margin-top: 12px; padding: 12px; background: rgba(0,0,0,0.1); border-radius: 4px; border-left: 3px solid #dc3545;">
@@ -2428,20 +2448,46 @@ $settingsTabs = array_values(array_filter(
                                         </div>
                                     </div>
                                 <?php endif; ?>
+                                <?php
+                                $bypassTestDomainId = (int)($testResult['domain_id'] ?? $_GET['domain_id'] ?? 0);
+                                if (!$testIsSuccess && $bypassTestDomainId > 0):
+                                ?>
+                                    <div style="margin-top: 16px; padding: 14px; background: rgba(255,255,255,0.7); border-radius: 4px; border: 1px solid #f5c6cb;">
+                                        <p style="margin: 0 0 12px 0; font-size: 13px; color: #721c24; line-height: 1.5;">
+                                            <strong>Automated checks did not pass</strong>, but the domain may still work if you have confirmed DNS and SSL are configured correctly (for example, after moving between cPanel accounts on the same server).
+                                        </p>
+                                        <form method="POST" action="?page=settings&tab=domains" style="margin: 0;"
+                                              onsubmit="return confirm('Bypass verification?\n\nOnly do this if you have manually confirmed that this domain resolves correctly and serves your Kuma installation over HTTPS.\n\nThe domain will be available in campaigns at your own risk.');">
+                                            <input type="hidden" name="action" value="bypass_domain_verification">
+                                            <input type="hidden" name="domain_id" value="<?= $bypassTestDomainId ?>">
+                                            <button type="submit" class="btn btn-secondary" style="background: #fff; border: 2px solid #dc3545; color: #721c24; font-weight: 600;">
+                                                Bypass Verification (Use at Your Own Risk)
+                                            </button>
+                                        </form>
+                                    </div>
+                                <?php endif; ?>
                             </div>
                         </div>
                     <?php elseif (isset($_GET['success']) && $_GET['success'] === 'domain_tested'): ?>
-                        <!-- Debug: Success param present but no test result -->
+                        <?php
+                        $fallbackTestDomainId = (int)($_GET['domain_id'] ?? 0);
+                        $fallbackTestDomain = $fallbackTestDomainId > 0 ? $trackingDomainEntity->getById($fallbackTestDomainId) : null;
+                        ?>
                         <div style="background: #fff3cd; border: 2px solid #ffc107; border-radius: 6px; padding: 16px; margin-bottom: 20px;">
                             <h4 style="margin: 0 0 8px 0; color: #856404;">⚠️ Test Completed</h4>
-                            <p style="margin: 0; color: #856404; font-size: 13px;">
-                                The test was run, but the results could not be displayed. 
-                                <?php if ($testResult === null): ?>
-                                    Test result variable is null. Session may not be working correctly.
-                                <?php else: ?>
-                                    Test result is: <?= gettype($testResult) ?>
-                                <?php endif; ?>
+                            <p style="margin: 0 0 12px 0; color: #856404; font-size: 13px;">
+                                The test finished, but detailed results could not be displayed (session may have expired). Check the domain status in the list below.
                             </p>
+                            <?php if ($fallbackTestDomain && TrackingDomain::canBypassVerification($fallbackTestDomain['status'])): ?>
+                                <form method="POST" action="?page=settings&tab=domains" style="margin: 0;"
+                                      onsubmit="return confirm('Bypass verification?\n\nOnly do this if you have manually confirmed that this domain resolves correctly and serves your Kuma installation over HTTPS.\n\nThe domain will be available in campaigns at your own risk.');">
+                                    <input type="hidden" name="action" value="bypass_domain_verification">
+                                    <input type="hidden" name="domain_id" value="<?= (int)$fallbackTestDomain['id'] ?>">
+                                    <button type="submit" class="btn btn-secondary" style="background: #fff; border: 2px solid #dc3545; color: #721c24; font-weight: 600;">
+                                        Bypass Verification for <?= htmlspecialchars(parse_url($fallbackTestDomain['domain'], PHP_URL_HOST) ?: $fallbackTestDomain['domain']) ?>
+                                    </button>
+                                </form>
+                            <?php endif; ?>
                         </div>
                     <?php endif; ?>
                     
@@ -2458,22 +2504,26 @@ $settingsTabs = array_values(array_filter(
                             </thead>
                             <tbody>
                                 <?php foreach ($allDomains as $domain): ?>
+                                    <?php $statusDisplay = TrackingDomain::statusDisplay($domain['status']); ?>
                                     <tr style="border-bottom: 1px solid #eee;">
                                         <td style="padding: 12px; font-family: monospace; font-size: 13px; word-break: break-all;">
                                             <?= htmlspecialchars($domain['domain']) ?>
                                         </td>
                                         <td style="padding: 12px;">
-                                            <?php
-                                            $statusColors = [
-                                                'verified' => ['bg' => '#d4edda', 'text' => '#155724', 'border' => '#28a745'],
-                                                'pending' => ['bg' => '#fff3cd', 'text' => '#856404', 'border' => '#ffc107'],
-                                                'failed' => ['bg' => '#f8d7da', 'text' => '#721c24', 'border' => '#dc3545']
-                                            ];
-                                            $statusColor = $statusColors[$domain['status']] ?? $statusColors['pending'];
-                                            ?>
-                                            <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; background: <?= $statusColor['bg'] ?>; color: <?= $statusColor['text'] ?>; border: 1px solid <?= $statusColor['border'] ?>;">
-                                                <?= ucfirst($domain['status']) ?>
+                                            <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; background: <?= $statusDisplay['bg'] ?>; color: <?= $statusDisplay['text'] ?>; border: 1px solid <?= $statusDisplay['border'] ?>;">
+                                                <?= htmlspecialchars($statusDisplay['label']) ?>
                                             </span>
+                                            <?php if (TrackingDomain::canBypassVerification($domain['status'])): ?>
+                                                <form method="POST" action="?page=settings&tab=domains" style="margin: 8px 0 0 0;"
+                                                      onsubmit="return confirm('Bypass verification?\n\nOnly do this if you have manually confirmed that this domain resolves correctly and serves your Kuma installation over HTTPS.\n\nThe domain will be available in campaigns at your own risk.');">
+                                                    <input type="hidden" name="action" value="bypass_domain_verification">
+                                                    <input type="hidden" name="domain_id" value="<?= $domain['id'] ?>">
+                                                    <button type="submit"
+                                                            style="padding: 6px 10px; border: 1px solid #dc3545; border-radius: 4px; background: #fff; cursor: pointer; font-size: 12px; color: #721c24; font-weight: 600;">
+                                                        Bypass Verification
+                                                    </button>
+                                                </form>
+                                            <?php endif; ?>
                                         </td>
                                         <td style="padding: 12px; font-size: 12px; color: #666;">
                                             <?php if ($domain['verified_at']): ?>
@@ -2519,13 +2569,8 @@ $settingsTabs = array_values(array_filter(
                     
                     <!-- Mobile Domain Cards (hidden on desktop) -->
                     <div class="mobile-domain-cards mobile-only">
-                        <?php foreach ($allDomains as $domain): 
-                            $statusColors = [
-                                'verified' => ['bg' => '#d4edda', 'text' => '#155724', 'border' => '#28a745'],
-                                'pending' => ['bg' => '#fff3cd', 'text' => '#856404', 'border' => '#ffc107'],
-                                'failed' => ['bg' => '#f8d7da', 'text' => '#721c24', 'border' => '#dc3545']
-                            ];
-                            $statusColor = $statusColors[$domain['status']] ?? $statusColors['pending'];
+                        <?php foreach ($allDomains as $domain):
+                            $statusDisplay = TrackingDomain::statusDisplay($domain['status']);
                         ?>
                             <div class="mobile-domain-card" style="background: var(--color-white); border: 1px solid var(--color-gray-200); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-md); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                                 <!-- Header: Domain -->
@@ -2539,10 +2584,21 @@ $settingsTabs = array_values(array_filter(
                                 <div style="margin-bottom: var(--spacing-sm);">
                                     <div style="font-size: 11px; color: #666; margin-bottom: 4px;"><strong>Status</strong></div>
                                     <div>
-                                        <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 600; background: <?= $statusColor['bg'] ?>; color: <?= $statusColor['text'] ?>; border: 1px solid <?= $statusColor['border'] ?>;">
-                                            <?= ucfirst($domain['status']) ?>
+                                        <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 600; background: <?= $statusDisplay['bg'] ?>; color: <?= $statusDisplay['text'] ?>; border: 1px solid <?= $statusDisplay['border'] ?>;">
+                                            <?= htmlspecialchars($statusDisplay['label']) ?>
                                         </span>
                                     </div>
+                                    <?php if (TrackingDomain::canBypassVerification($domain['status'])): ?>
+                                    <form method="POST" action="?page=settings&tab=domains" style="margin-top: 8px;"
+                                          onsubmit="return confirm('Bypass verification?\n\nOnly do this if you have manually confirmed that this domain resolves correctly and serves your Kuma installation over HTTPS.\n\nThe domain will be available in campaigns at your own risk.');">
+                                        <input type="hidden" name="action" value="bypass_domain_verification">
+                                        <input type="hidden" name="domain_id" value="<?= $domain['id'] ?>">
+                                        <button type="submit"
+                                                style="width: 100%; padding: 8px 12px; font-size: 12px; border: 1px solid #dc3545; border-radius: 4px; background: #fff; cursor: pointer; color: #721c24; font-weight: 600;">
+                                            Bypass Verification (Use at Your Own Risk)
+                                        </button>
+                                    </form>
+                                    <?php endif; ?>
                                 </div>
                                 
                                 <!-- Last Verified -->

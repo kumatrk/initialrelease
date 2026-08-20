@@ -2324,10 +2324,11 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                 <?php if (!empty($verifiedTrackingDomains)): ?>
                                     <option value="">─────────────────────────</option>
                                     <?php foreach ($verifiedTrackingDomains as $domain): ?>
+                                        <?php $domainStatusLabel = ($domain['status'] ?? '') === 'verified_manual' ? ' (Manual)' : ''; ?>
                                         <option value="<?= $domain['id'] ?>" 
                                                 data-domain-url="<?= htmlspecialchars($domain['domain']) ?>"
                                                 <?= ($editCampaign['tracking_domain_id'] ?? null) == $domain['id'] ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($domain['domain']) ?>
+                                            <?= htmlspecialchars($domain['domain']) ?><?= $domainStatusLabel ?>
                                         </option>
                                     <?php endforeach; ?>
                                 <?php endif; ?>
@@ -3714,8 +3715,9 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                         onblur="this.style.borderColor='#4caf50'">
                                     <option value="">Default (<?= htmlspecialchars(parse_url(BASE_URL, PHP_URL_HOST) ?: 'Current Domain') ?>)</option>
                                     <?php foreach ($verifiedTrackingDomains as $domain): ?>
+                                        <?php $domainStatusLabel = ($domain['status'] ?? '') === 'verified_manual' ? 'Manual' : 'Verified'; ?>
                                         <option value="<?= htmlspecialchars($domain['domain']) ?>" data-domain-id="<?= $domain['id'] ?>">
-                                            <?= htmlspecialchars($domain['domain']) ?> (Verified)
+                                            <?= htmlspecialchars($domain['domain']) ?> (<?= $domainStatusLabel ?>)
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
