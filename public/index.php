@@ -25,6 +25,11 @@ use SimpleKuma\Auth\Auth;
 use SimpleKuma\Auth\Permission;
 use SimpleKuma\Auth\SingleAdminMode;
 use SimpleKuma\Theme\ThemeRegistry;
+use SimpleKuma\Tracking\FrontControllerClickDispatch;
+
+// Nginx (and misconfigured Apache) may fall through /km|/go|/c → index.php.
+// Hand off before auth so tracking never redirects to the login page.
+FrontControllerClickDispatch::dispatchIfNeeded(__DIR__ . '/km.php');
 
 // Database connection for auth
 $db = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);

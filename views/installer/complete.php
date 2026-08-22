@@ -281,6 +281,7 @@
                     <li>Your site must use <strong>HTTPS</strong> — login and sessions require SSL (<code>SESSION_COOKIE_SECURE</code> is enabled)</li>
                     <li>Keep <strong>admin</strong> and <strong>click tracking</strong> on separate hostnames when possible</li>
                     <li>Never send ad traffic to your admin domain — use your tracking domain only (e.g. <code>go.php?k=…</code> on <code>track.example.com</code>)</li>
+                    <li><strong>Nginx:</strong> point document root at <code>public/</code> and add click rewrites for <code>/km/</code>, <code>/go/</code>, and <code>/c/</code> (see <code>docker/nginx.conf.example</code>). Without them, tracking links can open the login page. Apache uses <code>.htaccess</code> automatically.</li>
                     <li>If Chrome flagged your domain before, request a <a href="https://safebrowsing.google.com/safebrowsing/report_error/" target="_blank" rel="noopener noreferrer">Google Safe Browsing review</a> after splitting hosts</li>
                     <li>Change the default database credentials if you used "root"</li>
                     <li>Backup your <code>config/config.php</code> file securely</li>

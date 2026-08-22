@@ -1,4 +1,11 @@
-# Simple Kuma Tracker Version 1.1.5.15
+# Simple Kuma Tracker Version 1.1.5.16
+
+## Changes in 1.1.5.16
+
+### Fix: Nginx tracking links no longer open the login page
+- Pretty click URLs (`/km/…`, `/go/…`, `/c/…`) that fall through to the admin front controller now hand off to `km.php` before auth (common bare Nginx `try_files` setup)
+- Shipped `docker/nginx.conf.example` with the recommended click + API rewrites
+- Installer complete screen and docs call out Nginx rewrite requirements (Apache `.htaccess` unchanged)
 
 ## Changes in 1.1.5.15
 
