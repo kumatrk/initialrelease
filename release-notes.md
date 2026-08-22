@@ -1,4 +1,18 @@
-# Simple Kuma Tracker Version 1.1.5.16
+# Simple Kuma Tracker Version 1.1.5.17
+
+## Changes in 1.1.5.17
+
+### Fix: Campaign save blocked by browser “0.01” validation (locale language)
+- Default CPC and minimum postback payout use `step="any"` so optional money fields are not blocked by HTML5 step mismatch
+- Browser validation bubbles use the browser UI language (e.g. Chinese) — that was not a Kuma translation bug
+- Stored values are normalized for display to avoid float junk tripping the input
+
+### Fix: Campaign save 502 when Edge Redirect sync hangs
+- Edge KV sync after campaign/slug save is deferred and coalesced (one sync per campaign per request)
+- On PHP-FPM, the HTTP response is finished before Cloudflare is contacted (`fastcgi_finish_request`)
+- Hook Cloudflare API calls use a short timeout (8s) so nginx is far less likely to return 502 Bad Gateway on Save
+
+## Changes in 1.1.5.16
 
 ## Changes in 1.1.5.16
 

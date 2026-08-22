@@ -10,7 +10,7 @@
     </div>
     <div>
         <label style="display: block; font-weight: 600; margin-bottom: 8px;">Default CPC</label>
-        <input type="number" name="default_cpc" step="0.01" min="0" value="<?= htmlspecialchars(cc_input('default_cpc')) ?>"
+        <input type="number" name="default_cpc" step="any" min="0" value="<?= htmlspecialchars(cc_input('default_cpc')) ?>"
                placeholder="0.00" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:4px;">
         <div style="font-size:12px;color:#666;margin-top:4px;">Used when cost param not provided</div>
     </div>

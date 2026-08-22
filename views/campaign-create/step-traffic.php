@@ -32,7 +32,7 @@ use SimpleKuma\Release\TrafficSourceReleaseHelper;
 
 <div style="margin-bottom: 20px; padding: 14px; background: #f9faf7; border: 1px solid #e0e6d8; border-radius: 6px;">
     <label style="display: block; font-weight: 600; margin-bottom: 8px;">Minimum payout to fire postbacks (optional)</label>
-    <input type="number" name="min_postback_payout" step="0.01" min="0"
+    <input type="number" name="min_postback_payout" step="any" min="0"
            value="<?= htmlspecialchars(cc_input('min_postback_payout')) ?>"
            placeholder="No minimum — fire all postbacks"
            style="width:100%;max-width:280px;padding:10px;border:2px solid #ddd;border-radius:4px;">

@@ -12,11 +12,23 @@ final class CloudflareClient
     private string $accountId;
     private string $apiToken;
     private string $baseUrl = 'https://api.cloudflare.com/client/v4';
+    private int $timeoutSeconds;
+    private int $connectTimeoutSeconds;
 
-    public function __construct(string $accountId, string $apiToken)
-    {
+    /**
+     * @param int $timeoutSeconds Total cURL timeout (deploy/settings may use 60; campaign hooks use a short budget)
+     * @param int $connectTimeoutSeconds TCP connect timeout
+     */
+    public function __construct(
+        string $accountId,
+        string $apiToken,
+        int $timeoutSeconds = 60,
+        int $connectTimeoutSeconds = 10
+    ) {
         $this->accountId = trim($accountId);
         $this->apiToken = trim($apiToken);
+        $this->timeoutSeconds = max(1, $timeoutSeconds);
+        $this->connectTimeoutSeconds = max(1, $connectTimeoutSeconds);
     }
 
     /**
@@ -299,7 +311,8 @@ final class CloudflareClient
             CURLOPT_CUSTOMREQUEST => $method,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_TIMEOUT => 60,
+            CURLOPT_CONNECTTIMEOUT => $this->connectTimeoutSeconds,
+            CURLOPT_TIMEOUT => $this->timeoutSeconds,
         ]);
         if ($body !== null) {
             curl_setopt($ch, CURLOPT_POSTFIELDS, $body);

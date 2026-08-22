@@ -2150,8 +2150,14 @@ if ($editCampaign && isset($editCampaign['id'])) {
                             </div>
                             <div>
                                 <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">Default CPC</label>
-                                <input type="number" name="default_cpc" step="0.01" min="0"
-                                       value="<?= htmlspecialchars($editCampaign['default_cpc'] ?? '') ?>"
+                                <?php
+                                $editDefaultCpc = $editCampaign['default_cpc'] ?? null;
+                                $editDefaultCpcValue = ($editDefaultCpc === null || $editDefaultCpc === '')
+                                    ? ''
+                                    : rtrim(rtrim(number_format((float) $editDefaultCpc, 6, '.', ''), '0'), '.');
+                                ?>
+                                <input type="number" name="default_cpc" step="any" min="0"
+                                       value="<?= htmlspecialchars($editDefaultCpcValue) ?>"
                                        placeholder="0.00"
                                        style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px; font-size: 14px;">
                                 <div style="font-size: 12px; color: #666; margin-top: 4px;">Used when cost param not provided</div>
@@ -2287,7 +2293,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                 ? ''
                                 : rtrim(rtrim(number_format((float)$editMinPostbackPayout, 6, '.', ''), '0'), '.');
                             ?>
-                            <input type="number" name="min_postback_payout" step="0.01" min="0"
+                            <input type="number" name="min_postback_payout" step="any" min="0"
                                    value="<?= htmlspecialchars($editMinPostbackPayoutValue) ?>"
                                    placeholder="No minimum — fire all postbacks"
                                    style="width:100%;max-width:280px;padding:10px;border:2px solid #ddd;border-radius:4px;">

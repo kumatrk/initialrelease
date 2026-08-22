@@ -12,6 +12,15 @@ use SimpleKuma\Entity\Campaign;
  */
 final class EdgeCampaignSync
 {
+    /** Short budget so campaign save never waits on Cloudflare long enough for nginx 502. */
+    private const HOOK_CURL_TIMEOUT = 8;
+    private const HOOK_CURL_CONNECT_TIMEOUT = 3;
+
+    /** @var array<int, true> */
+    private static array $pendingAfterSaveIds = [];
+    private static ?mysqli $pendingAfterSaveDb = null;
+    private static bool $afterSaveShutdownRegistered = false;
+
     private mysqli $db;
     private EdgeSettings $settings;
     private EdgeCampaignSerializer $serializer;
@@ -21,6 +30,16 @@ final class EdgeCampaignSync
         $this->db = $db;
         $this->settings = new EdgeSettings($db);
         $this->serializer = new EdgeCampaignSerializer($db);
+    }
+
+    private function cloudflareClientForHooks(string $accountId, string $token): CloudflareClient
+    {
+        return new CloudflareClient(
+            $accountId,
+            $token,
+            self::HOOK_CURL_TIMEOUT,
+            self::HOOK_CURL_CONNECT_TIMEOUT
+        );
     }
 
     /**
@@ -54,7 +73,7 @@ final class EdgeCampaignSync
             return ['ok' => false, 'message' => 'Cloudflare credentials missing'];
         }
 
-        $client = new CloudflareClient($accountId, $token);
+        $client = $this->cloudflareClientForHooks($accountId, $token);
         $namespaceId = $this->settings->getKvNamespaceId();
         $campaignId = (int) ($campaign['id'] ?? 0);
         $campaignKey = (string) ($campaign['campaign_key'] ?? '');
@@ -134,7 +153,7 @@ final class EdgeCampaignSync
         if ($accountId === '' || $token === '') {
             return ['ok' => false, 'message' => 'Cloudflare credentials missing'];
         }
-        $client = new CloudflareClient($accountId, $token);
+        $client = $this->cloudflareClientForHooks($accountId, $token);
         return $this->deleteKeys($client, $this->settings->getKvNamespaceId(), $campaignKey, $slugs);
     }
 
@@ -181,15 +200,54 @@ final class EdgeCampaignSync
     }
 
     /**
-     * Fire-and-forget wrapper for entity hooks.
+     * Queue a KV sync after the HTTP response when possible (PHP-FPM).
+     * Multiple saves in one request (campaign + each slug) collapse to one sync.
      */
     public static function hookAfterSave(mysqli $db, int $campaignId): void
     {
-        try {
-            $sync = new self($db);
-            $sync->syncCampaignId($campaignId);
-        } catch (\Throwable $e) {
-            error_log('EdgeCampaignSync hookAfterSave: ' . $e->getMessage());
+        if ($campaignId <= 0) {
+            return;
+        }
+
+        self::$pendingAfterSaveIds[$campaignId] = true;
+        self::$pendingAfterSaveDb = $db;
+
+        if (self::$afterSaveShutdownRegistered) {
+            return;
+        }
+
+        self::$afterSaveShutdownRegistered = true;
+        register_shutdown_function([self::class, 'flushPendingAfterSaveHooks']);
+    }
+
+    /**
+     * Runs pending campaign KV syncs. Prefer finishing the FastCGI response first
+     * so nginx does not 502 while Cloudflare is contacted.
+     */
+    public static function flushPendingAfterSaveHooks(): void
+    {
+        $db = self::$pendingAfterSaveDb;
+        $ids = array_keys(self::$pendingAfterSaveIds);
+        self::$pendingAfterSaveIds = [];
+        self::$pendingAfterSaveDb = null;
+
+        if ($db === null || $ids === []) {
+            return;
+        }
+
+        // Release the client/nginx wait as soon as possible on PHP-FPM.
+        if (function_exists('fastcgi_finish_request')) {
+            @fastcgi_finish_request();
+        }
+
+        @ignore_user_abort(true);
+
+        foreach ($ids as $campaignId) {
+            try {
+                (new self($db))->syncCampaignId($campaignId);
+            } catch (\Throwable $e) {
+                error_log('EdgeCampaignSync flushPendingAfterSaveHooks: ' . $e->getMessage());
+            }
         }
     }
 
@@ -276,7 +334,7 @@ final class EdgeCampaignSync
             return ['ok' => false, 'message' => 'Cloudflare credentials missing', 'removed' => 0];
         }
 
-        $client = new CloudflareClient($accountId, $token);
+        $client = $this->cloudflareClientForHooks($accountId, $token);
         $namespaceId = $this->settings->getKvNamespaceId();
         $removed = 0;
         $errors = [];
