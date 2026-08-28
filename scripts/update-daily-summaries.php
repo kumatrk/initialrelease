@@ -9,6 +9,10 @@
  *
  * Default: yesterday + today. Optional backfill:
  *   php scripts/update-daily-summaries.php --from=2026-07-01 --to=2026-07-10
+ *
+ * Fast-path / retention safety:
+ *   If a date has zero rows in clicks + clicks_archive (raw purged), SKIP the DELETE+rebuild
+ *   so historical clicks_daily_summary rows survive age-based purge.
  */
 
 require_once __DIR__ . '/../vendor/autoload.php';
@@ -49,10 +53,50 @@ if (!empty($opts['from']) && !empty($opts['to'])) {
 
 $excl = StatsViewExclusions::andClickWhereSql($db, 'cl');
 
+$hasArchive = false;
+$archiveCheck = $db->query("SHOW TABLES LIKE 'clicks_archive'");
+if ($archiveCheck && $archiveCheck->num_rows > 0) {
+    $hasArchive = true;
+}
+
 echo "Updating daily summaries for: " . implode(', ', $datesToProcess) . "\n";
 
 foreach ($datesToProcess as $summaryDate) {
     echo "Processing date: {$summaryDate}\n";
+
+    $rawCount = 0;
+    $countStmt = $db->prepare('SELECT COUNT(*) AS c FROM clicks WHERE DATE(ts) = ?');
+    $countStmt->bind_param('s', $summaryDate);
+    $countStmt->execute();
+    $rawCount += (int) ($countStmt->get_result()->fetch_assoc()['c'] ?? 0);
+    $countStmt->close();
+
+    if ($hasArchive) {
+        $archStmt = $db->prepare('SELECT COUNT(*) AS c FROM clicks_archive WHERE DATE(ts) = ?');
+        $archStmt->bind_param('s', $summaryDate);
+        $archStmt->execute();
+        $rawCount += (int) ($archStmt->get_result()->fetch_assoc()['c'] ?? 0);
+        $archStmt->close();
+    }
+
+    if ($rawCount === 0) {
+        $summaryExists = 0;
+        $sumStmt = $db->prepare(
+            'SELECT COALESCE(SUM(clicks), 0) AS c FROM clicks_daily_summary WHERE summary_date = ?'
+        );
+        if ($sumStmt) {
+            $sumStmt->bind_param('s', $summaryDate);
+            $sumStmt->execute();
+            $summaryExists = (int) ($sumStmt->get_result()->fetch_assoc()['c'] ?? 0);
+            $sumStmt->close();
+        }
+        if ($summaryExists > 0) {
+            echo "  Skip {$summaryDate}: no raw/archive rows but summary has {$summaryExists} clicks — preserving pre-agg history.\n";
+        } else {
+            echo "  Skip {$summaryDate}: no raw/archive rows and no summary to rebuild.\n";
+        }
+        continue;
+    }
 
     $db->begin_transaction();
 
@@ -64,6 +108,12 @@ foreach ($datesToProcess as $summaryDate) {
 
         // WHERE exclusions match DailySummaryUpdater / list / dashboard (FB approval + hidden IPs).
         // COUNT(DISTINCT id) after filter keeps parity with historical CASE semantics.
+        $fromSql = $hasArchive
+            ? '(SELECT * FROM clicks WHERE DATE(ts) = ?
+                UNION ALL
+                SELECT * FROM clicks_archive WHERE DATE(ts) = ?) as cl'
+            : '(SELECT * FROM clicks WHERE DATE(ts) = ?) as cl';
+
         $insertStmt = $db->prepare("
             INSERT INTO clicks_daily_summary
             (campaign_id, traffic_source_id, offer_id, landing_page_id, summary_date,
@@ -90,11 +140,7 @@ foreach ($datesToProcess as $summaryDate) {
                     THEN ((COALESCE(SUM(COALESCE(conv.payout, conv.value)), 0) - COALESCE(SUM(cl.cost), 0)) / COALESCE(SUM(cl.cost), 0)) * 100
                     ELSE NULL
                 END as roi
-            FROM (
-                SELECT * FROM clicks WHERE DATE(ts) = ?
-                UNION ALL
-                SELECT * FROM clicks_archive WHERE DATE(ts) = ?
-            ) as cl
+            FROM {$fromSql}
             LEFT JOIN conversions conv ON cl.click_id = conv.click_id
             WHERE 1=1
               {$excl}
@@ -110,7 +156,11 @@ foreach ($datesToProcess as $summaryDate) {
                 roi = VALUES(roi),
                 updated_at = NOW()
         ");
-        $insertStmt->bind_param('ss', $summaryDate, $summaryDate);
+        if ($hasArchive) {
+            $insertStmt->bind_param('ss', $summaryDate, $summaryDate);
+        } else {
+            $insertStmt->bind_param('s', $summaryDate);
+        }
         $insertStmt->execute();
         $inserted = $insertStmt->affected_rows;
         $insertStmt->close();

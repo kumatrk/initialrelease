@@ -5,7 +5,7 @@
  * Retries queued ConversionUploadService pushes (6h click indexing window, transient errors).
  *
  * Usage: php scripts/google_ads_conversion_uploader.php
- * Cron:  */15 * * * * /usr/bin/php /path/to/scripts/google_ads_conversion_uploader.php >> /var/log/google_ads_conversion_uploader.log 2>&1
+ * Cron:  every 15 min: /usr/bin/php /path/to/scripts/google_ads_conversion_uploader.php >> /var/log/google_ads_conversion_uploader.log 2>&1
  */
 
 declare(strict_types=1);

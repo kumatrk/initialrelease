@@ -68,6 +68,7 @@ $permission = $auth->getPermission();
 $activeTab = $_GET['tab'] ?? 'domains';
 $success = '';
 $errors = [];
+$retentionRunLog = '';
 
 // Helper function to fetch and sync Facebook ad accounts for an integration
 function fetchAndSyncFacebookAdAccounts($db, $integrationId, $accessToken, $proxyConfig = null) {
@@ -579,8 +580,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     } elseif ($action === 'update_settings') {
+        // Empty/invalid → 30. Explicit 0 = unlimited. Positive days clamped 1–365.
+        $attrRaw = trim((string) ($_POST['attribution_window_days'] ?? ''));
+        if ($attrRaw === '' || !is_numeric($attrRaw)) {
+            $attributionWindowDays = '30';
+        } else {
+            $attrDays = (int) $attrRaw;
+            if ($attrDays < 0) {
+                $attributionWindowDays = '30';
+            } elseif ($attrDays === 0) {
+                $attributionWindowDays = '0';
+            } else {
+                $attributionWindowDays = (string) min(365, $attrDays);
+            }
+        }
+
         $settingsData = [
-            'attribution_window_days' => $_POST['attribution_window_days'] ?? '30',
+            'attribution_window_days' => $attributionWindowDays,
             'fb_capi_pixel_id' => $_POST['fb_capi_pixel_id'] ?? '',
             'fb_capi_access_token' => $_POST['fb_capi_access_token'] ?? '',
             'fb_capi_test_code' => $_POST['fb_capi_test_code'] ?? '',
@@ -590,12 +606,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'bot_exclude_known_from_stats' => isset($_POST['bot_exclude_known_from_stats']) ? '1' : '0',
             'bot_exclude_suspected_from_stats' => isset($_POST['bot_exclude_suspected_from_stats']) ? '1' : '0',
             'archive_after_days' => $_POST['archive_after_days'] ?? '365',
+            'storage_warn_percent' => (string) max(0, min(99, (int) ($_POST['storage_warn_percent'] ?? '90'))),
         ];
 
         if ($settings->setMultiple($settingsData)) {
             $success = 'Settings saved successfully';
         } else {
             $errors['general'] = 'Failed to save settings';
+        }
+    } elseif ($action === 'run_data_retention_now') {
+        $activeTab = 'privacy';
+        if (!$canEditSettings) {
+            $errors['general'] = 'You do not have permission to run data retention.';
+        } else {
+            try {
+                @set_time_limit(600);
+                $db->query("SET time_zone = '+00:00'");
+                $result = \SimpleKuma\DataRetention\RetentionLifecycleRunner::run(
+                    $db,
+                    dirname(__DIR__)
+                );
+                $log = $result['log'] !== '' ? $result['log'] : 'No output.';
+                $retentionRunLog = $log;
+                if ($result['ok']) {
+                    $success = 'Archive & retention finished. Details below.';
+                } else {
+                    $errors['general'] = "Archive & retention finished with errors (code {$result['exit_code']}). Details below.";
+                }
+            } catch (\Throwable $e) {
+                error_log('run_data_retention_now failed: ' . $e->getMessage());
+                $errors['general'] = 'Failed to run retention: ' . $e->getMessage();
+            }
         }
     } elseif ($action === 'save_edge_redirect_settings') {
         $canEdit = $permission && $permission->hasPermission(Permission::PERM_SETTINGS_EDIT);
@@ -4761,7 +4802,25 @@ $settingsTabs = array_values(array_filter(
 
                     <div style="margin-bottom: 32px;">
                         <h3 style="margin: 0 0 16px 0; color: #3d5a26; font-size: 18px; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px;">Retention Policies</h3>
-                        
+                        <p style="font-size: 13px; color: #555; margin: 0 0 16px 0; line-height: 1.5;">
+                            Schedule <code>scripts/run-data-retention-cron.php</code> daily: archive old clicks out of the hot table, then optionally purge raw rows by age.
+                            Campaign KPI / chart / offer / LP stats keep using pre-aggregated summaries — raw purge does not wipe those reports.
+                            Geo, device, and visitor-log drill-downs need raw or archived click rows.
+                        </p>
+                        <?php
+                        $storageWarnActive = ($allSettings['storage_warn_active'] ?? '0') === '1';
+                        $storageUsedPct = $allSettings['storage_used_percent'] ?? null;
+                        if ($storageWarnActive): ?>
+                        <div style="font-size: 13px; color: #8a4b00; background: #fff8e6; border: 1px solid #f0d78c; border-radius: 6px; padding: 12px; margin-bottom: 16px;">
+                            <strong>Disk warning:</strong> last retention cron reported
+                            <?= htmlspecialchars((string) ($storageUsedPct ?? '?')) ?>% used
+                            <?php if (!empty($allSettings['storage_warn_last_at'])): ?>
+                                (<?= htmlspecialchars((string) $allSettings['storage_warn_last_at']) ?> UTC)
+                            <?php endif; ?>.
+                            Set archive / log retention below, or free space on the server.
+                        </div>
+                        <?php endif; ?>
+
                         <div style="margin-bottom: 24px;">
                             <label style="display: block; font-weight: 600; margin-bottom: 8px;">Log Retention Period</label>
                             <select name="log_retention_days" 
@@ -4772,16 +4831,33 @@ $settingsTabs = array_values(array_filter(
                                 <option value="180" <?= ($allSettings['log_retention_days'] ?? '0') === '180' ? 'selected' : '' ?>>180 days</option>
                                 <option value="365" <?= ($allSettings['log_retention_days'] ?? '0') === '365' ? 'selected' : '' ?>>1 year</option>
                             </select>
-                            <div style="font-size: 12px; color: #666; margin-top: 4px;">How long to keep click and conversion data (default: Never delete)</div>
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">Permanently deletes raw clicks (hot + archive) and conversions older than this. Pre-aggregated report totals are kept. Default: Never delete.</div>
                         </div>
 
                         <div style="margin-bottom: 24px;">
                             <label style="display: block; font-weight: 600; margin-bottom: 8px;">Attribution Window</label>
-                            <input type="number" name="attribution_window_days" 
-                                   value="<?= htmlspecialchars($allSettings['attribution_window_days'] ?? '30') ?>"
-                                   min="1" max="365"
-                                   style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
-                            <div style="font-size: 12px; color: #666; margin-top: 4px;">Days after click to accept conversions (default: 30 days)</div>
+                            <?php
+                            $attrStored = (string) ($allSettings['attribution_window_days'] ?? '30');
+                            if ($attrStored === '' || !is_numeric($attrStored)) {
+                                $attrStored = '30';
+                            }
+                            $attrPresets = ['0', '7', '14', '30', '60', '90', '180', '365'];
+                            ?>
+                            <select name="attribution_window_days"
+                                    style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
+                                <option value="0" <?= $attrStored === '0' ? 'selected' : '' ?>>Unlimited</option>
+                                <option value="7" <?= $attrStored === '7' ? 'selected' : '' ?>>7 days</option>
+                                <option value="14" <?= $attrStored === '14' ? 'selected' : '' ?>>14 days</option>
+                                <option value="30" <?= $attrStored === '30' ? 'selected' : '' ?>>30 days</option>
+                                <option value="60" <?= $attrStored === '60' ? 'selected' : '' ?>>60 days</option>
+                                <option value="90" <?= $attrStored === '90' ? 'selected' : '' ?>>90 days</option>
+                                <option value="180" <?= $attrStored === '180' ? 'selected' : '' ?>>180 days</option>
+                                <option value="365" <?= $attrStored === '365' ? 'selected' : '' ?>>1 year</option>
+                                <?php if (!in_array($attrStored, $attrPresets, true)): ?>
+                                <option value="<?= htmlspecialchars($attrStored) ?>" selected><?= (int) $attrStored ?> days (current)</option>
+                                <?php endif; ?>
+                            </select>
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">How long after a click that postbacks and pixels may record a conversion (default: 30 days). Unlimited never rejects for age.</div>
                         </div>
 
                         <div style="margin-bottom: 24px;">
@@ -4790,13 +4866,40 @@ $settingsTabs = array_values(array_filter(
                                    value="<?= htmlspecialchars($allSettings['archive_after_days'] ?? '365') ?>"
                                    min="0" max="3650"
                                    style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
-                            <div style="font-size: 12px; color: #666; margin-top: 4px;">Move clicks older than this to archive table (0 = disabled, default: 365 days). Archived data remains accessible for reporting.</div>
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">Move clicks older than this from the hot table into clicks_archive (0 = off, default: 365). Keeps recent tracking fast; archived rows still support late postbacks and some drill-downs until purge.</div>
+                        </div>
+
+                        <div style="margin-bottom: 24px;">
+                            <label style="display: block; font-weight: 600; margin-bottom: 8px;">Disk warning threshold (%)</label>
+                            <input type="number" name="storage_warn_percent"
+                                   value="<?= htmlspecialchars($allSettings['storage_warn_percent'] ?? '90') ?>"
+                                   min="0" max="99"
+                                   style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">Retention cron warns when disk used % reaches this (0 = off, default: 90). If archive is off and disk is high, cron emergency-archives clicks older than 90 days. It never auto-deletes unless Log Retention is set.</div>
                         </div>
                     </div>
 
                             <button type="submit" class="btn btn-primary">Save Data Retention Settings</button>
                 </div>
             </form>
+
+            <div style="max-width: 600px; margin-top: 28px; padding-top: 24px; border-top: 1px solid #e0e0e0;">
+                <h3 style="margin: 0 0 8px 0; color: #3d5a26; font-size: 18px;">Run now</h3>
+                <p style="font-size: 13px; color: #555; margin: 0 0 16px 0; line-height: 1.5;">
+                    Same steps as the daily cron: disk check, archive old hot clicks, then purge raw rows by your saved Log Retention setting.
+                    Pre-aggregated campaign stats are kept. Save settings above first if you changed them.
+                </p>
+                <form method="post"
+                      onsubmit="return confirm('Run archive &amp; retention now using your saved settings?\n\nThis may take a while on large databases. Raw clicks older than Log Retention will be permanently deleted (summaries stay).');">
+                    <input type="hidden" name="action" value="run_data_retention_now">
+                    <button type="submit" class="btn btn-primary" <?= $canEditSettings ? '' : 'disabled' ?>>
+                        Run archive &amp; retention now
+                    </button>
+                </form>
+                <?php if ($retentionRunLog !== ''): ?>
+                <pre style="margin-top: 16px; padding: 12px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto;"><?= htmlspecialchars($retentionRunLog) ?></pre>
+                <?php endif; ?>
+            </div>
         </div>
     </div>
 

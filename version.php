@@ -6,6 +6,6 @@
 
 return [
     'version' => '1.1.5.17',
-    'release_date' => '2026-08-22',
+    'release_date' => '2026-08-28',
     'channel' => 'stable'
 ];

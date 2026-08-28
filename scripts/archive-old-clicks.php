@@ -3,15 +3,13 @@
 declare(strict_types=1);
 
 /**
- * Daily data lifecycle (CLI only):
- *   1) Disk usage check / warning
- *   2) Sync clicks_archive columns + clicks_unified
- *   3) Archive old hot clicks (archive_after_days)
- *   4) Purge raw clicks+archive+conversions by age (log_retention_days) — keeps summaries
+ * Archive old clicks into clicks_archive (same DB). Keeps hot clicks small.
+ * Summaries are not modified — Hermes pre-agg reporting stays intact.
  *
- * Usage: php scripts/run-data-retention-cron.php
+ * Cron (standalone):
+ *   0 3 * * * php /path/to/simplekuma/scripts/archive-old-clicks.php
  *
- * Same steps as Settings → Privacy → “Run archive & retention now”.
+ * Prefer scripts/run-data-retention-cron.php (sync → archive → purge → disk check).
  */
 
 if (php_sapi_name() !== 'cli') {
@@ -30,7 +28,7 @@ if (!file_exists($baseDir . '/config/config.php')) {
 require_once $baseDir . '/vendor/autoload.php';
 require_once $baseDir . '/config/config.php';
 
-use SimpleKuma\DataRetention\RetentionLifecycleRunner;
+use SimpleKuma\DataRetention\ClickDataArchiver;
 
 $db = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
 if ($db->connect_error) {
@@ -40,9 +38,4 @@ if ($db->connect_error) {
 
 $db->query("SET time_zone = '+00:00'");
 
-$result = RetentionLifecycleRunner::run($db, $baseDir);
-if ($result['log'] !== '') {
-    echo $result['log'] . "\n";
-}
-
-exit($result['exit_code']);
+exit(ClickDataArchiver::run($db));

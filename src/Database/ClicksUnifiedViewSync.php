@@ -29,6 +29,23 @@ class ClicksUnifiedViewSync
         return ['success' => true, 'messages' => $messages];
     }
 
+    /**
+     * Shared non-generated columns safe for INSERT INTO clicks_archive SELECT … FROM clicks.
+     *
+     * @return list<string>
+     */
+    public static function getInsertableSharedColumns(mysqli $db): array
+    {
+        if (!self::tableExists($db, 'clicks') || !self::tableExists($db, 'clicks_archive')) {
+            return [];
+        }
+
+        $clickWritable = self::getWritableColumnNames($db, 'clicks');
+        $archiveWritable = self::getWritableColumnNames($db, 'clicks_archive');
+
+        return array_values(array_intersect($clickWritable, $archiveWritable));
+    }
+
     private static function ensureArchiveColumns(mysqli $db, array &$messages): void
     {
         $alterations = [
@@ -102,6 +119,26 @@ class ClicksUnifiedViewSync
         $cols = [];
         $result = $db->query('SHOW COLUMNS FROM `' . $db->real_escape_string($table) . '`');
         while ($row = $result->fetch_assoc()) {
+            $cols[] = $row['Field'];
+        }
+        return $cols;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function getWritableColumnNames(mysqli $db, string $table): array
+    {
+        $cols = [];
+        $result = $db->query('SHOW FULL COLUMNS FROM `' . $db->real_escape_string($table) . '`');
+        if (!$result) {
+            return [];
+        }
+        while ($row = $result->fetch_assoc()) {
+            $extra = strtoupper((string) ($row['Extra'] ?? ''));
+            if (str_contains($extra, 'GENERATED') || str_contains($extra, 'VIRTUAL')) {
+                continue;
+            }
             $cols[] = $row['Field'];
         }
         return $cols;

@@ -31,12 +31,29 @@ $advancedLifecycleEnabled = ($allSettings['advanced_data_lifecycle'] ?? '0') ===
 
                 <div style="margin-bottom: 28px;">
                     <h3 style="margin: 0 0 16px 0; color: #3d5a26; font-size: 18px; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px;">Conversion attribution</h3>
-                    <label style="display: block; font-weight: 600; margin-bottom: 8px;">Attribution window (days)</label>
-                    <input type="number" name="attribution_window_days"
-                           value="<?= htmlspecialchars($allSettings['attribution_window_days'] ?? '30') ?>"
-                           min="1" max="365"
-                           style="width: 100%; max-width: 200px; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
-                    <div style="font-size: 12px; color: #666; margin-top: 4px;">How long after a click that postbacks and pixels may record a conversion (default: 30).</div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 8px;">Attribution window</label>
+                    <?php
+                    $attrStored = (string) ($allSettings['attribution_window_days'] ?? '30');
+                    if ($attrStored === '' || !is_numeric($attrStored)) {
+                        $attrStored = '30';
+                    }
+                    $attrPresets = ['0', '7', '14', '30', '60', '90', '180', '365'];
+                    ?>
+                    <select name="attribution_window_days"
+                            style="width: 100%; max-width: 280px; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
+                        <option value="0" <?= $attrStored === '0' ? 'selected' : '' ?>>Unlimited</option>
+                        <option value="7" <?= $attrStored === '7' ? 'selected' : '' ?>>7 days</option>
+                        <option value="14" <?= $attrStored === '14' ? 'selected' : '' ?>>14 days</option>
+                        <option value="30" <?= $attrStored === '30' ? 'selected' : '' ?>>30 days</option>
+                        <option value="60" <?= $attrStored === '60' ? 'selected' : '' ?>>60 days</option>
+                        <option value="90" <?= $attrStored === '90' ? 'selected' : '' ?>>90 days</option>
+                        <option value="180" <?= $attrStored === '180' ? 'selected' : '' ?>>180 days</option>
+                        <option value="365" <?= $attrStored === '365' ? 'selected' : '' ?>>1 year</option>
+                        <?php if (!in_array($attrStored, $attrPresets, true)): ?>
+                        <option value="<?= htmlspecialchars($attrStored) ?>" selected><?= (int) $attrStored ?> days (current)</option>
+                        <?php endif; ?>
+                    </select>
+                    <div style="font-size: 12px; color: #666; margin-top: 4px;">How long after a click that postbacks and pixels may record a conversion (default: 30). Unlimited never rejects for age.</div>
                 </div>
 
                 <details id="advanced-data-lifecycle" style="margin-bottom: 24px; border: 1px solid #ddd; border-radius: 8px; padding: 0 16px 16px; background: #fafafa;"<?= $advancedLifecycleEnabled ? ' open' : '' ?>>

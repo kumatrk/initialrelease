@@ -2,6 +2,19 @@
 
 ## Changes in 1.1.5.17
 
+### Attribution Window: Unlimited Option
+- Settings → Privacy now supports **Unlimited** attribution window (`0` days) in addition to presets (7, 14, 30, 60, 90, 180, 365 days)
+- Postbacks and pixels will accept conversions indefinitely when set to Unlimited without age cutoff
+
+### Data Lifecycle & Hot Clicks Archiving
+- Moves old clicks from the hot `clicks` table into `clicks_archive` (`archive_after_days`, default: 365 days)
+- Scheduled via `scripts/run-data-retention-cron.php` or on-demand in Settings → Privacy (“Run archive & retention now”)
+- **Summary-first protection**: Historical pre-aggregated reporting tables (`clicks_daily_summary`, `clicks_stats_by_token_daily`) are preserved intact so Hermes fast-path campaign KPI/breakdown queries remain instant and unaffected by raw click archiving or purging
+
+### Affiliate Networks: Clean Postback UI
+- Removed legacy S2S postback template input from Add/Edit Network and table views
+- Outbound postbacks are configured under **Settings → Integrations** (Custom Postbacks), and inbound postback URLs under **Postback URLs**
+
 ### Fix: Campaign save blocked by browser “0.01” validation (locale language)
 - Default CPC and minimum postback payout use `step="any"` so optional money fields are not blocked by HTML5 step mismatch
 - Browser validation bubbles use the browser UI language (e.g. Chinese) — that was not a Kuma translation bug
@@ -11,8 +24,6 @@
 - Edge KV sync after campaign/slug save is deferred and coalesced (one sync per campaign per request)
 - On PHP-FPM, the HTTP response is finished before Cloudflare is contacted (`fastcgi_finish_request`)
 - Hook Cloudflare API calls use a short timeout (8s) so nginx is far less likely to return 502 Bad Gateway on Save
-
-## Changes in 1.1.5.16
 
 ## Changes in 1.1.5.16
 

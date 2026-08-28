@@ -61,7 +61,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $data = [
             'name' => $_POST['name'] ?? '',
-            'postback_template' => $_POST['postback_template'] ?? '',
+            // Network outbound postback templates removed — use Settings → Integrations (Custom Postbacks)
+            // and Postback URLs for inbound S2S from affiliate networks.
+            'postback_template' => '',
             'notes' => $_POST['notes'] ?? '',
         ];
 
@@ -97,7 +99,7 @@ $db->close();
 
 <div class="page-header">
     <h1 class="page-title">Affiliate Networks</h1>
-    <p class="page-description">Manage your affiliate network connections and postback configurations.</p>
+    <p class="page-description">Organize offers by affiliate network. Configure postbacks under Settings → Integrations or Postback URLs.</p>
 </div>
 
 <?php if ($success): ?>
@@ -135,7 +137,6 @@ $db->close();
                         <thead>
                             <tr>
                                 <th>Network Name</th>
-                                <th>Postback Template</th>
                                 <th>Offers</th>
                                 <th>Created</th>
                                 <th style="width: 150px;">Actions</th>
@@ -151,9 +152,6 @@ $db->close();
                             ?>
                             <tr>
                                 <td><strong><?= htmlspecialchars($net['name']) ?></strong></td>
-                                <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-family: monospace;">
-                                    <?= $net['postback_template'] ? htmlspecialchars($net['postback_template']) : '<span style="color: #999;">Not configured</span>' ?>
-                                </td>
                                 <td>
                                     <span class="badge badge-info"><?= $offerCount ?> offers</span>
                                 </td>
@@ -210,14 +208,6 @@ $db->close();
                                 </div>
                             </div>
                             
-                            <!-- Postback Template -->
-                            <div style="margin-bottom: var(--spacing-sm);">
-                                <div style="font-size: 11px; color: #666; margin-bottom: 4px;"><strong>Postback Template</strong></div>
-                                <div style="font-size: 10px; font-family: monospace; color: #666; word-break: break-all; background: #f9f9f9; padding: 6px; border-radius: 3px;" title="<?= htmlspecialchars($net['postback_template'] ?? '') ?>">
-                                    <?= $net['postback_template'] ? htmlspecialchars($net['postback_template']) : '<span style="color: #999;">Not configured</span>' ?>
-                                </div>
-                            </div>
-                            
                             <!-- Offers Count -->
                             <div style="margin-bottom: var(--spacing-sm);">
                                 <div style="font-size: 11px; color: #666; margin-bottom: 4px;"><strong>Offers</strong></div>
@@ -265,26 +255,6 @@ $db->close();
                     <input type="text" name="name" value="<?= htmlspecialchars($editNetwork['name'] ?? '') ?>" required
                            placeholder="e.g., ClickBank, MaxBounty, CJ Affiliate"
                            style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
-                </div>
-
-                <div style="margin-bottom: 24px;">
-                    <label style="display: block; font-weight: 600; margin-bottom: 8px;">
-                        S2S Postback Template (Optional)
-                    </label>
-                    <textarea name="postback_template" rows="3" 
-                              style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px; font-family: monospace;"
-                              placeholder="https://network.com/postback?txid={txid}&amount={payout}&status={status}"><?= htmlspecialchars($editNetwork['postback_template'] ?? '') ?></textarea>
-                    <div style="font-size: 12px; color: #666; margin-top: 8px;">
-                        <div style="margin-bottom: 4px; font-weight: 500;">Available macros:</div>
-                        <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">
-                            <code style="padding: 4px 8px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 3px; font-size: 11px;">{click_id}</code>
-                            <code style="padding: 4px 8px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 3px; font-size: 11px;">{txid}</code>
-                            <code style="padding: 4px 8px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 3px; font-size: 11px;">{payout}</code>
-                            <code style="padding: 4px 8px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 3px; font-size: 11px;">{value}</code>
-                            <code style="padding: 4px 8px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 3px; font-size: 11px;">{status}</code>
-                            <code style="padding: 4px 8px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 3px; font-size: 11px;">{currency}</code>
-                        </div>
-                    </div>
                 </div>
 
                 <div style="margin-bottom: 24px;">

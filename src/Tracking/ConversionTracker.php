@@ -88,14 +88,26 @@ class ConversionTracker
     }
 
     /**
-     * Check if conversion is within attribution window
+     * Check if conversion is within attribution window.
+     * Stored 0 = unlimited. Empty/missing/invalid falls back to 30 days (not zero).
      */
     private function isWithinAttributionWindow(array $click): bool
     {
         $clickTime = strtotime($click['ts']);
         $now = time();
 
-        $windowDays = (int)($this->settings->get('attribution_window_days', self::DEFAULT_ATTRIBUTION_WINDOW_DAYS));
+        $raw = $this->settings->get('attribution_window_days', self::DEFAULT_ATTRIBUTION_WINDOW_DAYS);
+        if ($raw === null || $raw === '' || !is_numeric($raw)) {
+            $windowDays = self::DEFAULT_ATTRIBUTION_WINDOW_DAYS;
+        } else {
+            $windowDays = (int) $raw;
+        }
+
+        // Explicit 0 (or negative) = unlimited attribution
+        if ($windowDays <= 0) {
+            return true;
+        }
+
         $windowSeconds = $windowDays * 24 * 60 * 60;
 
         return ($now - $clickTime) <= $windowSeconds;
