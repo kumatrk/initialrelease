@@ -1,6 +1,6 @@
-# Simple Kuma Tracker Version 1.1.5.17
+# Simple Kuma Tracker Version 1.1.5.18
 
-## Changes in 1.1.5.17
+## Changes in 1.1.5.18
 
 ### Attribution Window: Unlimited Option
 - Settings → Privacy now supports **Unlimited** attribution window (`0` days) in addition to presets (7, 14, 30, 60, 90, 180, 365 days)
@@ -14,6 +14,8 @@
 ### Affiliate Networks: Clean Postback UI
 - Removed legacy S2S postback template input from Add/Edit Network and table views
 - Outbound postbacks are configured under **Settings → Integrations** (Custom Postbacks), and inbound postback URLs under **Postback URLs**
+
+## Changes in 1.1.5.17
 
 ### Fix: Campaign save blocked by browser “0.01” validation (locale language)
 - Default CPC and minimum postback payout use `step="any"` so optional money fields are not blocked by HTML5 step mismatch
