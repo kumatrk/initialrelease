@@ -48,7 +48,12 @@ class LandingPage
 
         $stmt->bind_param('sss', $data['name'], $data['url'], $data['notes']);
         $stmt->execute();
-        return $stmt->insert_id;
+        $newId = (int)$stmt->insert_id;
+        $stmt->close();
+        if ($newId > 0) {
+            $this->saveTags($newId, $data);
+        }
+        return $newId;
     }
 
     public function update(int $id, array $data): bool
@@ -61,10 +66,41 @@ class LandingPage
 
         $stmt->bind_param('sssi', $data['name'], $data['url'], $data['notes'], $id);
         $ok = $stmt->execute();
+        $stmt->close();
         if ($ok) {
+            $this->saveTags($id, $data);
             EdgeCampaignSync::hookLandingPageChanged($this->db, $id);
         }
         return $ok;
+    }
+
+    private function landingPagesTableHasTags(): bool
+    {
+        $result = $this->db->query("SHOW COLUMNS FROM landing_pages LIKE 'tags'");
+        return $result && $result->num_rows > 0;
+    }
+
+    private function saveTags(int $lpId, array $data): void
+    {
+        if (!$this->landingPagesTableHasTags()) {
+            return;
+        }
+        $tags = isset($data['tags']) && trim((string)$data['tags']) !== '' ? trim((string)$data['tags']) : null;
+        if ($tags === null) {
+            $stmt = $this->db->prepare('UPDATE landing_pages SET tags = NULL WHERE id = ?');
+            if ($stmt) {
+                $stmt->bind_param('i', $lpId);
+                $stmt->execute();
+                $stmt->close();
+            }
+        } else {
+            $stmt = $this->db->prepare('UPDATE landing_pages SET tags = ? WHERE id = ?');
+            if ($stmt) {
+                $stmt->bind_param('si', $tags, $lpId);
+                $stmt->execute();
+                $stmt->close();
+            }
+        }
     }
 
     /**

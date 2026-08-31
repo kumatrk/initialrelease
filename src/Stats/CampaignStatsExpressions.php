@@ -203,6 +203,27 @@ class CampaignStatsExpressions
         END";
     }
 
+    /**
+     * Expression to count bot clicks in raw SQL queries.
+     */
+    public static function botClicksCountExpr(
+        string $clAlias = 'cl',
+        string $tsAlias = 'ts',
+        bool $usePersistedFlag = false
+    ): string {
+        $facebookUa = self::FACEBOOK_CRAWLER_UA_FRAGMENT;
+        $metaAdsUa = self::META_EXTERNAL_ADS_UA_FRAGMENT;
+
+        return "COUNT(DISTINCT CASE
+            WHEN {$clAlias}.ua LIKE '%{$facebookUa}%' OR {$clAlias}.ua LIKE '%{$metaAdsUa}%'
+                 OR {$clAlias}.extra_json LIKE '%\"classification\":\"known_bot\"%'
+                 OR {$clAlias}.extra_json LIKE '%\"classification\":\"suspected_bot\"%'
+                 OR {$clAlias}.extra_json LIKE '%\"exclude_from_stats\":true%'
+            THEN {$clAlias}.id
+            ELSE NULL
+        END)";
+    }
+
     public static function visitorCountExpr(
         string $clAlias = 'cl',
         string $tsAlias = 'ts',
@@ -503,12 +524,15 @@ class CampaignStatsExpressions
         $lpClicks = (int)($raw['lp_clicks'] ?? 0);
         $conversions = (int)($raw['conversions'] ?? 0);
         $optins = (int)($raw['optins'] ?? 0);
+        $botClicks = (int)($raw['bot_clicks'] ?? 0);
         $cost = (float)($raw['cost'] ?? 0);
         $revenue = (float)($raw['revenue'] ?? 0);
         $profit = $revenue - $cost;
         $roi = $cost > 0 ? (($revenue - $cost) / $cost) * 100 : 0.0;
         $cr = $clicks > 0 ? ($conversions / $clicks) * 100 : 0.0;
         $ctr = $clicks > 0 ? ($lpClicks / $clicks) * 100 : 0.0;
+        $totalTraffic = $clicks + $botClicks;
+        $botPct = $totalTraffic > 0 ? ($botClicks / $totalTraffic) * 100 : 0.0;
 
         $row = [
             'group' => self::normalizeGroupValue($group),
@@ -516,6 +540,8 @@ class CampaignStatsExpressions
             'lp_clicks' => $lpClicks,
             'conversions' => $conversions,
             'optins' => $optins,
+            'bot_clicks' => $botClicks,
+            'bot_pct' => round($botPct, 2),
             'cost' => round($cost, 4),
             'revenue' => round($revenue, 4),
             'profit' => round($profit, 4),
@@ -541,6 +567,7 @@ class CampaignStatsExpressions
         $lpClicks = 0;
         $conversions = 0;
         $optins = 0;
+        $botClicks = 0;
         $cost = 0.0;
         $revenue = 0.0;
 
@@ -549,6 +576,7 @@ class CampaignStatsExpressions
             $lpClicks += (int)($row['lp_clicks'] ?? 0);
             $conversions += (int)($row['conversions'] ?? 0);
             $optins += (int)($row['optins'] ?? 0);
+            $botClicks += (int)($row['bot_clicks'] ?? 0);
             $cost += (float)($row['cost'] ?? 0);
             $revenue += (float)($row['revenue'] ?? 0);
         }
@@ -558,6 +586,7 @@ class CampaignStatsExpressions
             'lp_clicks' => $lpClicks,
             'conversions' => $conversions,
             'optins' => $optins,
+            'bot_clicks' => $botClicks,
             'cost' => $cost,
             'revenue' => $revenue,
         ]);
@@ -577,6 +606,9 @@ class CampaignStatsExpressions
             'ctr' => 'ctr',
             'conversions' => 'conversions',
             'optins' => 'optins',
+            'bot_clicks' => 'bot_clicks',
+            'bots' => 'bot_clicks',
+            'bot_pct' => 'bot_pct',
             'cost' => 'cost',
             'revenue' => 'revenue',
             'profit' => 'profit',

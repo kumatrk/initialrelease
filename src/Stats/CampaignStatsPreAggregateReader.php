@@ -58,6 +58,19 @@ final class CampaignStatsPreAggregateReader
         return $cache = ($result !== false && $result->num_rows > 0);
     }
 
+    private function dailySummaryHasBotClicks(): bool
+    {
+        static $cache = null;
+        if ($cache !== null) {
+            return $cache;
+        }
+        if (!$this->dailySummaryTableExists()) {
+            return $cache = false;
+        }
+        $result = $this->db->query("SHOW COLUMNS FROM clicks_daily_summary LIKE 'bot_clicks'");
+        return $cache = ($result !== false && $result->num_rows > 0);
+    }
+
     private function tokenDailyHasOptins(): bool
     {
         static $cache = null;
@@ -69,6 +82,24 @@ final class CampaignStatsPreAggregateReader
         }
         $result = $this->db->query("SHOW COLUMNS FROM clicks_stats_by_token_daily LIKE 'optins'");
         return $cache = ($result !== false && $result->num_rows > 0);
+    }
+
+    private function tokenDailyHasBotClicks(): bool
+    {
+        static $cache = null;
+        if ($cache !== null) {
+            return $cache;
+        }
+        if (!$this->tokenDailyTableExists()) {
+            return $cache = false;
+        }
+        $result = $this->db->query("SHOW COLUMNS FROM clicks_stats_by_token_daily LIKE 'bot_clicks'");
+        return $cache = ($result !== false && $result->num_rows > 0);
+    }
+
+    private function botClicksSumExpr(string $alias = 's'): string
+    {
+        return $this->dailySummaryHasBotClicks() ? "COALESCE(SUM({$alias}.bot_clicks), 0)" : "0";
     }
 
     private function optinsSumExpr(string $alias = 's'): string
@@ -157,6 +188,7 @@ final class CampaignStatsPreAggregateReader
                 COALESCE(SUM(s.direct_clicks), 0) AS direct_clicks,
                 COALESCE(SUM(s.conversions), 0) AS conversions,
                 {$this->optinsSumExpr('s')} AS optins,
+                {$this->botClicksSumExpr('s')} AS bot_clicks,
                 COALESCE(SUM(s.cost), 0) AS manual_cost,
                 COALESCE(SUM(s.revenue), 0) AS revenue
             FROM clicks_daily_summary s
@@ -179,6 +211,7 @@ final class CampaignStatsPreAggregateReader
             'direct_clicks' => (int)($row['direct_clicks'] ?? 0),
             'conversions' => (int)($row['conversions'] ?? 0),
             'optins' => (int)($row['optins'] ?? 0),
+            'bot_clicks' => (int)($row['bot_clicks'] ?? 0),
             'manual_cost' => (float)($row['manual_cost'] ?? 0),
             'revenue' => (float)($row['revenue'] ?? 0),
         ];
@@ -230,6 +263,7 @@ final class CampaignStatsPreAggregateReader
                 COALESCE(SUM(s.direct_clicks), 0) AS direct_clicks,
                 COALESCE(SUM(s.conversions), 0) AS conversions,
                 {$this->optinsSumExpr('s')} AS optins,
+                {$this->botClicksSumExpr('s')} AS bot_clicks,
                 COALESCE(SUM(s.cost), 0) AS manual_cost,
                 COALESCE(SUM(s.revenue), 0) AS revenue
             FROM clicks_daily_summary s
@@ -256,6 +290,7 @@ final class CampaignStatsPreAggregateReader
                 'direct_clicks' => (int)($row['direct_clicks'] ?? 0),
                 'conversions' => (int)($row['conversions'] ?? 0),
                 'optins' => (int)($row['optins'] ?? 0),
+                'bot_clicks' => (int)($row['bot_clicks'] ?? 0),
                 'manual_cost' => (float)($row['manual_cost'] ?? 0),
                 'revenue' => (float)($row['revenue'] ?? 0),
             ];
@@ -344,6 +379,7 @@ final class CampaignStatsPreAggregateReader
     ): array {
         [$where, $types, $params] = $this->summaryWhere($campaignId, $dateFrom, $dateTo, $filters, $parentPath);
         $optinsSel = $this->dailySummaryHasOptins() ? 'SUM(s.optins) AS optins,' : '0 AS optins,';
+        $botClicksSel = $this->dailySummaryHasBotClicks() ? 'SUM(s.bot_clicks) AS bot_clicks,' : '0 AS bot_clicks,';
 
         if ($groupBy === 'date') {
             $sql = "
@@ -354,6 +390,7 @@ final class CampaignStatsPreAggregateReader
                        SUM(s.direct_clicks) AS direct_clicks,
                        SUM(s.conversions) AS conversions,
                        {$optinsSel}
+                       {$botClicksSel}
                        SUM(s.cost) AS cost,
                        SUM(s.revenue) AS revenue
                 FROM clicks_daily_summary s
@@ -369,6 +406,7 @@ final class CampaignStatsPreAggregateReader
                        SUM(s.direct_clicks) AS direct_clicks,
                        SUM(s.conversions) AS conversions,
                        {$optinsSel}
+                       {$botClicksSel}
                        SUM(s.cost) AS cost,
                        SUM(s.revenue) AS revenue
                 FROM clicks_daily_summary s
@@ -385,6 +423,7 @@ final class CampaignStatsPreAggregateReader
                        SUM(s.direct_clicks) AS direct_clicks,
                        SUM(s.conversions) AS conversions,
                        {$optinsSel}
+                       {$botClicksSel}
                        SUM(s.cost) AS cost,
                        SUM(s.revenue) AS revenue
                 FROM clicks_daily_summary s
@@ -507,12 +546,14 @@ final class CampaignStatsPreAggregateReader
     ): array {
         $storageParam = CampaignStatsExpressions::unwrapDimensionKey($tokenParam);
         $optinsSel = $this->tokenDailyHasOptins() ? 'SUM(optins) AS optins,' : '0 AS optins,';
+        $botClicksSel = $this->tokenDailyHasBotClicks() ? 'SUM(bot_clicks) AS bot_clicks,' : '0 AS bot_clicks,';
         $sql = "
             SELECT token_value AS group_key,
                    SUM(visitors) AS clicks,
                    SUM(lp_clicks) AS lp_clicks,
                    SUM(conversions) AS conversions,
                    {$optinsSel}
+                   {$botClicksSel}
                    SUM(cost) AS cost,
                    SUM(revenue) AS revenue
             FROM clicks_stats_by_token_daily

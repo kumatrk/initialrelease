@@ -133,6 +133,8 @@ class CampaignStatsV2Service
         $visitors = CampaignStatsExpressions::visitorCountExpr('cl', 'ts', $usePersistedFlag);
         $lpClicks = CampaignStatsExpressions::lpClicksCountExpr('cl', 'ts', $usePersistedFlag);
         $conversions = CampaignStatsExpressions::conversionsCountExpr('cl', 'ts', $usePersistedFlag);
+        $optins = CampaignStatsExpressions::optinsCountExpr('cl', 'ts', $usePersistedFlag);
+        $botClicks = CampaignStatsExpressions::botClicksCountExpr('cl', 'ts', $usePersistedFlag);
         $lpValid = CampaignStatsExpressions::validClickCase('cl', 'ts', $usePersistedFlag);
         [$filterSql, $filterTypes, $filterParams] = $filters->clickFilterSql($this->db, 'cl', $filterKeys);
 
@@ -151,6 +153,8 @@ class CampaignStatsV2Service
                 {$lpClicks} AS lp_clicks,
                 COUNT(DISTINCT CASE WHEN cl.lp_click = 1 AND cl.landing_page_id IS NULL THEN {$lpValid} ELSE NULL END) AS direct_clicks,
                 {$conversions} AS conversions,
+                {$optins} AS optins,
+                {$botClicks} AS bot_clicks,
                 {$costSelect},
                 COALESCE(SUM(conv.revenue_sum), 0) AS revenue
             FROM {$clicksTable} cl
@@ -264,12 +268,15 @@ class CampaignStatsV2Service
         $directClicksCount = (int)($totals['direct_clicks'] ?? 0);
         $conversionsCount = (int)($totals['conversions'] ?? 0);
         $optinsCount = (int)($totals['optins'] ?? 0);
+        $botClicksCount = (int)($totals['bot_clicks'] ?? 0);
         $revenue = (float)($totals['revenue'] ?? 0);
         $profit = $revenue - $totalCost;
         $roi = $totalCost > 0 ? (($revenue - $totalCost) / $totalCost) * 100 : 0.0;
         $cr = $visitorsCount > 0 ? ($conversionsCount / $visitorsCount) * 100 : 0.0;
         // CTR is landing-page CTR only (exclude DTO "direct" from the rate)
         $ctr = $visitorsCount > 0 ? ($lpClicksCount / $visitorsCount) * 100 : 0.0;
+        $totalTraffic = $visitorsCount + $botClicksCount;
+        $botPct = $totalTraffic > 0 ? ($botClicksCount / $totalTraffic) * 100 : 0.0;
 
         return [
             'campaign_id' => $campaignId,
@@ -283,6 +290,8 @@ class CampaignStatsV2Service
             'direct_clicks' => $directClicksCount,
             'conversions' => $conversionsCount,
             'optins' => $optinsCount,
+            'bot_clicks' => $botClicksCount,
+            'bot_pct' => round($botPct, 2),
             'conversion_rate' => round($cr, 2),
             'ctr' => round($ctr, 2),
             'cost' => round($totalCost, 4),
@@ -320,6 +329,7 @@ class CampaignStatsV2Service
             'direct_clicks' => 0,
             'conversions' => 0,
             'optins' => 0,
+            'bot_clicks' => 0,
             'manual_cost' => 0.0,
             'revenue' => 0.0,
         ];
@@ -351,6 +361,7 @@ class CampaignStatsV2Service
             $totals['direct_clicks'] += (int)($part['direct_clicks'] ?? 0);
             $totals['conversions'] += (int)($part['conversions'] ?? 0);
             $totals['optins'] += (int)($part['optins'] ?? 0);
+            $totals['bot_clicks'] += (int)($part['bot_clicks'] ?? 0);
             $totals['manual_cost'] += (float)($part['manual_cost'] ?? 0);
             $totals['revenue'] += (float)($part['revenue'] ?? 0);
         }
@@ -380,6 +391,7 @@ class CampaignStatsV2Service
         $lpClicks = CampaignStatsExpressions::lpClicksCountExpr('cl', 'ts', $usePersistedFlag);
         $conversions = CampaignStatsExpressions::conversionsCountExpr('cl', 'ts', $usePersistedFlag);
         $optins = CampaignStatsExpressions::optinsCountExpr('cl', 'ts', $usePersistedFlag);
+        $botClicks = CampaignStatsExpressions::botClicksCountExpr('cl', 'ts', $usePersistedFlag);
         $lpValid = CampaignStatsExpressions::validClickCase('cl', 'ts', $usePersistedFlag);
         [$filterSql, $filterTypes, $filterParams] = $filters->clickFilterSql($this->db, 'cl', $filterKeys);
 
@@ -390,6 +402,7 @@ class CampaignStatsV2Service
                 COUNT(DISTINCT CASE WHEN cl.lp_click = 1 AND cl.landing_page_id IS NULL THEN {$lpValid} ELSE NULL END) AS direct_clicks,
                 {$conversions} AS conversions,
                 {$optins} AS optins,
+                {$botClicks} AS bot_clicks,
                 COALESCE(SUM(cl.cost), 0) AS manual_cost,
                 COALESCE(SUM(conv.revenue_sum), 0) AS revenue
             FROM {$clicksTable} cl
@@ -413,6 +426,7 @@ class CampaignStatsV2Service
             'direct_clicks' => (int)($row['direct_clicks'] ?? 0),
             'conversions' => (int)($row['conversions'] ?? 0),
             'optins' => (int)($row['optins'] ?? 0),
+            'bot_clicks' => (int)($row['bot_clicks'] ?? 0),
             'manual_cost' => (float)($row['manual_cost'] ?? 0),
             'revenue' => (float)($row['revenue'] ?? 0),
         ];
@@ -1586,19 +1600,31 @@ class CampaignStatsV2Service
         if ($idx && $idx->num_rows > 0) {
             $force = ' FORCE INDEX (idx_clicks_ts_stats_cover)';
         }
-        $includedSql = StatsExclusionFlag::columnExists($this->db, 'clicks')
-            ? ' AND cl.exclude_from_stats = 0'
-            : '';
+        $hasExclusionFlag = StatsExclusionFlag::columnExists($this->db, 'clicks');
         [$filterSql, $filterTypes, $filterParams] = $filters->clickFilterSql($this->db, 'cl', []);
 
-        $sql = "
-            SELECT COUNT(*) AS visitors,
-                   SUM(CASE WHEN cl.lp_click = 1 THEN 1 ELSE 0 END) AS lp_clicks,
-                   SUM(CASE WHEN cl.lp_click = 1 AND cl.landing_page_id IS NULL THEN 1 ELSE 0 END) AS direct_clicks,
-                   COALESCE(SUM(cl.cost), 0) AS manual_cost
-            FROM clicks cl{$force}
-            WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$includedSql}{$filterSql}
-        ";
+        if ($hasExclusionFlag) {
+            $sql = "
+                SELECT SUM(CASE WHEN cl.exclude_from_stats = 0 THEN 1 ELSE 0 END) AS visitors,
+                       SUM(CASE WHEN cl.exclude_from_stats = 0 AND cl.lp_click = 1 THEN 1 ELSE 0 END) AS lp_clicks,
+                       SUM(CASE WHEN cl.exclude_from_stats = 0 AND cl.lp_click = 1 AND cl.landing_page_id IS NULL THEN 1 ELSE 0 END) AS direct_clicks,
+                       SUM(CASE WHEN cl.exclude_from_stats = 1 THEN 1 ELSE 0 END) AS bot_clicks,
+                       COALESCE(SUM(CASE WHEN cl.exclude_from_stats = 0 THEN cl.cost ELSE 0 END), 0) AS manual_cost
+                FROM clicks cl{$force}
+                WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$filterSql}
+            ";
+        } else {
+            $sql = "
+                SELECT COUNT(*) AS visitors,
+                       SUM(CASE WHEN cl.lp_click = 1 THEN 1 ELSE 0 END) AS lp_clicks,
+                       SUM(CASE WHEN cl.lp_click = 1 AND cl.landing_page_id IS NULL THEN 1 ELSE 0 END) AS direct_clicks,
+                       0 AS bot_clicks,
+                       COALESCE(SUM(cl.cost), 0) AS manual_cost
+                FROM clicks cl{$force}
+                WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$filterSql}
+            ";
+        }
+
         $types = 'iss' . $filterTypes;
         $params = array_merge([$campaignId, $utcFrom, $utcTo], $filterParams);
         $stmt = $this->db->prepare($sql);
@@ -1611,6 +1637,7 @@ class CampaignStatsV2Service
         $stmt->close();
 
         $clCover = ClicksIndexHints::clickIdCoverAlias($this->db, 'cl', 'clicks');
+        $includedSql = $hasExclusionFlag ? ' AND cl.exclude_from_stats = 0' : '';
         $convSql = "
             SELECT COUNT(*) AS conversions,
                    COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
@@ -1635,6 +1662,8 @@ class CampaignStatsV2Service
             'lp_clicks' => (int) ($row['lp_clicks'] ?? 0),
             'direct_clicks' => (int) ($row['direct_clicks'] ?? 0),
             'conversions' => $conversions,
+            'optins' => 0,
+            'bot_clicks' => (int) ($row['bot_clicks'] ?? 0),
             'manual_cost' => (float) ($row['manual_cost'] ?? 0),
             'revenue' => $revenue,
         ];
@@ -1920,6 +1949,8 @@ class CampaignStatsV2Service
                 'clicks' => (int)($row['clicks'] ?? 0),
                 'lp_clicks' => $lpClicks,
                 'conversions' => (int)($row['conversions'] ?? 0),
+                'optins' => (int)($row['optins'] ?? 0),
+                'bot_clicks' => (int)($row['bot_clicks'] ?? 0),
                 'cost' => $cost,
                 'revenue' => (float)($row['revenue'] ?? 0),
             ]

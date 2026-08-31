@@ -1,4 +1,26 @@
-# Simple Kuma Tracker Version 1.1.5.18
+# Simple Kuma Tracker Version 1.1.5.19
+
+## Changes in 1.1.5.19
+
+### Bot Traffic Visibility & Fast-Path Reporting
+- Added `bot_clicks` pre-aggregation to `clicks_daily_summary` and `clicks_stats_by_token_daily` summary tables (Migration 089).
+- Bot traffic counts and bot percentage (`Bot %`) are now available across totals, daily charts, and all multi-dimension breakdowns (e.g. by traffic source token, publisher zone, country, offer).
+- Protected Hermes fast-path aggregation: reporting queries remain instant (summary-first) without requiring raw click scans or custom cost joins.
+- Added Bot Clicks and Bot % toggles to the customizable column picker in Campaign Stats.
+
+### Campaign, Offer & Landing Page Tagging & Client-Side Search
+- Added flexible tagging support for Campaigns, Offers, and Landing Pages (comma-separated tags).
+- Supported tags in Campaign Creation Wizard and Campaign Editor with review summary parity.
+- Added fast client-side search across Campaigns, Offers, and Landing Pages with real-time filtering by tag, name, `#ID`, traffic source, group, and flow type.
+- Displayed numeric Campaign IDs (`#ID`) prominently on campaign lists and mobile cards for quick navigation.
+
+### Safe Generated Columns & Hot-Path Redirect Fail-Safe
+- Migration 089 replaces strict integer casts on `clicks.ad_id` and `clicks.adset_id` with safe regex numeric validation, preventing MySQL `Truncated incorrect INTEGER value` errors when non-numeric tracking tokens or unresolved macros (e.g. `{{ad.id}}`) are received.
+- Hot-path redirector (`km.php`) fail-safely logs click recording errors without interrupting redirection, ensuring visitors are never dropped and internal SQL errors are not displayed to visitors.
+
+### UI & Dark Mode Readability Improvements
+- Improved contrast and dark mode styling for Edge Redirect (Cloudflare Worker) status panels in the Campaign Editor.
+- Enhanced contrast, distinct pill styling, and hover/active states for traffic source postback tokens in Settings → Integrations and Offer edit dialogs so tokens are clearly legible and clickable.
 
 ## Changes in 1.1.5.18
 

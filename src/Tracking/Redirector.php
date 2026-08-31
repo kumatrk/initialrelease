@@ -1284,36 +1284,40 @@ class Redirector
             $bindValues[] = $lpClick;
             $stmt->bind_param($paramTypes, ...$bindValues);
 
-            $stmt->execute();
+            try {
+                $stmt->execute();
 
-            // On-write: UPSERT clicks_daily_summary and token aggregates (no cron)
-            $updater = new DailySummaryUpdater($this->db);
-            $updater->upsertClick(
-                $campaignId,
-                $trafficSourceId,
-                $offerId,
-                $landingPageId,
-                $lpClick,
-                $costValue !== null ? (float) $costValue : null,
-                $extraData,
-                $ua,
-                $ip
-            );
-            $updater->upsertTokenAggregatesForClick(
-                $campaignId,
-                $trafficSourceId,
-                gmdate('Y-m-d'),
-                $extraData,
-                $lpClick,
-                $costValue !== null ? (float) $costValue : null,
-                0,
-                0.0,
-                $ua,
-                $ip
-            );
+                // On-write: UPSERT clicks_daily_summary and token aggregates (no cron)
+                $updater = new DailySummaryUpdater($this->db);
+                $updater->upsertClick(
+                    $campaignId,
+                    $trafficSourceId,
+                    $offerId,
+                    $landingPageId,
+                    $lpClick,
+                    $costValue !== null ? (float) $costValue : null,
+                    $extraData,
+                    $ua,
+                    $ip
+                );
+                $updater->upsertTokenAggregatesForClick(
+                    $campaignId,
+                    $trafficSourceId,
+                    gmdate('Y-m-d'),
+                    $extraData,
+                    $lpClick,
+                    $costValue !== null ? (float) $costValue : null,
+                    0,
+                    0.0,
+                    $ua,
+                    $ip
+                );
 
-            // Optional Meta PageView (non-blocking; failures never affect redirect)
-            $this->maybeQueueMetaPageView($campaignId, $clickId, $ip, $ua, $extraData);
+                // Optional Meta PageView (non-blocking; failures never affect redirect)
+                $this->maybeQueueMetaPageView($campaignId, $clickId, $ip, $ua, $extraData);
+            } catch (\Throwable $e) {
+                error_log("Redirector: Failed to record click (campaign {$campaignId}, click {$clickId}): " . $e->getMessage());
+            }
         }
 
     /**

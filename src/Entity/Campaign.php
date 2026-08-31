@@ -214,6 +214,7 @@ class Campaign
 
         $newId = $stmt->insert_id;
         if ($newId > 0) {
+            $this->saveTags((int)$newId, $data);
             $this->saveMinPostbackPayout((int)$newId, $data);
             $this->persistAllowMultipleConversions((int)$newId, $data);
             $this->persistEdgeFlags((int)$newId, $data);
@@ -295,6 +296,35 @@ class Campaign
     {
         $result = $this->db->query("SHOW COLUMNS FROM campaigns LIKE 'min_postback_payout'");
         return $result && $result->num_rows > 0;
+    }
+
+    private function campaignsTableHasTags(): bool
+    {
+        $result = $this->db->query("SHOW COLUMNS FROM campaigns LIKE 'tags'");
+        return $result && $result->num_rows > 0;
+    }
+
+    private function saveTags(int $campaignId, array $data): void
+    {
+        if (!$this->campaignsTableHasTags()) {
+            return;
+        }
+        $tags = isset($data['tags']) && trim((string)$data['tags']) !== '' ? trim((string)$data['tags']) : null;
+        if ($tags === null) {
+            $stmt = $this->db->prepare('UPDATE campaigns SET tags = NULL WHERE id = ?');
+            if ($stmt) {
+                $stmt->bind_param('i', $campaignId);
+                $stmt->execute();
+                $stmt->close();
+            }
+        } else {
+            $stmt = $this->db->prepare('UPDATE campaigns SET tags = ? WHERE id = ?');
+            if ($stmt) {
+                $stmt->bind_param('si', $tags, $campaignId);
+                $stmt->execute();
+                $stmt->close();
+            }
+        }
     }
 
     /**
@@ -722,6 +752,7 @@ class Campaign
         $result = $stmt->execute();
         
         if ($result) {
+            $this->saveTags($id, $data);
             $this->saveMinPostbackPayout($id, $data);
             $this->persistAllowMultipleConversions($id, $data);
             $this->persistEdgeFlags($id, $data);

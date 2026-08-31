@@ -58,3 +58,11 @@
         </select>
     </div>
 </div>
+
+<div style="margin-top: 16px;">
+    <label style="display:block;font-weight:600;margin-bottom:6px;font-size:13px;">Tags (comma-separated)</label>
+    <input type="text" name="tags" value="<?= htmlspecialchars(cc_input('tags')) ?>"
+           placeholder="e.g., sweeps, tier1, test"
+           style="width:100%;padding:9px 12px;border:2px solid #ddd;border-radius:4px;font-size:13px;">
+    <div style="font-size:12px;color:#666;margin-top:4px;">Organize and filter your campaigns by tags.</div>
+</div>

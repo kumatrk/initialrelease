@@ -73,6 +73,7 @@ class CampaignFormParser
             'min_postback_payout' => self::parseMinPostbackPayoutFromPost($post),
             'allow_multiple_conversions' => !empty($post['allow_multiple_conversions']),
             'fallback_offer_id' => !empty($post['fallback_offer_id']) ? (int)$post['fallback_offer_id'] : null,
+            'tags' => !empty($post['tags']) ? trim((string)$post['tags']) : null,
             'traffic_source_postbacks' => self::parseTrafficSourcePostbacks($post, $trafficSourceId),
             'custom_tokens' => self::parseCustomTokens($post),
             'redirect_rules' => self::parseRedirectRules($post),
@@ -181,6 +182,7 @@ class CampaignFormParser
             'min_postback_payout' => self::parseMinPostbackPayoutFromArray($input),
             'allow_multiple_conversions' => !empty($input['allow_multiple_conversions']),
             'fallback_offer_id' => !empty($input['fallback_offer_id']) ? (int)$input['fallback_offer_id'] : null,
+            'tags' => !empty($input['tags']) ? trim((string)$input['tags']) : null,
             'traffic_source_postbacks' => is_array($input['traffic_source_postbacks'] ?? null)
                 ? $input['traffic_source_postbacks'] : [],
             'custom_tokens' => $customTokens,

@@ -66,6 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $data = [
             'name' => $_POST['name'] ?? '',
             'url' => $_POST['url'] ?? '',
+            'tags' => !empty($_POST['tags']) ? trim((string)$_POST['tags']) : null,
             'notes' => $_POST['notes'] ?? '',
         ];
 
@@ -141,9 +142,19 @@ $db->close();
                     <a href="?page=landing-pages&action=add" class="btn btn-primary" style="margin-top: 20px;">+ Add Landing Page</a>
                 </div>
             <?php else: ?>
+                <!-- Search and Filter Bar -->
+                <div style="margin-bottom: 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                    <div style="position: relative; flex: 1; min-width: 260px; max-width: 450px;">
+                        <input type="text" id="lpSearchInput" placeholder="🔍 Search landing pages by name, tag, URL, notes..." 
+                               oninput="filterLandingPagesTable()"
+                               style="width: 100%; padding: 9px 14px; border: 2px solid #ddd; border-radius: 6px; font-size: 13px; background: #fff;">
+                    </div>
+                    <span id="lpSearchCount" style="font-size: 13px; color: #666; font-weight: 500;"></span>
+                </div>
+
                 <!-- Desktop Table View (hidden on mobile) -->
                 <div class="table-wrapper desktop-only">
-                    <table class="table">
+                    <table class="table" id="landing-pages-table">
                         <thead>
                             <tr>
                                 <th>Name</th>
@@ -156,9 +167,21 @@ $db->close();
                         </thead>
                         <tbody>
                             <?php foreach ($pages as $page): ?>
-                            <?php $campaignCount = $campaignCounts[$page['id']] ?? 0; ?>
-                            <tr>
-                                <td><strong><?= htmlspecialchars($page['name']) ?></strong></td>
+                            <?php 
+                                $campaignCount = $campaignCounts[$page['id']] ?? 0; 
+                                $searchData = strtolower($page['name'] . ' ' . ($page['tags'] ?? '') . ' ' . $page['url'] . ' ' . ($page['notes'] ?? ''));
+                            ?>
+                            <tr class="lp-row" data-search="<?= htmlspecialchars($searchData, ENT_QUOTES) ?>">
+                                <td>
+                                    <strong><?= htmlspecialchars($page['name']) ?></strong>
+                                    <?php if (!empty($page['tags'])): ?>
+                                        <div style="margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px;">
+                                            <?php foreach (explode(',', (string)$page['tags']) as $t): $t = trim($t); if ($t === '') continue; ?>
+                                                <span style="display: inline-block; font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 5px; border-radius: 3px; font-weight: 500;">🏷️ <?= htmlspecialchars($t) ?></span>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </td>
                                 <td style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-family: monospace;">
                                     <a href="<?= htmlspecialchars($page['url']) ?>" target="_blank" style="color: #3d5a26;">
                                         <?= htmlspecialchars($page['url']) ?> 🔗
@@ -226,13 +249,23 @@ $db->close();
                 <!-- Mobile Card View (hidden on desktop) -->
                 <div class="mobile-landing-page-cards mobile-only">
                     <?php foreach ($pages as $page): ?>
-                        <?php $campaignCount = $campaignCounts[$page['id']] ?? 0; ?>
-                        <div class="mobile-landing-page-card" style="background: var(--color-white); border: 1px solid var(--color-gray-200); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-md); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                        <?php 
+                            $campaignCount = $campaignCounts[$page['id']] ?? 0; 
+                            $searchData = strtolower($page['name'] . ' ' . ($page['tags'] ?? '') . ' ' . $page['url'] . ' ' . ($page['notes'] ?? ''));
+                        ?>
+                        <div class="mobile-landing-page-card" data-search="<?= htmlspecialchars($searchData, ENT_QUOTES) ?>" style="background: var(--color-white); border: 1px solid var(--color-gray-200); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-md); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                             <!-- Header: Name -->
                             <div style="margin-bottom: var(--spacing-sm); border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: var(--spacing-xs);">
                                 <div style="font-weight: 600; font-size: 16px; color: #3d5a26;">
                                     <?= htmlspecialchars($page['name']) ?>
                                 </div>
+                                <?php if (!empty($page['tags'])): ?>
+                                    <div style="margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px;">
+                                        <?php foreach (explode(',', (string)$page['tags']) as $t): $t = trim($t); if ($t === '') continue; ?>
+                                            <span style="display: inline-block; font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 5px; border-radius: 3px; font-weight: 500;">🏷️ <?= htmlspecialchars($t) ?></span>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
                                 <div style="font-size: 11px; color: #666; margin-top: 4px;">
                                     Created: <?= date('M d, Y', strtotime($page['created_at'])) ?>
                                 </div>
@@ -323,6 +356,16 @@ $db->close();
                     <input type="text" name="name" value="<?= htmlspecialchars($editLP['name'] ?? '') ?>" required
                            placeholder="e.g., Health VSL Page"
                            style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
+                </div>
+
+                <div style="margin-bottom: 24px;">
+                    <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+                        Tags
+                    </label>
+                    <input type="text" name="tags" value="<?= htmlspecialchars($editLP['tags'] ?? '') ?>" 
+                           placeholder="e.g., vsl, advertorial, quiz (comma-separated)"
+                           style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
+                    <div style="font-size: 12px; color: #666; margin-top: 4px;">Comma-separated tags for filtering and organizing landing pages</div>
                 </div>
 
                 <div style="margin-bottom: 24px;">
@@ -433,6 +476,43 @@ function showCampaignsModal(id, name, campaigns) {
 function closeCampaignsModal() {
     document.getElementById('campaigns-modal').style.display = 'none';
 }
+
+function filterLandingPagesTable() {
+    const input = document.getElementById('lpSearchInput');
+    const query = (input ? input.value : '').toLowerCase().trim();
+    const rows = document.querySelectorAll('#landing-pages-table .lp-row');
+    const cards = document.querySelectorAll('.mobile-landing-page-cards .mobile-landing-page-card');
+    let visibleCount = 0;
+    const totalCount = rows.length || cards.length;
+
+    rows.forEach(function(row) {
+        const searchData = row.getAttribute('data-search') || '';
+        const match = !query || searchData.indexOf(query) !== -1;
+        row.style.display = match ? '' : 'none';
+        if (match) visibleCount++;
+    });
+
+    cards.forEach(function(card) {
+        const searchData = card.getAttribute('data-search') || '';
+        const match = !query || searchData.indexOf(query) !== -1;
+        card.style.display = match ? '' : 'none';
+    });
+
+    const countEl = document.getElementById('lpSearchCount');
+    if (countEl) {
+        if (query) {
+            countEl.textContent = 'Showing ' + visibleCount + ' of ' + totalCount + ' landing pages';
+        } else {
+            countEl.textContent = totalCount + ' total landing pages';
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    if (document.getElementById('lpSearchInput')) {
+        filterLandingPagesTable();
+    }
+});
 
 function escapeHtml(text) {
     const div = document.createElement('div');

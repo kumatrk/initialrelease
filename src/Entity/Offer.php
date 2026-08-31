@@ -102,7 +102,12 @@ class Offer
         );
 
         $stmt->execute();
-        return $stmt->insert_id;
+        $newId = (int)$stmt->insert_id;
+        $stmt->close();
+        if ($newId > 0) {
+            $this->saveTags($newId, $data);
+        }
+        return $newId;
     }
 
     public function update(int $id, array $data): bool
@@ -148,10 +153,41 @@ class Offer
         );
 
         $ok = $stmt->execute();
+        $stmt->close();
         if ($ok) {
+            $this->saveTags($id, $data);
             EdgeCampaignSync::hookOfferChanged($this->db, $id);
         }
         return $ok;
+    }
+
+    private function offersTableHasTags(): bool
+    {
+        $result = $this->db->query("SHOW COLUMNS FROM offers LIKE 'tags'");
+        return $result && $result->num_rows > 0;
+    }
+
+    private function saveTags(int $offerId, array $data): void
+    {
+        if (!$this->offersTableHasTags()) {
+            return;
+        }
+        $tags = isset($data['tags']) && trim((string)$data['tags']) !== '' ? trim((string)$data['tags']) : null;
+        if ($tags === null) {
+            $stmt = $this->db->prepare('UPDATE offers SET tags = NULL WHERE id = ?');
+            if ($stmt) {
+                $stmt->bind_param('i', $offerId);
+                $stmt->execute();
+                $stmt->close();
+            }
+        } else {
+            $stmt = $this->db->prepare('UPDATE offers SET tags = ? WHERE id = ?');
+            if ($stmt) {
+                $stmt->bind_param('si', $tags, $offerId);
+                $stmt->execute();
+                $stmt->close();
+            }
+        }
     }
 
     /**

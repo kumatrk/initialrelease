@@ -70,6 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'payout_type' => $_POST['payout_type'] ?? 'CPA',
             'payout_value' => isset($_POST['payout_value']) ? (float)$_POST['payout_value'] : 0,
             'network_id' => !empty($_POST['network_id']) ? (int)$_POST['network_id'] : null,
+            'tags' => !empty($_POST['tags']) ? trim((string)$_POST['tags']) : null,
             'notes' => $_POST['notes'] ?? '',
             'is_24_7' => isset($_POST['is_24_7']) ? (int)$_POST['is_24_7'] : 1,
             'schedule_days' => isset($_POST['schedule_days']) && is_array($_POST['schedule_days']) ? $_POST['schedule_days'] : [],
@@ -176,9 +177,19 @@ $db->close();
                     <a href="?page=offers&action=add" class="btn btn-primary" style="margin-top: 20px;">+ Add Offer</a>
                 </div>
             <?php else: ?>
+                <!-- Search and Filter Bar -->
+                <div style="margin-bottom: 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                    <div style="position: relative; flex: 1; min-width: 260px; max-width: 450px;">
+                        <input type="text" id="offerSearchInput" placeholder="🔍 Search offers by name, tag, network, URL..." 
+                               oninput="filterOffersTable()"
+                               style="width: 100%; padding: 9px 14px; border: 2px solid #ddd; border-radius: 6px; font-size: 13px; background: #fff;">
+                    </div>
+                    <span id="offerSearchCount" style="font-size: 13px; color: #666; font-weight: 500;"></span>
+                </div>
+
                 <!-- Desktop Table View (hidden on mobile) -->
                 <div class="table-wrapper desktop-only">
-                    <table class="table">
+                    <table class="table" id="offers-table">
                         <thead>
                             <tr>
                                 <th>Offer Name</th>
@@ -193,9 +204,21 @@ $db->close();
                         </thead>
                         <tbody>
                             <?php foreach ($offers as $off): ?>
-                            <?php $campaignCount = $campaignCounts[$off['id']] ?? 0; ?>
-                            <tr>
-                                <td><strong><?= htmlspecialchars($off['name']) ?></strong></td>
+                            <?php 
+                                $campaignCount = $campaignCounts[$off['id']] ?? 0; 
+                                $searchData = strtolower($off['name'] . ' ' . ($off['network_name'] ?? '') . ' ' . ($off['tags'] ?? '') . ' ' . $off['url']);
+                            ?>
+                            <tr class="offer-row" data-search="<?= htmlspecialchars($searchData, ENT_QUOTES) ?>">
+                                <td>
+                                    <strong><?= htmlspecialchars($off['name']) ?></strong>
+                                    <?php if (!empty($off['tags'])): ?>
+                                        <div style="margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px;">
+                                            <?php foreach (explode(',', (string)$off['tags']) as $t): $t = trim($t); if ($t === '') continue; ?>
+                                                <span style="display: inline-block; font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 5px; border-radius: 3px; font-weight: 500;">🏷️ <?= htmlspecialchars($t) ?></span>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </td>
                                 <td>
                                     <?php if ($off['network_name']): ?>
                                         <span class="badge badge-info"><?= htmlspecialchars($off['network_name']) ?></span>
@@ -273,13 +296,23 @@ $db->close();
                 <!-- Mobile Card View (hidden on desktop) -->
                 <div class="mobile-offer-cards mobile-only">
                     <?php foreach ($offers as $off): ?>
-                        <?php $campaignCount = $campaignCounts[$off['id']] ?? 0; ?>
-                        <div class="mobile-offer-card" style="background: var(--color-white); border: 1px solid var(--color-gray-200); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-md); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                        <?php 
+                            $campaignCount = $campaignCounts[$off['id']] ?? 0; 
+                            $searchData = strtolower($off['name'] . ' ' . ($off['network_name'] ?? '') . ' ' . ($off['tags'] ?? '') . ' ' . $off['url']);
+                        ?>
+                        <div class="mobile-offer-card" data-search="<?= htmlspecialchars($searchData, ENT_QUOTES) ?>" style="background: var(--color-white); border: 1px solid var(--color-gray-200); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-md); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                             <!-- Header: Name -->
                             <div style="margin-bottom: var(--spacing-sm); border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: var(--spacing-xs);">
                                 <div style="font-weight: 600; font-size: 16px; color: #3d5a26;">
                                     <?= htmlspecialchars($off['name']) ?>
                                 </div>
+                                <?php if (!empty($off['tags'])): ?>
+                                    <div style="margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px;">
+                                        <?php foreach (explode(',', (string)$off['tags']) as $t): $t = trim($t); if ($t === '') continue; ?>
+                                            <span style="display: inline-block; font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 5px; border-radius: 3px; font-weight: 500;">🏷️ <?= htmlspecialchars($t) ?></span>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
                                 <div style="font-size: 11px; color: #666; margin-top: 4px;">
                                     Created: <?= date('M d, Y', strtotime($off['created_at'])) ?>
                                 </div>
@@ -395,6 +428,18 @@ $db->close();
                     <?php endif; ?>
                 </div>
 
+                <!-- Offer Tags -->
+                <div style="margin-bottom: 24px;">
+                    <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+                        Tags
+                    </label>
+                    <input type="text" name="tags" 
+                           value="<?= htmlspecialchars($editOffer['tags'] ?? $_POST['tags'] ?? '') ?>" 
+                           placeholder="e.g., sweepstakes, us, direct (comma-separated)"
+                           style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
+                    <div style="font-size: 12px; color: #666; margin-top: 4px;">Comma-separated tags for filtering and organizing offers</div>
+                </div>
+
                 <!-- Offer URL -->
                 <div style="margin-bottom: 24px;">
                     <label style="display: block; font-weight: 600; margin-bottom: 8px;">
@@ -411,8 +456,8 @@ $db->close();
                     </div>
                     
                     <!-- Traffic Source Selector for Custom Token Labels -->
-                    <div style="margin-bottom: 12px; padding: 8px; background: #e8f5e9; border-radius: 4px; border: 1px solid #c8e6c9;">
-                        <label style="display: block; font-weight: 600; margin-bottom: 6px; font-size: 12px; color: #2e7d32;">
+                    <div class="token-selector-box">
+                        <label>
                             Select Traffic Source for Custom Token Labels (Optional):
                         </label>
                         <select id="traffic_source_selector_for_tokens" 
@@ -436,12 +481,162 @@ $db->close();
                             endforeach; 
                             ?>
                         </select>
-                        <div style="font-size: 11px; color: #558b2f; margin-top: 4px;">
+                        <div class="token-selector-hint">
                             Select a traffic source to see traffic source custom tokens (ts_token1-ts_token20) with their labels.
                         </div>
                     </div>
                     
-                    <div style="background: #f5f5f5; padding: 12px; border-radius: 4px; border: 1px solid #ddd;">
+                    <style>
+                    .token-container-box {
+                        background: #f8fafc;
+                        padding: 14px;
+                        border-radius: 6px;
+                        border: 1.5px solid #e2e8f0;
+                    }
+                    .token-heading--builtin, .token-heading--custom {
+                        color: #166534;
+                        font-size: 12px;
+                        display: block;
+                        margin-bottom: 8px;
+                        font-weight: 700;
+                    }
+                    .token-heading--campaign {
+                        color: #1e40af;
+                        font-size: 11px;
+                        display: block;
+                        margin-bottom: 6px;
+                        font-weight: 700;
+                    }
+                    .token-heading--traffic-source {
+                        color: #7e22ce;
+                        font-size: 11px;
+                        display: block;
+                        margin-bottom: 6px;
+                        font-weight: 700;
+                    }
+                    .custom-token-btn {
+                        display: inline-flex !important;
+                        align-items: center !important;
+                        justify-content: center !important;
+                        padding: 5px 11px !important;
+                        border-radius: 5px !important;
+                        cursor: pointer !important;
+                        font-size: 11px !important;
+                        font-weight: 600 !important;
+                        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+                        line-height: 1.3 !important;
+                        border-width: 1.5px !important;
+                        border-style: solid !important;
+                        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08) !important;
+                        transition: all 0.15s ease-in-out !important;
+                        user-select: none !important;
+                        text-decoration: none !important;
+                        outline: none !important;
+                    }
+                    .custom-token-btn:active {
+                        transform: translateY(1px) scale(0.98) !important;
+                    }
+                    .custom-token-btn.token-btn--builtin, .custom-token-btn {
+                        background: #f0fdf4 !important;
+                        border-color: #86efac !important;
+                        color: #166534 !important;
+                    }
+                    .custom-token-btn.token-btn--builtin:hover, .custom-token-btn:hover {
+                        background: #166534 !important;
+                        border-color: #166534 !important;
+                        color: #ffffff !important;
+                        transform: translateY(-1px) !important;
+                        box-shadow: 0 3px 6px rgba(22, 101, 52, 0.25) !important;
+                    }
+                    .custom-token-btn.token-btn--campaign {
+                        background: #eff6ff !important;
+                        border-color: #93c5fd !important;
+                        color: #1e40af !important;
+                    }
+                    .custom-token-btn.token-btn--campaign:hover {
+                        background: #1e40af !important;
+                        border-color: #1e40af !important;
+                        color: #ffffff !important;
+                        transform: translateY(-1px) !important;
+                        box-shadow: 0 3px 6px rgba(30, 64, 175, 0.25) !important;
+                    }
+                    .custom-token-btn.token-btn--traffic-source {
+                        background: #faf5ff !important;
+                        border-color: #d8b4fe !important;
+                        color: #6b21a8 !important;
+                    }
+                    .custom-token-btn.token-btn--traffic-source:hover {
+                        background: #7e22ce !important;
+                        border-color: #7e22ce !important;
+                        color: #ffffff !important;
+                        transform: translateY(-1px) !important;
+                        box-shadow: 0 3px 6px rgba(126, 34, 206, 0.25) !important;
+                    }
+                    [data-theme-base="dark"] .token-container-box, [data-theme="dark"] .token-container-box {
+                        background: #181d24 !important;
+                        border-color: #2d333b !important;
+                    }
+                    [data-theme-base="dark"] .token-selector-box, [data-theme="dark"] .token-selector-box {
+                        background: #132417 !important;
+                        border-color: #244b2c !important;
+                    }
+                    [data-theme-base="dark"] .token-selector-box label, [data-theme="dark"] .token-selector-box label {
+                        color: #86efac !important;
+                    }
+                    [data-theme-base="dark"] .token-selector-box .token-selector-hint, [data-theme="dark"] .token-selector-box .token-selector-hint {
+                        color: #94a3b8 !important;
+                    }
+                    [data-theme-base="dark"] .token-heading--builtin, [data-theme-base="dark"] .token-heading--custom, [data-theme="dark"] .token-heading--builtin, [data-theme="dark"] .token-heading--custom {
+                        color: #86efac !important;
+                    }
+                    [data-theme-base="dark"] .token-heading--campaign, [data-theme="dark"] .token-heading--campaign {
+                        color: #93c5fd !important;
+                    }
+                    [data-theme-base="dark"] .token-heading--traffic-source, [data-theme="dark"] .token-heading--traffic-source {
+                        color: #d8b4fe !important;
+                    }
+                    [data-theme-base="dark"] .custom-token-btn.token-btn--builtin, [data-theme-base="dark"] .custom-token-btn, [data-theme="dark"] .custom-token-btn.token-btn--builtin, [data-theme="dark"] .custom-token-btn {
+                        background: #142e1b !important;
+                        border-color: #22c55e !important;
+                        color: #86efac !important;
+                        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+                    }
+                    [data-theme-base="dark"] .custom-token-btn.token-btn--builtin:hover, [data-theme-base="dark"] .custom-token-btn:hover, [data-theme-base="dark"] .custom-token-btn.token-btn--builtin:hover, [data-theme-base="dark"] .custom-token-btn:hover {
+                        background: #22c55e !important;
+                        border-color: #86efac !important;
+                        color: #052e16 !important;
+                        transform: translateY(-1px) !important;
+                        box-shadow: 0 3px 8px rgba(34, 197, 94, 0.4) !important;
+                    }
+                    [data-theme-base="dark"] .custom-token-btn.token-btn--campaign, [data-theme="dark"] .custom-token-btn.token-btn--campaign {
+                        background: #172554 !important;
+                        border-color: #3b82f6 !important;
+                        color: #93c5fd !important;
+                        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+                    }
+                    [data-theme-base="dark"] .custom-token-btn.token-btn--campaign:hover, [data-theme="dark"] .custom-token-btn.token-btn--campaign:hover {
+                        background: #3b82f6 !important;
+                        border-color: #93c5fd !important;
+                        color: #0f172a !important;
+                        transform: translateY(-1px) !important;
+                        box-shadow: 0 3px 8px rgba(59, 130, 246, 0.4) !important;
+                    }
+                    [data-theme-base="dark"] .custom-token-btn.token-btn--traffic-source, [data-theme="dark"] .custom-token-btn.token-btn--traffic-source {
+                        background: #2e1047 !important;
+                        border-color: #a855f7 !important;
+                        color: #e9d5ff !important;
+                        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+                    }
+                    [data-theme-base="dark"] .custom-token-btn.token-btn--traffic-source:hover, [data-theme="dark"] .custom-token-btn.token-btn--traffic-source:hover {
+                        background: #a855f7 !important;
+                        border-color: #f3e8ff !important;
+                        color: #1e0533 !important;
+                        transform: translateY(-1px) !important;
+                        box-shadow: 0 3px 8px rgba(168, 85, 247, 0.5) !important;
+                    }
+                    </style>
+                    
+                    <div class="token-container-box">
                         <?php
                         // Use ClickTokenReplacer for available tokens (click-time tokens)
                         try {
@@ -457,14 +652,13 @@ $db->close();
                         <?php foreach ($availableTokens as $category => $tokens): ?>
                             <?php if ($category === 'Built-in Tokens'): ?>
                                 <div style="margin-bottom: 12px;">
-                                    <strong style="color: #3d5a26; font-size: 12px; display: block; margin-bottom: 6px;"><?= htmlspecialchars($category) ?>:</strong>
+                                    <strong class="token-heading--builtin"><?= htmlspecialchars($category) ?>:</strong>
                                     <div style="display: flex; flex-wrap: wrap; gap: 6px;">
                                         <?php foreach ($tokens as $token => $description): ?>
                                             <button type="button" 
                                                     onclick="insertTokenAtCursor('<?= htmlspecialchars($token) ?>')"
-                                                    style="padding: 4px 10px; background: #fff; border: 1px solid #3d5a26; border-radius: 3px; cursor: pointer; font-size: 11px; font-family: monospace; color: #3d5a26; transition: all 0.2s;"
-                                                    onmouseover="this.style.background='#3d5a26'; this.style.color='#fff';"
-                                                    onmouseout="this.style.background='#fff'; this.style.color='#3d5a26';"
+                                                    class="custom-token-btn token-btn--builtin"
+                                                    data-token="<?= htmlspecialchars($token) ?>"
                                                     title="<?= htmlspecialchars($description) ?>">
                                                         <?= htmlspecialchars($token) ?>
                                                     </button>
@@ -477,11 +671,11 @@ $db->close();
                         <!-- Traffic Source Custom Tokens -->
                         <div id="traffic_source_tokens_display" style="margin-bottom: 0;">
                             <div id="traffic_source_tokens_header" style="margin-bottom: 6px;">
-                                <strong style="color: #3d5a26; font-size: 12px; display: block; margin-bottom: 6px;">Traffic Source Tokens:</strong>
+                                <strong class="token-heading--custom">Traffic Source Tokens:</strong>
                             </div>
                             <!-- Traffic Source Custom Tokens (will be updated by JavaScript) -->
                             <div id="traffic_source_tokens_section" style="margin-bottom: 8px; display: none;">
-                                <strong style="color: #7b1fa2; font-size: 11px; display: block; margin-bottom: 4px;">Selected Traffic Source Tokens:</strong>
+                                <strong class="token-heading--traffic-source">Selected Traffic Source Tokens:</strong>
                                 <div id="traffic_source_tokens_buttons" style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;"></div>
                             </div>
                             <!-- Generic fallback -->
@@ -493,11 +687,8 @@ $db->close();
                                 ?>
                                     <button type="button" 
                                             onclick="insertTokenAtCursor('<?= htmlspecialchars($token) ?>')"
-                                            class="custom-token-btn"
+                                            class="custom-token-btn token-btn--builtin"
                                             data-token="<?= htmlspecialchars($token) ?>"
-                                            style="padding: 4px 10px; background: #fff; border: 1px solid #3d5a26; border-radius: 3px; cursor: pointer; font-size: 11px; font-family: monospace; color: #3d5a26; transition: all 0.2s;"
-                                            onmouseover="this.style.background='#3d5a26'; this.style.color='#fff';"
-                                            onmouseout="this.style.background='#fff'; this.style.color='#3d5a26';"
                                             title="Traffic source token <?= $i ?>">
                                         <?= htmlspecialchars($token) ?>
                                     </button>
@@ -918,7 +1109,7 @@ $db->close();
                                     ? `${token.name || 'Token'} - Parameter: ${paramName}, Placeholder: ${token.placeholder}` 
                                     : `${token.name || 'Token'} - Parameter: ${paramName}`;
                                 
-                                const button = createTokenButton(tokenKey, displayText, tooltipText, '#7b1fa2');
+                                const button = createTokenButton(tokenKey, displayText, tooltipText, 'traffic-source');
                                 trafficSourceTokensContainer.appendChild(button);
                             });
                         }
@@ -936,21 +1127,18 @@ $db->close();
                 }
             }
             
-            function createTokenButton(tokenKey, displayText, tooltipText, borderColor) {
+            function createTokenButton(tokenKey, displayText, tooltipText, typeOrColor) {
                 const button = document.createElement('button');
                 button.type = 'button';
-                button.className = 'custom-token-btn';
+                let typeClass = 'token-btn--builtin';
+                if (typeOrColor === 'campaign' || typeOrColor === '#1976d2') {
+                    typeClass = 'token-btn--campaign';
+                } else if (typeOrColor === 'traffic-source' || typeOrColor === '#7b1fa2') {
+                    typeClass = 'token-btn--traffic-source';
+                }
+                button.className = 'custom-token-btn ' + typeClass;
                 button.setAttribute('data-token', tokenKey);
                 button.onclick = function() { insertTokenAtCursor(tokenKey); };
-                button.style.cssText = `padding: 4px 10px; background: #fff; border: 1px solid ${borderColor}; border-radius: 3px; cursor: pointer; font-size: 11px; font-family: monospace; color: ${borderColor}; transition: all 0.2s;`;
-                button.onmouseover = function() { 
-                    this.style.background = borderColor; 
-                    this.style.color = '#fff'; 
-                };
-                button.onmouseout = function() { 
-                    this.style.background = '#fff'; 
-                    this.style.color = borderColor; 
-                };
                 button.title = tooltipText;
                 button.textContent = displayText;
                 return button;
@@ -1072,6 +1260,43 @@ function showCampaignsModal(id, name, campaigns) {
 function closeCampaignsModal() {
     document.getElementById('campaigns-modal').style.display = 'none';
 }
+
+function filterOffersTable() {
+    const input = document.getElementById('offerSearchInput');
+    const query = (input ? input.value : '').toLowerCase().trim();
+    const rows = document.querySelectorAll('#offers-table .offer-row');
+    const cards = document.querySelectorAll('.mobile-offer-cards .mobile-offer-card');
+    let visibleCount = 0;
+    const totalCount = rows.length || cards.length;
+
+    rows.forEach(function(row) {
+        const searchData = row.getAttribute('data-search') || '';
+        const match = !query || searchData.indexOf(query) !== -1;
+        row.style.display = match ? '' : 'none';
+        if (match) visibleCount++;
+    });
+
+    cards.forEach(function(card) {
+        const searchData = card.getAttribute('data-search') || '';
+        const match = !query || searchData.indexOf(query) !== -1;
+        card.style.display = match ? '' : 'none';
+    });
+
+    const countEl = document.getElementById('offerSearchCount');
+    if (countEl) {
+        if (query) {
+            countEl.textContent = 'Showing ' + visibleCount + ' of ' + totalCount + ' offers';
+        } else {
+            countEl.textContent = totalCount + ' total offers';
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    if (document.getElementById('offerSearchInput')) {
+        filterOffersTable();
+    }
+});
 
 function escapeHtml(text) {
     const div = document.createElement('div');

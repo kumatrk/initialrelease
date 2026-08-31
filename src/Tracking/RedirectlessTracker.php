@@ -633,37 +633,41 @@ class RedirectlessTracker
         $bindValues[] = $lpClick;
         $stmt->bind_param($paramTypes, ...$bindValues);
 
-        $result = $stmt->execute();
-        
-        if (!$result) {
-            error_log("RedirectlessTracker::storeClick ERROR: " . $stmt->error);
-        } else {
-            error_log("RedirectlessTracker::storeClick SUCCESS: click_id=$clickId, traffic_source_id=" . ($trafficSourceId ?? 'NULL'));
-            // On-write: UPSERT clicks_daily_summary and token aggregates (no cron)
-            $updater = new DailySummaryUpdater($this->db);
-            $updater->upsertClick(
-                $campaignId,
-                $trafficSourceId,
-                null, // offer_id (redirectless: LP first)
-                $landingPageId,
-                0,    // lp_click (set to 1 when user clicks button)
-                $costValue !== null ? (float) $costValue : null,
-                $extraData,
-                $ua,
-                $ip
-            );
-            $updater->upsertTokenAggregatesForClick(
-                $campaignId,
-                $trafficSourceId,
-                gmdate('Y-m-d'),
-                $extraData,
-                0,    // lp_click
-                $costValue !== null ? (float) $costValue : null,
-                0,
-                0.0,
-                $ua,
-                $ip
-            );
+        try {
+            $result = $stmt->execute();
+            
+            if (!$result) {
+                error_log("RedirectlessTracker::storeClick ERROR: " . $stmt->error);
+            } else {
+                error_log("RedirectlessTracker::storeClick SUCCESS: click_id=$clickId, traffic_source_id=" . ($trafficSourceId ?? 'NULL'));
+                // On-write: UPSERT clicks_daily_summary and token aggregates (no cron)
+                $updater = new DailySummaryUpdater($this->db);
+                $updater->upsertClick(
+                    $campaignId,
+                    $trafficSourceId,
+                    null, // offer_id (redirectless: LP first)
+                    $landingPageId,
+                    0,    // lp_click (set to 1 when user clicks button)
+                    $costValue !== null ? (float) $costValue : null,
+                    $extraData,
+                    $ua,
+                    $ip
+                );
+                $updater->upsertTokenAggregatesForClick(
+                    $campaignId,
+                    $trafficSourceId,
+                    gmdate('Y-m-d'),
+                    $extraData,
+                    0,    // lp_click
+                    $costValue !== null ? (float) $costValue : null,
+                    0,
+                    0.0,
+                    $ua,
+                    $ip
+                );
+            }
+        } catch (\Throwable $e) {
+            error_log("RedirectlessTracker::storeClick Exception: " . $e->getMessage());
         }
     }
 

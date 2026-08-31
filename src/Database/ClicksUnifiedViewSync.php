@@ -56,10 +56,16 @@ class ClicksUnifiedViewSync
             "ADD COLUMN os_version VARCHAR(20) NULL AFTER os",
             "ADD COLUMN browser_version VARCHAR(20) NULL AFTER browser",
             "ADD COLUMN ad_id BIGINT UNSIGNED GENERATED ALWAYS AS (
-                CAST(JSON_UNQUOTE(JSON_EXTRACT(extra_json, '$.traffic_source_tokens.ad_id')) AS UNSIGNED)
+                CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(extra_json, '$.traffic_source_tokens.ad_id')) REGEXP '^[0-9]{1,20}$'
+                     THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(extra_json, '$.traffic_source_tokens.ad_id')) AS UNSIGNED)
+                     ELSE NULL
+                END
             ) STORED",
             "ADD COLUMN adset_id BIGINT UNSIGNED GENERATED ALWAYS AS (
-                CAST(JSON_UNQUOTE(JSON_EXTRACT(extra_json, '$.traffic_source_tokens.adset_id')) AS UNSIGNED)
+                CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(extra_json, '$.traffic_source_tokens.adset_id')) REGEXP '^[0-9]{1,20}$'
+                     THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(extra_json, '$.traffic_source_tokens.adset_id')) AS UNSIGNED)
+                     ELSE NULL
+                END
             ) STORED",
             "ADD COLUMN ad_name_value VARCHAR(255) GENERATED ALWAYS AS (
                 JSON_UNQUOTE(JSON_EXTRACT(extra_json, '$.traffic_source_tokens.ad_name'))

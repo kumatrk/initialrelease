@@ -50,11 +50,16 @@ class DailySummaryUpdater
         ?string $ua = null,
         ?string $ip = null
     ): bool {
-        if (CampaignStatsExpressions::shouldExcludeClickFromStats($trafficSourceId, $extraData, $ua)) {
-            return true;
-        }
         if ($ip !== null && $ip !== '' && $this->hiddenIps()->isHidden($ip)) {
             return true;
+        }
+
+        // When summary table has bot_clicks column, bot clicks are tracked in bot_clicks.
+        // If bot_clicks column does not exist (legacy), exclude them from total clicks.
+        if (!$this->summaryTableHasBotClicksColumn()) {
+            if (CampaignStatsExpressions::shouldExcludeClickFromStats($trafficSourceId, $extraData, $ua)) {
+                return true;
+            }
         }
 
         return false;
@@ -148,9 +153,12 @@ class DailySummaryUpdater
             return;
         }
         $cost = $cost !== null ? (float) $cost : 0.0;
-        $lpInc = ($lpClick === 1) ? 1 : 0;
-        $visitors = ($conversionsDelta === 0 && $optinsDelta === 0) ? 1 : 0;
+        $isBot = self::isBotClick($extraDataAsArray, $ua);
+        $lpInc = (!$isBot && $lpClick === 1) ? 1 : 0;
+        $visitors = ($conversionsDelta === 0 && $optinsDelta === 0 && !$isBot) ? 1 : 0;
+        $botInc = ($conversionsDelta === 0 && $optinsDelta === 0 && $isBot) ? 1 : 0;
         $hasOptins = $this->tokenTableHasOptinsColumn();
+        $hasBotClicks = $this->tokenTableHasBotClicksColumn();
 
         // Negative conversion/optin deltas must UPDATE only — INSERT of -1 into UNSIGNED fails
         if ($conversionsDelta < 0 || $optinsDelta < 0) {
@@ -232,6 +240,7 @@ class DailySummaryUpdater
                 'conversions' => $conversionsDelta,
                 'optins' => $optinsDelta,
                 'revenue' => $revenueDelta,
+                'bot_clicks' => $botInc,
             ];
         }
 
@@ -239,7 +248,22 @@ class DailySummaryUpdater
         $types = '';
         $params = [];
         foreach ($rows as $u) {
-            if ($hasOptins) {
+            if ($hasBotClicks && $hasOptins) {
+                $values[] = '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+                $types .= 'isssiiididii';
+                $params[] = $u['campaign_id'];
+                $params[] = $u['summary_date'];
+                $params[] = $u['token_param'];
+                $params[] = $u['token_value'];
+                $params[] = $u['traffic_source_id'];
+                $params[] = $u['visitors'];
+                $params[] = $u['lp_clicks'];
+                $params[] = $u['cost'];
+                $params[] = $u['conversions'];
+                $params[] = $u['optins'];
+                $params[] = $u['revenue'];
+                $params[] = $u['bot_clicks'];
+            } elseif ($hasOptins) {
                 $values[] = '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
                 $types .= 'isssiiididi';
                 $params[] = $u['campaign_id'];
@@ -269,7 +293,19 @@ class DailySummaryUpdater
             }
         }
 
-        if ($hasOptins) {
+        if ($hasBotClicks && $hasOptins) {
+            $sql = 'INSERT INTO clicks_stats_by_token_daily (campaign_id, summary_date, token_param, token_value, traffic_source_id, visitors, lp_clicks, cost, conversions, optins, revenue, bot_clicks)
+                VALUES ' . implode(', ', $values) . '
+                ON DUPLICATE KEY UPDATE
+                    visitors = GREATEST(0, CAST(visitors AS SIGNED) + VALUES(visitors)),
+                    lp_clicks = GREATEST(0, CAST(lp_clicks AS SIGNED) + VALUES(lp_clicks)),
+                    cost = GREATEST(0, cost + VALUES(cost)),
+                    conversions = GREATEST(0, CAST(conversions AS SIGNED) + VALUES(conversions)),
+                    optins = GREATEST(0, CAST(optins AS SIGNED) + VALUES(optins)),
+                    revenue = GREATEST(0, revenue + VALUES(revenue)),
+                    bot_clicks = GREATEST(0, CAST(bot_clicks AS SIGNED) + VALUES(bot_clicks)),
+                    updated_at = NOW()';
+        } elseif ($hasOptins) {
             $sql = 'INSERT INTO clicks_stats_by_token_daily (campaign_id, summary_date, token_param, token_value, traffic_source_id, visitors, lp_clicks, cost, conversions, optins, revenue)
                 VALUES ' . implode(', ', $values) . '
                 ON DUPLICATE KEY UPDATE
@@ -334,7 +370,9 @@ class DailySummaryUpdater
             $landingPageId,
             $lpClick,
             $cost,
-            gmdate('Y-m-d')
+            gmdate('Y-m-d'),
+            $extraDataAsArray,
+            $ua
         );
     }
 
@@ -345,12 +383,18 @@ class DailySummaryUpdater
         ?int $landingPageId,
         int $lpClick,
         ?float $cost,
-        string $summaryDate
+        string $summaryDate,
+        ?array $extraDataAsArray = null,
+        ?string $ua = null
     ): void {
         $cost = $cost !== null ? (float) $cost : 0.0;
+        $isBot = self::isBotClick($extraDataAsArray, $ua);
+        $clickInc = $isBot ? 0 : 1;
+        $botInc = $isBot ? 1 : 0;
         // LP rows (offer_id=null) get lp_clicks ONLY from upsertLpClickUpdate to avoid double-counting
-        $lpInc = ($lpClick && $landingPageId !== null && $offerId !== null) ? 1 : 0;
-        $directInc = ($lpClick && $landingPageId === null) ? 1 : 0;
+        $lpInc = (!$isBot && $lpClick && $landingPageId !== null && $offerId !== null) ? 1 : 0;
+        $directInc = (!$isBot && $lpClick && $landingPageId === null) ? 1 : 0;
+        $hasBotClicks = $this->summaryTableHasBotClicksColumn();
 
         // MySQL UNIQUE allows multiple NULLs, so ON DUPLICATE KEY never fires when
         // landing_page_id/offer_id/traffic_source_id is NULL. Update with <=> then insert.
@@ -360,34 +404,62 @@ class DailySummaryUpdater
             $offerId,
             $landingPageId,
             $summaryDate,
+            $clickInc,
             $lpInc,
             $directInc,
-            $cost
+            $cost,
+            $botInc
         );
         if ($updated) {
             return;
         }
 
-        $stmt = $this->db->prepare("
-            INSERT INTO clicks_daily_summary 
-            (campaign_id, traffic_source_id, offer_id, landing_page_id, summary_date, clicks, lp_clicks, direct_clicks, cost)
-            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
-        ");
-        if (!$stmt) {
-            error_log("DailySummaryUpdater::upsertClick prepare failed: " . $this->db->error);
-            return;
+        if ($hasBotClicks) {
+            $stmt = $this->db->prepare("
+                INSERT INTO clicks_daily_summary 
+                (campaign_id, traffic_source_id, offer_id, landing_page_id, summary_date, clicks, lp_clicks, direct_clicks, cost, bot_clicks)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            if (!$stmt) {
+                error_log("DailySummaryUpdater::upsertClick prepare failed: " . $this->db->error);
+                return;
+            }
+            $stmt->bind_param(
+                'iiiisiiidi',
+                $campaignId,
+                $trafficSourceId,
+                $offerId,
+                $landingPageId,
+                $summaryDate,
+                $clickInc,
+                $lpInc,
+                $directInc,
+                $cost,
+                $botInc
+            );
+        } else {
+            $stmt = $this->db->prepare("
+                INSERT INTO clicks_daily_summary 
+                (campaign_id, traffic_source_id, offer_id, landing_page_id, summary_date, clicks, lp_clicks, direct_clicks, cost)
+                VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+            ");
+            if (!$stmt) {
+                error_log("DailySummaryUpdater::upsertClick prepare failed: " . $this->db->error);
+                return;
+            }
+            $stmt->bind_param(
+                'iiiisiid',
+                $campaignId,
+                $trafficSourceId,
+                $offerId,
+                $landingPageId,
+                $summaryDate,
+                $lpInc,
+                $directInc,
+                $cost
+            );
         }
-        $stmt->bind_param(
-            'iiiisiid',
-            $campaignId,
-            $trafficSourceId,
-            $offerId,
-            $landingPageId,
-            $summaryDate,
-            $lpInc,
-            $directInc,
-            $cost
-        );
+
         if (!$stmt->execute()) {
             // Race: another request inserted the same nullable dimensional row — retry update
             if (!$this->incrementSummaryClickRow(
@@ -398,7 +470,8 @@ class DailySummaryUpdater
                 $summaryDate,
                 $lpInc,
                 $directInc,
-                $cost
+                $cost,
+                $botInc
             )) {
                 error_log("DailySummaryUpdater::upsertClick execute failed: " . $stmt->error);
             }
@@ -416,38 +489,74 @@ class DailySummaryUpdater
         ?int $offerId,
         ?int $landingPageId,
         string $summaryDate,
+        int $clickInc,
         int $lpInc,
         int $directInc,
-        float $cost
+        float $cost,
+        int $botInc = 0
     ): bool {
-        $stmt = $this->db->prepare("
-            UPDATE clicks_daily_summary
-            SET clicks = clicks + 1,
-                lp_clicks = lp_clicks + ?,
-                direct_clicks = direct_clicks + ?,
-                cost = cost + ?,
-                updated_at = NOW()
-            WHERE campaign_id = ?
-              AND (traffic_source_id <=> ?)
-              AND (offer_id <=> ?)
-              AND (landing_page_id <=> ?)
-              AND summary_date = ?
-            LIMIT 1
-        ");
-        if (!$stmt) {
-            return false;
+        if ($this->summaryTableHasBotClicksColumn()) {
+            $stmt = $this->db->prepare("
+                UPDATE clicks_daily_summary
+                SET clicks = clicks + ?,
+                    lp_clicks = lp_clicks + ?,
+                    direct_clicks = direct_clicks + ?,
+                    cost = cost + ?,
+                    bot_clicks = bot_clicks + ?,
+                    updated_at = NOW()
+                WHERE campaign_id = ?
+                  AND (traffic_source_id <=> ?)
+                  AND (offer_id <=> ?)
+                  AND (landing_page_id <=> ?)
+                  AND summary_date = ?
+                LIMIT 1
+            ");
+            if (!$stmt) {
+                return false;
+            }
+            $stmt->bind_param(
+                'iiidiiiiis',
+                $clickInc,
+                $lpInc,
+                $directInc,
+                $cost,
+                $botInc,
+                $campaignId,
+                $trafficSourceId,
+                $offerId,
+                $landingPageId,
+                $summaryDate
+            );
+        } else {
+            $stmt = $this->db->prepare("
+                UPDATE clicks_daily_summary
+                SET clicks = clicks + 1,
+                    lp_clicks = lp_clicks + ?,
+                    direct_clicks = direct_clicks + ?,
+                    cost = cost + ?,
+                    updated_at = NOW()
+                WHERE campaign_id = ?
+                  AND (traffic_source_id <=> ?)
+                  AND (offer_id <=> ?)
+                  AND (landing_page_id <=> ?)
+                  AND summary_date = ?
+                LIMIT 1
+            ");
+            if (!$stmt) {
+                return false;
+            }
+            $stmt->bind_param(
+                'iidiiiis',
+                $lpInc,
+                $directInc,
+                $cost,
+                $campaignId,
+                $trafficSourceId,
+                $offerId,
+                $landingPageId,
+                $summaryDate
+            );
         }
-        $stmt->bind_param(
-            'iidiiiis',
-            $lpInc,
-            $directInc,
-            $cost,
-            $campaignId,
-            $trafficSourceId,
-            $offerId,
-            $landingPageId,
-            $summaryDate
-        );
         $ok = $stmt->execute();
         $affected = $ok ? $stmt->affected_rows : 0;
         $stmt->close();
@@ -919,6 +1028,54 @@ class DailySummaryUpdater
         }
     }
 
+    /**
+     * Determine whether extraData or UA indicates a bot click.
+     *
+     * @param array<string, mixed>|null $extraData
+     */
+    public static function isBotClick(?array $extraData, ?string $ua = null): bool
+    {
+        if ($ua !== null && CampaignStatsExpressions::isFacebookCrawlerUa($ua)) {
+            return true;
+        }
+        if (is_array($extraData) && isset($extraData['bot']) && is_array($extraData['bot'])) {
+            $classification = $extraData['bot']['classification'] ?? null;
+            if ($classification !== null && $classification !== 'human') {
+                return true;
+            }
+            if (!empty($extraData['bot']['exclude_from_stats'])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function summaryTableHasBotClicksColumn(): bool
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+        if (!$this->tableExists()) {
+            return $cached = false;
+        }
+        $check = $this->db->query("SHOW COLUMNS FROM clicks_daily_summary LIKE 'bot_clicks'");
+        return $cached = ($check && $check->num_rows > 0);
+    }
+
+    private function tokenTableHasBotClicksColumn(): bool
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+        if (!$this->tokenTableExists()) {
+            return $cached = false;
+        }
+        $check = $this->db->query("SHOW COLUMNS FROM clicks_stats_by_token_daily LIKE 'bot_clicks'");
+        return $cached = ($check && $check->num_rows > 0);
+    }
+
     private function summaryTableHasOptinsColumn(): bool
     {
         static $cached = null;
@@ -1189,25 +1346,51 @@ class DailySummaryUpdater
             return;
         }
         $lpInc = ($lpClick === 1) ? 1 : 0;
+        $isBot = self::isBotClick($extraData, null);
+        $botInc = $isBot ? 1 : 0;
+        $hasBotClicks = $this->tokenTableHasBotClicksColumn();
+
         foreach ($tokens as $t) {
-            $stmt = $this->db->prepare("
-                UPDATE clicks_stats_by_token_daily
-                SET visitors = GREATEST(0, CAST(visitors AS SIGNED) - 1),
-                    lp_clicks = GREATEST(0, CAST(lp_clicks AS SIGNED) - ?),
-                    cost = GREATEST(0, cost - ?),
-                    updated_at = NOW()
-                WHERE campaign_id = ?
-                  AND summary_date = ?
-                  AND token_param = ?
-                  AND token_value = ?
-                  AND (traffic_source_id <=> ?)
-            ");
-            if (!$stmt) {
-                continue;
+            if ($hasBotClicks) {
+                $stmt = $this->db->prepare("
+                    UPDATE clicks_stats_by_token_daily
+                    SET visitors = GREATEST(0, CAST(visitors AS SIGNED) - 1),
+                        lp_clicks = GREATEST(0, CAST(lp_clicks AS SIGNED) - ?),
+                        cost = GREATEST(0, cost - ?),
+                        bot_clicks = GREATEST(0, CAST(bot_clicks AS SIGNED) - ?),
+                        updated_at = NOW()
+                    WHERE campaign_id = ?
+                      AND summary_date = ?
+                      AND token_param = ?
+                      AND token_value = ?
+                      AND (traffic_source_id <=> ?)
+                ");
+                if (!$stmt) {
+                    continue;
+                }
+                $param = $t['param'];
+                $value = $t['value'];
+                $stmt->bind_param('idiisssi', $lpInc, $cost, $botInc, $campaignId, $summaryDate, $param, $value, $trafficSourceId);
+            } else {
+                $stmt = $this->db->prepare("
+                    UPDATE clicks_stats_by_token_daily
+                    SET visitors = GREATEST(0, CAST(visitors AS SIGNED) - 1),
+                        lp_clicks = GREATEST(0, CAST(lp_clicks AS SIGNED) - ?),
+                        cost = GREATEST(0, cost - ?),
+                        updated_at = NOW()
+                    WHERE campaign_id = ?
+                      AND summary_date = ?
+                      AND token_param = ?
+                      AND token_value = ?
+                      AND (traffic_source_id <=> ?)
+                ");
+                if (!$stmt) {
+                    continue;
+                }
+                $param = $t['param'];
+                $value = $t['value'];
+                $stmt->bind_param('idisssi', $lpInc, $cost, $campaignId, $summaryDate, $param, $value, $trafficSourceId);
             }
-            $param = $t['param'];
-            $value = $t['value'];
-            $stmt->bind_param('idisssi', $lpInc, $cost, $campaignId, $summaryDate, $param, $value, $trafficSourceId);
             $stmt->execute();
             $stmt->close();
         }

@@ -118,7 +118,7 @@ try {
             "GET Params: " . json_encode($_GET, JSON_PRETTY_PRINT) . "\n\n" .
             "Stack Trace:\n" . $e->getTraceAsString());
     }
-    die("Redirect error: " . htmlspecialchars($e->getMessage()));
+    die("Service temporarily unavailable");
 }
 
 $db->close();

@@ -207,8 +207,11 @@
         });
         const multiConvCb = form.querySelector('[name="allow_multiple_conversions"]');
         const multiConv = multiConvCb && multiConvCb.checked ? 'Yes' : 'No';
+        const tagsInput = form.querySelector('[name="tags"]');
+        const tagsVal = tagsInput && tagsInput.value.trim() ? tagsInput.value.trim() : '—';
         dl.innerHTML =
             '<dt>Campaign name</dt><dd>' + escapeHtml(name) + '</dd>' +
+            '<dt>Tags</dt><dd>' + escapeHtml(tagsVal) + '</dd>' +
             '<dt>Status</dt><dd>' + escapeHtml(status) + '</dd>' +
             '<dt>Referrer privacy</dt><dd>' + escapeHtml(referrerMode) + '</dd>' +
             '<dt>Traffic source</dt><dd>' + escapeHtml(ts) + '</dd>' +

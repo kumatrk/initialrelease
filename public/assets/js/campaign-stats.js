@@ -23,8 +23,8 @@
     }
     const PREFS_KEY = 'stats_v2_prefs';
     const SAVED_VIEWS_KEY = 'stats_v2_saved_views_v1';
-    const defaultColumns = ['visitors', 'lp_clicks', 'ctr', 'conversions', 'optins', 'cr', 'cost', 'revenue', 'profit', 'roi'];
-    const ALL_METRIC_COLS = defaultColumns.slice();
+    const defaultColumns = ['visitors', 'lp_clicks', 'ctr', 'conversions', 'optins', 'cr', 'cost', 'revenue', 'profit', 'roi', 'bot_pct'];
+    const ALL_METRIC_COLS = ['visitors', 'lp_clicks', 'ctr', 'conversions', 'optins', 'cr', 'cost', 'revenue', 'profit', 'roi', 'bot_pct', 'bot_clicks'];
 
     function ensureColumnOrder(columns) {
         const set = new Set(Array.isArray(columns) ? columns : []);
@@ -65,6 +65,8 @@
         revenue: 'revenue',
         profit: 'profit',
         roi: 'roi',
+        bot_pct: 'bot_pct',
+        bot_clicks: 'bot_clicks',
     };
 
     function normalizePerPage(value) {
@@ -910,6 +912,8 @@
         const actionClicks = Number(t.clicks ?? ((t.lp_clicks || 0) + (t.direct_clicks || 0))) || 0;
         const lpClicks = Number(t.lp_clicks ?? 0) || 0;
         const ctr = t.ctr != null ? Number(t.ctr) : (visitors > 0 ? (lpClicks / visitors) * 100 : 0);
+        const botClicks = Number(t.bot_clicks ?? 0) || 0;
+        const botPct = t.bot_pct != null ? Number(t.bot_pct) : (visitors > 0 ? (botClicks / visitors) * 100 : 0);
         return `<tr class="total-row${roiCls}">
             <td data-col="name"><span class="stats-v2-expand-spacer" aria-hidden="true"></span>Total</td>
             <td class="num" data-col="visitors">${visitors.toLocaleString()}</td>
@@ -922,6 +926,8 @@
             <td class="num" data-col="revenue">${fmtMoney(t.revenue)}</td>
             <td class="num" data-col="profit"><span class="${profitCls}">${fmtMoney(t.profit)}</span></td>
             <td class="num" data-col="roi"><span class="${profitCls}">${fmtPct(t.roi)}</span></td>
+            <td class="num" data-col="bot_pct">${fmtPct(botPct)}</td>
+            <td class="num" data-col="bot_clicks">${botClicks.toLocaleString()}</td>
         </tr>`;
     }
 
@@ -941,7 +947,7 @@
             return;
         }
 
-        const header = ['Name', 'Visitors', 'Clicks', 'CTR', 'Conversions', 'Opt-ins', 'CR', 'Cost', 'Revenue', 'Profit', 'ROI'];
+        const header = ['Name', 'Visitors', 'Clicks', 'CTR', 'Conversions', 'Opt-ins', 'CR', 'Cost', 'Revenue', 'Profit', 'ROI', 'Bot %', 'Bot Clicks'];
         const lines = [header.filter((_, i) => i === 0 || state.visibleColumns.includes(ALL_METRIC_COLS[i - 1])).join(',')];
         rows.forEach((r) => {
             const cells = [r.name];
@@ -955,6 +961,8 @@
             if (state.visibleColumns.includes('revenue')) cells.push(r.revenue);
             if (state.visibleColumns.includes('profit')) cells.push(r.profit);
             if (state.visibleColumns.includes('roi')) cells.push(r.roi);
+            if (state.visibleColumns.includes('bot_pct')) cells.push(r.bot_pct != null ? r.bot_pct : 0);
+            if (state.visibleColumns.includes('bot_clicks')) cells.push(r.bot_clicks || 0);
             lines.push(cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','));
         });
         const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -995,6 +1003,8 @@
                     revenue: row.revenue,
                     profit: row.profit,
                     roi: row.roi,
+                    bot_pct: row.bot_pct != null ? row.bot_pct : 0,
+                    bot_clicks: row.bot_clicks || 0,
                 });
             });
             page += 1;
@@ -1337,6 +1347,8 @@
         const expandBtn = hasChildren
             ? `<button type="button" class="expand-btn" data-expand="${rowId}" aria-label="Expand">${expanded ? '▼' : '▶'}</button>`
             : '<span class="stats-v2-expand-spacer" aria-hidden="true"></span>';
+        const botPct = row.bot_pct != null ? Number(row.bot_pct) : (Number(row.clicks) > 0 ? ((Number(row.bot_clicks) || 0) / Number(row.clicks)) * 100 : 0);
+        const botClicks = Number(row.bot_clicks || 0);
         return `<tr class="${indent}${roiCls}" data-row-id="${rowId}" data-level="${level}">
             <td data-col="name">${expandBtn}${escapeHtml(row.name || row.group)}</td>
             <td class="num" data-col="visitors">${Number(row.clicks).toLocaleString()}</td>
@@ -1349,6 +1361,8 @@
             <td class="num" data-col="revenue">${fmtMoney(row.revenue)}</td>
             <td class="num" data-col="profit"><span class="${profitCls}">${fmtMoney(row.profit)}</span></td>
             <td class="num" data-col="roi"><span class="${profitCls}">${fmtPct(row.roi)}</span></td>
+            <td class="num" data-col="bot_pct">${fmtPct(botPct)}</td>
+            <td class="num" data-col="bot_clicks">${botClicks.toLocaleString()}</td>
         </tr>`;
     }
 

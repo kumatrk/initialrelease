@@ -687,4 +687,175 @@ h6 { font-size: var(--font-size-sm); }
     }
 }
 
+/* Campaign Editor Edge Redirect Box */
+.campaign-edge-redirect-box {
+    background: #f7faf4;
+    border: 1px solid #c5d4b0;
+    color: var(--text-primary);
+}
+
+.campaign-edge-redirect-box .edge-box-title {
+    color: #2e5b1e;
+    font-weight: 600;
+}
+
+.campaign-edge-redirect-box .edge-box-desc {
+    color: #4a5568;
+}
+
+.campaign-edge-redirect-box .edge-box-link {
+    color: #2e7d32;
+    font-weight: 500;
+    text-decoration: none;
+}
+
+.campaign-edge-redirect-box .edge-box-link:hover {
+    text-decoration: underline;
+}
+
+.campaign-edge-redirect-box .edge-status-ineligible {
+    color: #b45309;
+}
+
+.campaign-edge-redirect-box .edge-status-error {
+    color: #b91c1c;
+}
+
+.campaign-edge-redirect-box .edge-status-synced {
+    color: #2e7d32;
+}
+
+.campaign-edge-redirect-box .edge-status-waiting {
+    color: #64748b;
+}
+
+/* Token Helper Box & Buttons (Offers & Settings Integrations) */
+.token-selector-box {
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    background: #f0fdf4;
+    border-radius: 6px;
+    border: 1.5px solid #86efac;
+}
+
+.token-selector-box label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: #166534;
+}
+
+.token-selector-box .token-selector-hint {
+    font-size: 11px;
+    color: #4ade80;
+    margin-top: 4px;
+}
+
+.token-container-box {
+    background: #f8fafc;
+    padding: 14px;
+    border-radius: 6px;
+    border: 1.5px solid #e2e8f0;
+}
+
+.token-heading--builtin,
+.token-heading--custom {
+    color: #166534;
+    font-size: 12px;
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 700;
+}
+
+.token-heading--campaign {
+    color: #1e40af;
+    font-size: 11px;
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 700;
+}
+
+.token-heading--traffic-source {
+    color: #7e22ce;
+    font-size: 11px;
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 700;
+}
+
+.custom-token-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px 11px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    line-height: 1.3;
+    border-width: 1.5px;
+    border-style: solid;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    transition: all 0.15s ease-in-out;
+    user-select: none;
+    text-decoration: none;
+    outline: none;
+}
+
+.custom-token-btn:active {
+    transform: translateY(1px) scale(0.98);
+}
+
+/* Built-in Tokens (Green) */
+.custom-token-btn,
+.custom-token-btn.token-btn--builtin {
+    background: #f0fdf4;
+    border-color: #86efac;
+    color: #166534;
+}
+
+.custom-token-btn:hover,
+.custom-token-btn.token-btn--builtin:hover {
+    background: #166534;
+    border-color: #166534;
+    color: #ffffff;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 6px rgba(22, 101, 52, 0.25);
+}
+
+/* Campaign Tokens (Blue) */
+.custom-token-btn.token-btn--campaign {
+    background: #eff6ff;
+    border-color: #93c5fd;
+    color: #1e40af;
+}
+
+.custom-token-btn.token-btn--campaign:hover {
+    background: #1e40af;
+    border-color: #1e40af;
+    color: #ffffff;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 6px rgba(30, 64, 175, 0.25);
+}
+
+/* Traffic Source Tokens (Purple) */
+.custom-token-btn.token-btn--traffic-source {
+    background: #faf5ff;
+    border-color: #d8b4fe;
+    color: #6b21a8;
+}
+
+.custom-token-btn.token-btn--traffic-source:hover {
+    background: #7e22ce;
+    border-color: #7e22ce;
+    color: #ffffff;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 6px rgba(126, 34, 206, 0.25);
+}
+
+
+
+
 

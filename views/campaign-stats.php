@@ -60,7 +60,7 @@ $statsJsVer = file_exists($statsJsPath) ? (string)filemtime($statsJsPath) : '1';
                 <select id="stats-v2-campaign">
                     <?php foreach ($allCampaigns as $camp): ?>
                         <option value="<?= (int)$camp['id'] ?>" <?= $selectedCampaignId === (int)$camp['id'] ? 'selected' : '' ?>>
-                            <?= htmlspecialchars($camp['name']) ?>
+                            #<?= (int)$camp['id'] ?> - <?= htmlspecialchars($camp['name']) ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
@@ -211,6 +211,8 @@ $statsJsVer = file_exists($statsJsPath) ? (string)filemtime($statsJsPath) : '1';
                 <label><input type="checkbox" class="col-toggle" data-col="revenue" checked> Revenue</label>
                 <label><input type="checkbox" class="col-toggle" data-col="profit" checked> Profit</label>
                 <label><input type="checkbox" class="col-toggle" data-col="roi" checked> ROI</label>
+                <label><input type="checkbox" class="col-toggle" data-col="bot_pct" checked> Bot %</label>
+                <label><input type="checkbox" class="col-toggle" data-col="bot_clicks"> Bots</label>
             </div>
             <div id="stats-v2-breakdown-message" class="stats-v2-message"></div>
             <div class="stats-v2-table-scroll">
@@ -228,6 +230,8 @@ $statsJsVer = file_exists($statsJsPath) ? (string)filemtime($statsJsPath) : '1';
                             <th class="num" data-col="revenue">Revenue</th>
                             <th class="num" data-col="profit">Profit</th>
                             <th class="num" data-col="roi">ROI</th>
+                            <th class="num" data-col="bot_pct">Bot %</th>
+                            <th class="num" data-col="bot_clicks">Bots</th>
                         </tr>
                     </thead>
                     <tbody id="stats-v2-breakdown-body">

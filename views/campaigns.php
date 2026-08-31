@@ -449,6 +449,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ? (float)$_POST['min_postback_payout'] : null,
         'allow_multiple_conversions' => !empty($_POST['allow_multiple_conversions']),
         'fallback_offer_id' => !empty($_POST['fallback_offer_id']) ? (int)$_POST['fallback_offer_id'] : null,
+        'tags' => !empty($_POST['tags']) ? trim((string)$_POST['tags']) : null,
     ];
 
         // Parse traffic source postbacks for auto-detect campaigns
@@ -1203,6 +1204,16 @@ if ($editCampaign && isset($editCampaign['id'])) {
                 </div>
                 <?php endif; ?>
                 <div id="campaign-list-stats-status" style="font-size:12px; color:#888; margin-bottom:8px;">Loading performance stats…</div>
+                <!-- Search and Filter Bar -->
+                <div style="margin-bottom: 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                    <div style="position: relative; flex: 1; min-width: 260px; max-width: 450px;">
+                        <input type="text" id="campaignSearchInput" placeholder="🔍 Search campaigns by name, tag, #ID, source..." 
+                               oninput="filterCampaignsTable()"
+                               class="campaign-search-input"
+                               style="width: 100%; padding: 9px 14px; border: 2px solid #ddd; border-radius: 6px; font-size: 13px; background: #fff;">
+                    </div>
+                    <span id="campaignSearchCount" style="font-size: 13px; color: #666; font-weight: 500;"></span>
+                </div>
                 <!-- Desktop Table View (hidden on mobile) -->
                 <div class="table-wrapper desktop-only" data-campaign-list-stats-url="<?= htmlspecialchars($campaignListStatsApiUrl) ?>">
                     <?php
@@ -1216,11 +1227,21 @@ if ($editCampaign && isset($editCampaign['id'])) {
                         $trafficLabel = (empty($camp['traffic_source_id']) || empty($camp['traffic_source_name']))
                             ? 'Auto Detected'
                             : (string)$camp['traffic_source_name'];
+                        $searchData = strtolower(
+                            ($camp['name'] ?? '') . ' ' .
+                            ($camp['tags'] ?? '') . ' #' .
+                            ($camp['id'] ?? '') . ' ' .
+                            $trafficLabel . ' ' .
+                            ($camp['campaign_group_name'] ?? '') . ' ' .
+                            ($camp['flow_type'] ?? '') . ' ' .
+                            ($camp['status'] ?? '')
+                        );
                         $rowStyle = $groupId !== null ? 'display: none;' : '';
                         ?>
                         <tr class="campaign-row"
                             data-campaign-id="<?= (int)$camp['id'] ?>"
                             <?= $groupId !== null ? 'data-group-id="' . htmlspecialchars($groupId, ENT_QUOTES) . '"' : '' ?>
+                            data-search="<?= htmlspecialchars($searchData, ENT_QUOTES) ?>"
                             data-sort-name="<?= htmlspecialchars((string)$camp['name'], ENT_QUOTES) ?>"
                             data-sort-traffic_source="<?= htmlspecialchars($trafficLabel, ENT_QUOTES) ?>"
                             data-sort-flow_type="<?= htmlspecialchars((string)$camp['flow_type'], ENT_QUOTES) ?>"
@@ -1233,11 +1254,19 @@ if ($editCampaign && isset($editCampaign['id'])) {
                             data-sort-roi="<?= (float)($stats['roi'] ?? 0) ?>"
                             style="<?= $rowStyle ?>">
                             <td class="col-name" style="<?= $indent ? 'padding-left: 40px;' : '' ?>">
+                                <span class="badge" style="background: #eef2f5; color: #475569; font-weight: 600; font-size: 11px; padding: 2px 6px; border-radius: 4px; margin-right: 6px;" title="Campaign ID: <?= (int)$camp['id'] ?>">#<?= (int)$camp['id'] ?></span>
                                 <strong style="font-size: 14px;"><?= htmlspecialchars($camp['name']) ?></strong>
                                 <?php if ($camp['campaign_group_name'] && !$indent): ?>
                                     <span class="badge badge-info" style="margin-left: 8px; font-size: 10px;">
                                         <?= htmlspecialchars($camp['campaign_group_name']) ?>
                                     </span>
+                                <?php endif; ?>
+                                <?php if (!empty($camp['tags'])): ?>
+                                    <div style="margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px;">
+                                        <?php foreach (explode(',', (string)$camp['tags']) as $t): $t = trim($t); if ($t === '') continue; ?>
+                                            <span style="display: inline-block; font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 5px; border-radius: 3px; font-weight: 500;">🏷️ <?= htmlspecialchars($t) ?></span>
+                                        <?php endforeach; ?>
+                                    </div>
                                 <?php endif; ?>
                             </td>
                             <td class="col-source" style="font-size: 13px;">
@@ -1645,13 +1674,33 @@ if ($editCampaign && isset($editCampaign['id'])) {
                             <?php foreach ($groupCampaigns as $camp): ?>
                                 <?php
                                 $isAutoDetect = empty($camp['traffic_source_id']);
+                                $trafficLabel = (empty($camp['traffic_source_id']) || empty($camp['traffic_source_name']))
+                                    ? 'Auto Detected'
+                                    : (string)$camp['traffic_source_name'];
+                                $searchData = strtolower(
+                                    ($camp['name'] ?? '') . ' ' .
+                                    ($camp['tags'] ?? '') . ' #' .
+                                    ($camp['id'] ?? '') . ' ' .
+                                    $trafficLabel . ' ' .
+                                    ($camp['campaign_group_name'] ?? '') . ' ' .
+                                    ($camp['flow_type'] ?? '') . ' ' .
+                                    ($camp['status'] ?? '')
+                                );
                                 ?>
-                                <div class="mobile-campaign-card" data-campaign-id="<?= (int)$camp['id'] ?>" style="padding: var(--spacing-md); border-bottom: 1px solid var(--color-gray-200);">
+                                <div class="mobile-campaign-card" data-campaign-id="<?= (int)$camp['id'] ?>" data-search="<?= htmlspecialchars($searchData, ENT_QUOTES) ?>" style="padding: var(--spacing-md); border-bottom: 1px solid var(--color-gray-200);">
                                     <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: var(--spacing-sm);">
                                         <div style="flex: 1;">
                                             <div style="font-weight: 600; font-size: 14px; color: #3d5a26; margin-bottom: 4px;">
+                                                <span class="badge" style="background: #eef2f5; color: #475569; font-weight: 600; font-size: 11px; padding: 2px 6px; border-radius: 4px; margin-right: 6px;" title="Campaign ID: <?= (int)$camp['id'] ?>">#<?= (int)$camp['id'] ?></span>
                                                 <?= htmlspecialchars($camp['name']) ?>
                                             </div>
+                                            <?php if (!empty($camp['tags'])): ?>
+                                                <div style="margin-top: 3px; margin-bottom: 4px; display: flex; flex-wrap: wrap; gap: 4px;">
+                                                    <?php foreach (explode(',', (string)$camp['tags']) as $t): $t = trim($t); if ($t === '') continue; ?>
+                                                        <span style="display: inline-block; font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 5px; border-radius: 3px; font-weight: 500;">🏷️ <?= htmlspecialchars($t) ?></span>
+                                                    <?php endforeach; ?>
+                                                </div>
+                                            <?php endif; ?>
                                             <div style="font-size: 11px; color: #666; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;">
                                                 <?php if ($isAutoDetect): ?>
                                                     <span style="color: #558b2f; font-weight: 500; display: inline-flex; align-items: center; gap: 4px;">
@@ -1725,13 +1774,33 @@ if ($editCampaign && isset($editCampaign['id'])) {
                     // Render ungrouped campaigns
                     foreach ($ungroupedCampaigns as $camp):
                         $isAutoDetect = empty($camp['traffic_source_id']);
+                        $trafficLabel = (empty($camp['traffic_source_id']) || empty($camp['traffic_source_name']))
+                            ? 'Auto Detected'
+                            : (string)$camp['traffic_source_name'];
+                        $searchData = strtolower(
+                            ($camp['name'] ?? '') . ' ' .
+                            ($camp['tags'] ?? '') . ' #' .
+                            ($camp['id'] ?? '') . ' ' .
+                            $trafficLabel . ' ' .
+                            ($camp['campaign_group_name'] ?? '') . ' ' .
+                            ($camp['flow_type'] ?? '') . ' ' .
+                            ($camp['status'] ?? '')
+                        );
                     ?>
-                    <div class="mobile-campaign-card" data-campaign-id="<?= (int)$camp['id'] ?>" style="background: var(--color-white); border: 1px solid var(--color-gray-200); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-md); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <div class="mobile-campaign-card" data-campaign-id="<?= (int)$camp['id'] ?>" data-search="<?= htmlspecialchars($searchData, ENT_QUOTES) ?>" style="background: var(--color-white); border: 1px solid var(--color-gray-200); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-md); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                         <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: var(--spacing-sm);">
                             <div style="flex: 1;">
                                 <div style="font-weight: 600; font-size: 14px; color: #3d5a26; margin-bottom: 4px;">
+                                    <span class="badge" style="background: #eef2f5; color: #475569; font-weight: 600; font-size: 11px; padding: 2px 6px; border-radius: 4px; margin-right: 6px;" title="Campaign ID: <?= (int)$camp['id'] ?>">#<?= (int)$camp['id'] ?></span>
                                     <?= htmlspecialchars($camp['name']) ?>
                                 </div>
+                                <?php if (!empty($camp['tags'])): ?>
+                                    <div style="margin-top: 3px; margin-bottom: 4px; display: flex; flex-wrap: wrap; gap: 4px;">
+                                        <?php foreach (explode(',', (string)$camp['tags']) as $t): $t = trim($t); if ($t === '') continue; ?>
+                                            <span style="display: inline-block; font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 5px; border-radius: 3px; font-weight: 500;">🏷️ <?= htmlspecialchars($t) ?></span>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
                                 <div style="font-size: 11px; color: #666; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;">
                                     <?php if ($isAutoDetect): ?>
                                         <span style="color: #558b2f; font-weight: 500; display: inline-flex; align-items: center; gap: 4px;">
@@ -1812,6 +1881,104 @@ if ($editCampaign && isset($editCampaign['id'])) {
                             toggle.textContent = '▶';
                         }
                     }
+
+                    function filterCampaignsTable() {
+                        var input = document.getElementById('campaignSearchInput');
+                        var query = (input ? input.value : '').toLowerCase().trim();
+                        var rows = document.querySelectorAll('.campaigns-table tbody tr.campaign-row');
+                        var groupHeaders = document.querySelectorAll('.campaigns-table tbody tr.group-header');
+                        var groupCards = document.querySelectorAll('.mobile-campaign-cards .mobile-group-card');
+                        var ungroupedCards = document.querySelectorAll('.mobile-campaign-cards > .mobile-campaign-card');
+
+                        var visibleCount = 0;
+                        var totalCount = rows.length || (groupCards.length + ungroupedCards.length);
+                        var matchingGroupIds = new Set();
+
+                        // 1. Desktop table rows
+                        rows.forEach(function(row) {
+                            var searchData = row.getAttribute('data-search') || '';
+                            var match = !query || searchData.indexOf(query) !== -1;
+                            var groupId = row.getAttribute('data-group-id');
+
+                            if (match) {
+                                visibleCount++;
+                                if (groupId) {
+                                    matchingGroupIds.add(groupId);
+                                }
+                            }
+
+                            if (!query) {
+                                if (groupId) {
+                                    var toggle = document.getElementById('toggle-' + groupId);
+                                    var isOpen = toggle && toggle.textContent === '▼';
+                                    row.style.display = isOpen ? '' : 'none';
+                                } else {
+                                    row.style.display = '';
+                                }
+                            } else {
+                                row.style.display = match ? '' : 'none';
+                            }
+                        });
+
+                        // 2. Desktop group header rows
+                        groupHeaders.forEach(function(hdr) {
+                            var gId = hdr.getAttribute('data-group-id');
+                            if (!query) {
+                                hdr.style.display = '';
+                            } else {
+                                hdr.style.display = matchingGroupIds.has(gId) ? '' : 'none';
+                            }
+                        });
+
+                        // 3. Mobile cards
+                        groupCards.forEach(function(card) {
+                            var campaignsContainer = card.querySelector('.mobile-group-campaigns');
+                            var toggle = card.querySelector('.mobile-group-header span[id^="mobile-toggle-"]');
+                            var childCards = card.querySelectorAll('.mobile-campaign-card');
+                            var groupHasMatch = false;
+
+                            childCards.forEach(function(childCard) {
+                                var searchData = childCard.getAttribute('data-search') || '';
+                                var match = !query || searchData.indexOf(query) !== -1;
+                                childCard.style.display = match ? '' : 'none';
+                                if (match) groupHasMatch = true;
+                            });
+
+                            if (!query) {
+                                card.style.display = '';
+                                if (campaignsContainer && toggle) {
+                                    campaignsContainer.style.display = toggle.textContent === '▼' ? 'block' : 'none';
+                                }
+                            } else {
+                                card.style.display = groupHasMatch ? '' : 'none';
+                                if (campaignsContainer) {
+                                    campaignsContainer.style.display = groupHasMatch ? 'block' : 'none';
+                                }
+                            }
+                        });
+
+                        ungroupedCards.forEach(function(card) {
+                            var searchData = card.getAttribute('data-search') || '';
+                            var match = !query || searchData.indexOf(query) !== -1;
+                            card.style.display = match ? '' : 'none';
+                        });
+
+                        // 4. Update count text
+                        var countEl = document.getElementById('campaignSearchCount');
+                        if (countEl) {
+                            if (query) {
+                                countEl.textContent = 'Showing ' + visibleCount + ' of ' + totalCount + ' campaigns';
+                            } else {
+                                countEl.textContent = totalCount + ' total campaigns';
+                            }
+                        }
+                    }
+
+                    document.addEventListener('DOMContentLoaded', function() {
+                        if (document.getElementById('campaignSearchInput')) {
+                            filterCampaignsTable();
+                        }
+                    });
                 </script>
                 
 </div>
@@ -2069,6 +2236,9 @@ if ($editCampaign && isset($editCampaign['id'])) {
                             table.setAttribute('data-sort-dir', dir);
                             sortTable(key, type, dir);
                             refreshIndicators();
+                            if (typeof filterCampaignsTable === 'function') {
+                                filterCampaignsTable();
+                            }
                         });
                     })();
                 </script>
@@ -2092,8 +2262,8 @@ if ($editCampaign && isset($editCampaign['id'])) {
     <div class="card">
         <div class="card-header">
             <h2 class="card-title">
-                <?php if ($action === 'edit' && isset($editCampaign['campaign_key'])): ?>
-                    Edit Campaign - Campaign ID: <?= htmlspecialchars($editCampaign['campaign_key']) ?>
+                <?php if ($action === 'edit' && isset($editCampaign['id'])): ?>
+                    Edit Campaign #<?= (int)$editCampaign['id'] ?> (<?= htmlspecialchars($editCampaign['name']) ?>) <span style="font-size: 13px; font-weight: normal; color: #666; margin-left: 8px;">Key: <code><?= htmlspecialchars($editCampaign['campaign_key'] ?? '') ?></code></span>
                 <?php elseif ($action === 'edit'): ?>
                     Edit Campaign
                 <?php else: ?>
@@ -2164,6 +2334,17 @@ if ($editCampaign && isset($editCampaign['id'])) {
                             </div>
                         </div>
 
+                        <!-- Tags Row -->
+                        <div style="margin-bottom: 20px;">
+                            <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">
+                                Tags
+                            </label>
+                            <input type="text" name="tags" value="<?= htmlspecialchars($editCampaign['tags'] ?? '') ?>" 
+                                   placeholder="e.g. sweeps, tier1, test (comma-separated)"
+                                   style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px; font-size: 14px;">
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">Comma-separated tags for filtering and organizing</div>
+                        </div>
+
                         <!-- Status, Group, Referrer privacy Row -->
                         <div class="campaign-settings-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #e0e0e0;">
                             <div>
@@ -2213,33 +2394,33 @@ if ($editCampaign && isset($editCampaign['id'])) {
                         $edgeSyncedAt = $editCampaignSafe['edge_synced_at'] ?? null;
                         $edgeSyncError = $editCampaignSafe['edge_sync_error'] ?? null;
                         ?>
-                        <div style="margin-bottom: 20px; padding: 14px 16px; background: #f7faf4; border: 1px solid #c5d4b0; border-radius: 6px;">
-                            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                        <div class="campaign-edge-redirect-box" style="margin-bottom: 20px; padding: 14px 16px; border-radius: 6px;">
+                            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; margin-bottom: 0;">
                                 <input type="checkbox" name="edge_enabled" value="1" <?= $editEdgeEnabled ? 'checked' : '' ?>
-                                       style="margin-top: 3px; width: 16px; height: 16px;">
+                                       style="margin-top: 3px; width: 16px; height: 16px; flex-shrink: 0;">
                                 <span>
-                                    <strong style="display: block; color: #333; margin-bottom: 4px;">Edge redirect (Cloudflare Worker)</strong>
-                                    <span style="font-size: 13px; color: #555; line-height: 1.4;">
+                                    <strong class="edge-box-title" style="display: block; margin-bottom: 4px;">Edge redirect (Cloudflare Worker)</strong>
+                                    <span class="edge-box-desc" style="font-size: 13px; line-height: 1.4; display: block;">
                                         Serve redirects from Cloudflare’s edge for much lower latency worldwide.
                                         Requires Edge Redirect setup under Settings. Phase 1 supports standard 302 only (no referrer privacy modes).
                                     </span>
                                 </span>
                             </label>
                             <?php if ($action === 'edit' && $editEdgeEnabled): ?>
-                                <div style="margin-top: 10px; font-size: 12px; color: #555;">
+                                <div class="edge-box-status" style="margin-top: 10px; font-size: 12px;">
                                     <?php if (!$edgeEligibility['eligible']): ?>
-                                        <div style="color: #b45309;">Not eligible while enabled: <?= htmlspecialchars((string) $edgeEligibility['reason']) ?></div>
+                                        <div class="edge-status-ineligible" style="font-weight: 500;">Not eligible while enabled: <?= htmlspecialchars((string) $edgeEligibility['reason']) ?></div>
                                     <?php elseif ($edgeSyncError): ?>
-                                        <div style="color: #b91c1c;">Last sync error: <?= htmlspecialchars((string) $edgeSyncError) ?></div>
+                                        <div class="edge-status-error" style="font-weight: 500;">Last sync error: <?= htmlspecialchars((string) $edgeSyncError) ?></div>
                                     <?php elseif ($edgeSyncedAt): ?>
-                                        <div style="color: #3d5a26;">Last synced to edge: <?= htmlspecialchars((string) $edgeSyncedAt) ?> UTC</div>
+                                        <div class="edge-status-synced" style="font-weight: 500;">Last synced to edge: <?= htmlspecialchars((string) $edgeSyncedAt) ?> UTC</div>
                                     <?php else: ?>
-                                        <div>Waiting for first edge sync…</div>
+                                        <div class="edge-status-waiting">Waiting for first edge sync…</div>
                                     <?php endif; ?>
                                 </div>
                             <?php endif; ?>
                             <div style="margin-top: 8px; font-size: 12px;">
-                                <a href="?page=settings&tab=edge-redirect" style="color: #3d5a26;">Configure Edge Redirect →</a>
+                                <a href="?page=settings&tab=edge-redirect" class="edge-box-link">Configure Edge Redirect →</a>
                             </div>
                         </div>
 
