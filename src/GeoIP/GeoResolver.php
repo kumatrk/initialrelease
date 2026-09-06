@@ -47,16 +47,53 @@ class GeoResolver
     }
 
     /**
-     * Initialize all providers in fallback order
+     * Initialize all providers in fallback order.
+     * A concrete legacy file path (e.g. storage/GeoLite2-City.mmdb) is only
+     * passed to providers whose format matches; others call findDatabase().
      */
     private function initializeProviders(): void
     {
+        $hint = $this->geoipPath;
+        $dir = ($hint !== null && is_dir($hint)) ? $hint : null;
+        $file = ($hint !== null && is_file($hint)) ? $hint : null;
+
         // Provider order: DB-IP (primary) → IP2Location (secondary) → IPinfo (tertiary)
         $this->providers = [
-            new DBIPProvider($this->geoipPath),
-            new IP2LocationProvider($this->geoipPath),
-            new IPinfoProvider($this->geoipPath),
+            new DBIPProvider($this->pathForProvider($dir, $file, ['dbip', 'geolite2', '.mmdb'])),
+            new IP2LocationProvider($this->pathForProvider($dir, $file, ['ip2location', '.bin'])),
+            new IPinfoProvider($this->pathForProvider($dir, $file, ['ipinfo'])),
         ];
+    }
+
+    /**
+     * @param list<string> $needles Case-insensitive basename markers for this provider
+     */
+    private function pathForProvider(?string $dir, ?string $file, array $needles): ?string
+    {
+        if ($dir !== null) {
+            return $dir;
+        }
+        if ($file === null) {
+            return null;
+        }
+
+        $base = strtolower(basename($file));
+        foreach ($needles as $needle) {
+            $n = strtolower($needle);
+            if ($n !== '' && str_contains($base, $n)) {
+                // IPinfo must not claim generic GeoLite2 / DB-IP MMDB files
+                if ($n === 'ipinfo' && (str_contains($base, 'geolite') || str_contains($base, 'dbip'))) {
+                    continue;
+                }
+                // DB-IP accepts GeoLite2 as a legacy MaxMind-compatible MMDB
+                if ($n === '.mmdb' && str_contains($base, 'ipinfo')) {
+                    continue;
+                }
+                return $file;
+            }
+        }
+
+        return null;
     }
 
     /**

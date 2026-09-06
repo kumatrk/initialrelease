@@ -468,6 +468,7 @@ class DailySummaryUpdater
                 $offerId,
                 $landingPageId,
                 $summaryDate,
+                $clickInc,
                 $lpInc,
                 $directInc,
                 $cost,
@@ -634,8 +635,9 @@ class DailySummaryUpdater
             $offerId,
             $row['landing_page_id'],
             (string)$row['summary_date'],
+            1, // clickInc
             1, // lpInc
-            0,
+            0, // directInc
             (float)$cost
         );
         if (!$offerUpdated) {
@@ -653,8 +655,9 @@ class DailySummaryUpdater
                         $offerId,
                         $row['landing_page_id'],
                         (string)$row['summary_date'],
-                        1,
-                        0,
+                        1, // clickInc
+                        1, // lpInc
+                        0, // directInc
                         (float)$cost
                     );
                 }
@@ -1241,6 +1244,7 @@ class DailySummaryUpdater
             $offerId,
             $landingPageId,
             $summaryDate,
+            1, // clickInc (excluded clicks already skipped above)
             $lpInc,
             $directInc,
             $cost
@@ -1270,6 +1274,7 @@ class DailySummaryUpdater
                         $offerId,
                         $landingPageId,
                         $summaryDate,
+                        1,
                         $lpInc,
                         $directInc,
                         $cost

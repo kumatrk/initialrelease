@@ -8,6 +8,7 @@ use GeoIp2\Database\Reader;
 use GeoIp2\Exception\AddressNotFoundException;
 use SimpleKuma\GeoIP\GeoProvider;
 use SimpleKuma\GeoIP\GeoRecord;
+use SimpleKuma\Support\AppDebugLog;
 
 /**
  * IPinfo DB-Lite Provider
@@ -18,6 +19,8 @@ use SimpleKuma\GeoIP\GeoRecord;
  */
 class IPinfoProvider implements GeoProvider
 {
+    use AppDebugLog;
+
     private const SOURCE_NAME = 'ipinfo';
     private const ATTRIBUTION = 'Data from IPinfo (https://ipinfo.io) under CC BY-SA 4.0.';
     
@@ -108,19 +111,19 @@ class IPinfoProvider implements GeoProvider
 
         // Check if file exists and is readable
         if (!file_exists($this->databasePath)) {
-            error_log("IPinfoProvider: Database file does not exist: {$this->databasePath}");
+            self::logOnce('ipi:missing', "IPinfoProvider: Database file does not exist: {$this->databasePath}");
             $this->available = false;
             return;
         }
 
         if (!is_readable($this->databasePath)) {
-            error_log("IPinfoProvider: Database file is not readable: {$this->databasePath}");
+            self::logOnce('ipi:unreadable', "IPinfoProvider: Database file is not readable: {$this->databasePath}");
             $this->available = false;
             return;
         }
 
         if (!class_exists(Reader::class)) {
-            error_log("IPinfoProvider: GeoIp2\Database\Reader class not found. Make sure composer dependencies are installed.");
+            self::logOnce('ipi:class', "IPinfoProvider: GeoIp2\Database\Reader class not found. Make sure composer dependencies are installed.");
             $this->available = false;
             return;
         }
@@ -129,8 +132,8 @@ class IPinfoProvider implements GeoProvider
             $this->reader = new Reader($this->databasePath);
             $this->available = true;
         } catch (\Exception $e) {
-            error_log("IPinfoProvider: Failed to initialize database at {$this->databasePath}: " . $e->getMessage());
-            error_log("IPinfoProvider: File size: " . filesize($this->databasePath) . " bytes");
+            self::logOnce('ipi:init', "IPinfoProvider: Failed to initialize database at {$this->databasePath}: " . $e->getMessage());
+            self::logOnce('ipi:size', "IPinfoProvider: File size: " . filesize($this->databasePath) . " bytes");
             $this->available = false;
             $this->reader = null;
         }
@@ -163,7 +166,7 @@ class IPinfoProvider implements GeoProvider
             // IP not found in database
             return null;
         } catch (\Exception $e) {
-            error_log("IPinfoProvider: Lookup error for IP {$ip}: " . $e->getMessage());
+            $this->debugLog("IPinfoProvider: Lookup error for IP {$ip}: " . $e->getMessage());
             return null;
         }
     }

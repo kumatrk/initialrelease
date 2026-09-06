@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SimpleKuma\Facebook;
 
 use mysqli;
+use SimpleKuma\Support\AppDebugLog;
 
 /**
  * Facebook Cost Aggregator
@@ -12,6 +13,8 @@ use mysqli;
  */
 class FacebookCostAggregator
 {
+    use AppDebugLog;
+
     private mysqli $db;
     private ?bool $trafficSourceColumnExists = null;
 
@@ -797,7 +800,7 @@ class FacebookCostAggregator
         
         // Log midnight hour filter status
         $midnightFilterInfo = $useTimezoneDateGrouping ? " (including all hours in {$userTimezone})" : "";
-        error_log("FacebookCostAggregator: Unmatched costs (cumulative) - Cost: {$unmatchedCost}, Date Range: {$dateFrom} to {$dateTo}, Campaign ID: " . ($campaignIdForAttribution ?? 'null') . $midnightFilterInfo);
+        $this->debugLog("FacebookCostAggregator: Unmatched costs (cumulative) - Cost: {$unmatchedCost}, Date Range: {$dateFrom} to {$dateTo}, Campaign ID: " . ($campaignIdForAttribution ?? 'null') . $midnightFilterInfo);
         
         return $unmatchedCost;
     }
@@ -1340,7 +1343,7 @@ class FacebookCostAggregator
         $bindValuesCount = count($bindValues);
         if ($placeholderCount !== $bindTypesCount || $placeholderCount !== $bindValuesCount) {
             $errorMessage = "Manual cost query bind mismatch: Types={$bindTypesCount}, Values={$bindValuesCount}, Placeholders={$placeholderCount}. Filter: " . ($campaignFilter ?? 'null');
-            error_log("FacebookCostAggregator: " . $errorMessage);
+            $this->debugLog("FacebookCostAggregator: " . $errorMessage);
             throw new \Exception($errorMessage);
         }
         
@@ -1595,24 +1598,24 @@ class FacebookCostAggregator
         // User timezone date filter parameters are now included in click_data params above
         if ($userTzDateFilter !== '') {
             // Debug logging
-            error_log("FacebookCostAggregator: Applying user timezone date filter - timezoneOffset={$timezoneOffset}, userSelectedDateFrom={$userSelectedDateFrom}, userSelectedDateTo={$userSelectedDateTo}, UTC range={$dateFrom} to {$dateTo}");
+            $this->debugLog("FacebookCostAggregator: Applying user timezone date filter - timezoneOffset={$timezoneOffset}, userSelectedDateFrom={$userSelectedDateFrom}, userSelectedDateTo={$userSelectedDateTo}, UTC range={$dateFrom} to {$dateTo}");
         } else {
-            error_log("FacebookCostAggregator: No user timezone date filter applied - userTimezone=" . ($userTimezone ?? 'null') . ", userSelectedDateFrom=" . ($userSelectedDateFrom ?? 'null') . ", userSelectedDateTo=" . ($userSelectedDateTo ?? 'null'));
+            $this->debugLog("FacebookCostAggregator: No user timezone date filter applied - userTimezone=" . ($userTimezone ?? 'null') . ", userSelectedDateFrom=" . ($userSelectedDateFrom ?? 'null') . ", userSelectedDateTo=" . ($userSelectedDateTo ?? 'null'));
         }
         
         // Add timezone offset parameters for midnight hour exclusion in JOIN clauses (if timezone filtering is active)
         if ($useTimezoneDateFiltering) {
             $fbCostBindTypes .= 'ss'; // Add 2 more 's' for timezoneOffset (once for ad costs, once for adset costs)
             $fbCostBindValues = array_merge($fbCostBindValues, [$timezoneOffset, $timezoneOffset]);
-            error_log("FacebookCostAggregator: Applying midnight hour exclusion to matched costs - excluding hour 0 in user timezone ({$userTimezone})");
+            $this->debugLog("FacebookCostAggregator: Applying midnight hour exclusion to matched costs - excluding hour 0 in user timezone ({$userTimezone})");
         }
         
         // Validate that the number of placeholders matches the number of parameters
         $placeholderCount = substr_count($fbCostQuery, '?');
         $paramCount = count($fbCostBindValues);
         if ($placeholderCount !== $paramCount) {
-            error_log("FacebookCostAggregator: Parameter mismatch detected! Placeholders: {$placeholderCount}, Parameters: {$paramCount}, Filter: " . ($campaignFilter ?? 'null'));
-            error_log("FacebookCostAggregator: SQL Query: " . substr($fbCostQuery, 0, 500));
+            $this->debugLog("FacebookCostAggregator: Parameter mismatch detected! Placeholders: {$placeholderCount}, Parameters: {$paramCount}, Filter: " . ($campaignFilter ?? 'null'));
+            $this->debugLog("FacebookCostAggregator: SQL Query: " . substr($fbCostQuery, 0, 500));
             throw new \Exception("Bind parameter mismatch: Types={$paramCount}, Values={$paramCount}, Placeholders={$placeholderCount}");
         }
         
@@ -1632,9 +1635,9 @@ class FacebookCostAggregator
             } elseif (strpos($campaignFilter, 'landing_page_id') !== false) {
                 $filterType = 'Landing Page';
             }
-            error_log("FacebookCostAggregator: {$filterType} filter applied - Filter: {$campaignFilter}, Params: " . json_encode($campaignFilterParams) . ", FB Cost from clicks (matched): {$fbCostFromClicks}, Manual cost: {$manualCost}");
+            $this->debugLog("FacebookCostAggregator: {$filterType} filter applied - Filter: {$campaignFilter}, Params: " . json_encode($campaignFilterParams) . ", FB Cost from clicks (matched): {$fbCostFromClicks}, Manual cost: {$manualCost}");
         } else {
-            error_log("FacebookCostAggregator: No filter - FB Cost from clicks: {$fbCostFromClicks}, Manual cost: {$manualCost}");
+            $this->debugLog("FacebookCostAggregator: No filter - FB Cost from clicks: {$fbCostFromClicks}, Manual cost: {$manualCost}");
         }
         
         // Part 2: Costs without matching clicks (for hours that have costs but no clicks yet)
@@ -1704,7 +1707,7 @@ class FacebookCostAggregator
                 $beforeTrafficSource = substr($campaignFilter, 0, strpos($campaignFilter, 'traffic_source_id'));
                 $paramIndex = preg_match_all('/\?/', $beforeTrafficSource);
                 $trafficSourceIdForUnmatched = $campaignFilterParams[$paramIndex] ?? null;
-                error_log("FacebookCostAggregator: EXISTS subquery with traffic_source_id detected - Traffic Source ID: " . ($trafficSourceIdForUnmatched ?? 'null') . ", Param Index: {$paramIndex}");
+                $this->debugLog("FacebookCostAggregator: EXISTS subquery with traffic_source_id detected - Traffic Source ID: " . ($trafficSourceIdForUnmatched ?? 'null') . ", Param Index: {$paramIndex}");
             } elseif (preg_match('/(?:cl\.)?traffic_source_id\s*=\s*\?/i', $campaignFilter)) {
                 // Direct traffic_source_id filter (cl.traffic_source_id = ? or traffic_source_id = ?)
                 $hasExistsTrafficSourceFilter = false; // Not an EXISTS subquery
@@ -1712,7 +1715,7 @@ class FacebookCostAggregator
                 $beforeTrafficSource = substr($campaignFilter, 0, strpos($campaignFilter, 'traffic_source_id'));
                 $paramIndex = preg_match_all('/\?/', $beforeTrafficSource);
                 $trafficSourceIdForUnmatched = $campaignFilterParams[$paramIndex] ?? null;
-                error_log("FacebookCostAggregator: Direct traffic_source_id filter detected - Traffic Source ID: " . ($trafficSourceIdForUnmatched ?? 'null') . ", Param Index: {$paramIndex}");
+                $this->debugLog("FacebookCostAggregator: Direct traffic_source_id filter detected - Traffic Source ID: " . ($trafficSourceIdForUnmatched ?? 'null') . ", Param Index: {$paramIndex}");
             } elseif (preg_match('/campaign_id\s*=\s*\?/i', $campaignFilter)) {
                 // Find the parameter index for campaign_id
                 $paramIndex = 0;
@@ -1721,10 +1724,10 @@ class FacebookCostAggregator
                     $paramIndex = preg_match_all('/\?/', $beforeCampaignId);
                 }
                 $campaignIdForUnmatched = $campaignFilterParams[$paramIndex] ?? null;
-                error_log("FacebookCostAggregator: Extracted campaign_id for unmatched costs - Campaign ID: {$campaignIdForUnmatched}, Filter: {$campaignFilter}, Params: " . json_encode($campaignFilterParams) . ", Param Index: {$paramIndex}");
+                $this->debugLog("FacebookCostAggregator: Extracted campaign_id for unmatched costs - Campaign ID: {$campaignIdForUnmatched}, Filter: {$campaignFilter}, Params: " . json_encode($campaignFilterParams) . ", Param Index: {$paramIndex}");
                 // CRITICAL: Ensure hasExistsTrafficSourceFilter is false for simple campaign_id filters
                 if ($hasExistsTrafficSourceFilter) {
-                    error_log("FacebookCostAggregator: WARNING - hasExistsTrafficSourceFilter was incorrectly set to true for simple campaign_id filter. Resetting to false.");
+                    $this->debugLog("FacebookCostAggregator: WARNING - hasExistsTrafficSourceFilter was incorrectly set to true for simple campaign_id filter. Resetting to false.");
                     $hasExistsTrafficSourceFilter = false;
                 }
             }
@@ -1738,7 +1741,7 @@ class FacebookCostAggregator
                     $paramIndex = preg_match_all('/\?/', $beforeOfferId);
                 }
                 $offerIdForUnmatched = $campaignFilterParams[$paramIndex] ?? null;
-                error_log("FacebookCostAggregator: Extracted offer_id for unmatched costs - Offer ID: {$offerIdForUnmatched}, Filter: {$campaignFilter}, Params: " . json_encode($campaignFilterParams) . ", Param Index: {$paramIndex}");
+                $this->debugLog("FacebookCostAggregator: Extracted offer_id for unmatched costs - Offer ID: {$offerIdForUnmatched}, Filter: {$campaignFilter}, Params: " . json_encode($campaignFilterParams) . ", Param Index: {$paramIndex}");
             }
             // Check if filter contains landing_page_id
             if (preg_match('/landing_page_id\s*=\s*\?/i', $campaignFilter)) {
@@ -1750,16 +1753,16 @@ class FacebookCostAggregator
                     $paramIndex = preg_match_all('/\?/', $beforeLpId);
                 }
                 $landingPageIdForUnmatched = $campaignFilterParams[$paramIndex] ?? null;
-                error_log("FacebookCostAggregator: Extracted landing_page_id for unmatched costs - Landing Page ID: {$landingPageIdForUnmatched}, Filter: {$campaignFilter}, Params: " . json_encode($campaignFilterParams) . ", Param Index: {$paramIndex}");
+                $this->debugLog("FacebookCostAggregator: Extracted landing_page_id for unmatched costs - Landing Page ID: {$landingPageIdForUnmatched}, Filter: {$campaignFilter}, Params: " . json_encode($campaignFilterParams) . ", Param Index: {$paramIndex}");
             }
             // Log final extracted values
             if ($campaignIdForUnmatched !== null || $offerIdForUnmatched !== null || $landingPageIdForUnmatched !== null) {
-                error_log("FacebookCostAggregator: Extracted filter params - Campaign ID: " . ($campaignIdForUnmatched ?? 'null') . ", Offer ID: " . ($offerIdForUnmatched ?? 'null') . ", Landing Page ID: " . ($landingPageIdForUnmatched ?? 'null'));
+                $this->debugLog("FacebookCostAggregator: Extracted filter params - Campaign ID: " . ($campaignIdForUnmatched ?? 'null') . ", Offer ID: " . ($offerIdForUnmatched ?? 'null') . ", Landing Page ID: " . ($landingPageIdForUnmatched ?? 'null'));
             } else {
-                error_log("FacebookCostAggregator: Filter does not match known patterns - Filter: {$campaignFilter}, Params: " . json_encode($campaignFilterParams));
+                $this->debugLog("FacebookCostAggregator: Filter does not match known patterns - Filter: {$campaignFilter}, Params: " . json_encode($campaignFilterParams));
             }
         } else {
-            error_log("FacebookCostAggregator: No campaign filter provided for unmatched costs - Filter: " . ($campaignFilter ?? 'null') . ", Params: " . json_encode($campaignFilterParams ?? []));
+            $this->debugLog("FacebookCostAggregator: No campaign filter provided for unmatched costs - Filter: " . ($campaignFilter ?? 'null') . ", Params: " . json_encode($campaignFilterParams ?? []));
         }
         
         // CRITICAL FIX: Use timezone date filtering for unmatched costs (already defined above)
@@ -1985,11 +1988,11 @@ class FacebookCostAggregator
             // This prevents adding extra bind types for simple campaign_id filters
             if ($hasExistsTrafficSourceFilter && $campaignFilter && preg_match('/EXISTS\s*\(\s*SELECT.*traffic_source_id\s*=\s*\?/i', $campaignFilter)) {
                 $adsetExistsBindTypes .= 'i'; // Traffic source EXISTS in EXISTS clause
-                error_log("FacebookCostAggregator: Adding traffic source bind type to adsetExistsBindTypes. Filter: " . ($campaignFilter ?? 'null'));
+                $this->debugLog("FacebookCostAggregator: Adding traffic source bind type to adsetExistsBindTypes. Filter: " . ($campaignFilter ?? 'null'));
             } else {
                 // Explicitly do NOT add traffic source bind type for simple filters
                 if ($hasExistsTrafficSourceFilter) {
-                    error_log("FacebookCostAggregator: WARNING - hasExistsTrafficSourceFilter is true but filter doesn't match EXISTS pattern! Filter: " . ($campaignFilter ?? 'null'));
+                    $this->debugLog("FacebookCostAggregator: WARNING - hasExistsTrafficSourceFilter is true but filter doesn't match EXISTS pattern! Filter: " . ($campaignFilter ?? 'null'));
                 }
             }
             
@@ -2069,11 +2072,11 @@ class FacebookCostAggregator
             // This prevents adding extra bind types for simple campaign_id filters
             if ($hasExistsTrafficSourceFilter && $campaignFilter && preg_match('/EXISTS\s*\(\s*SELECT.*traffic_source_id\s*=\s*\?/i', $campaignFilter)) {
                 $adExistsBindTypes .= 'i'; // Traffic source EXISTS in EXISTS clause
-                error_log("FacebookCostAggregator: Adding traffic source bind type to adExistsBindTypes. Filter: " . ($campaignFilter ?? 'null'));
+                $this->debugLog("FacebookCostAggregator: Adding traffic source bind type to adExistsBindTypes. Filter: " . ($campaignFilter ?? 'null'));
             } else {
                 // Explicitly do NOT add traffic source bind type for simple filters
                 if ($hasExistsTrafficSourceFilter) {
-                    error_log("FacebookCostAggregator: WARNING - hasExistsTrafficSourceFilter is true but filter doesn't match EXISTS pattern! Filter: " . ($campaignFilter ?? 'null'));
+                    $this->debugLog("FacebookCostAggregator: WARNING - hasExistsTrafficSourceFilter is true but filter doesn't match EXISTS pattern! Filter: " . ($campaignFilter ?? 'null'));
                 }
             }
             
@@ -2146,24 +2149,24 @@ class FacebookCostAggregator
             $adNotExistsOtherLen = strlen($adNotExistsOtherBindTypes);
             $totalAppended = $adsetNotExistsLen + $adsetExistsLen + $adsetNotExistsOtherLen + $adNotExistsLen + $adExistsLen + $adNotExistsOtherLen;
             
-            error_log("FacebookCostAggregator: ===== BIND TYPE BUILDING DEBUG =====");
-            error_log("FacebookCostAggregator: Initial bind types: '{$initialBindTypes}' (length: {$initialBindTypesLength})");
-            error_log("FacebookCostAggregator: adsetNotExistsBindTypes: '{$adsetNotExistsBindTypes}' (length: {$adsetNotExistsLen})");
-            error_log("FacebookCostAggregator: adsetExistsBindTypes: '{$adsetExistsBindTypes}' (length: {$adsetExistsLen})");
-            error_log("FacebookCostAggregator: adsetNotExistsOtherBindTypes: '{$adsetNotExistsOtherBindTypes}' (length: {$adsetNotExistsOtherLen})");
-            error_log("FacebookCostAggregator: adNotExistsBindTypes: '{$adNotExistsBindTypes}' (length: {$adNotExistsLen})");
-            error_log("FacebookCostAggregator: adExistsBindTypes: '{$adExistsBindTypes}' (length: {$adExistsLen})");
-            error_log("FacebookCostAggregator: adNotExistsOtherBindTypes: '{$adNotExistsOtherBindTypes}' (length: {$adNotExistsOtherLen})");
-            error_log("FacebookCostAggregator: Total appended length: {$totalAppended}, Expected final length: " . ($initialBindTypesLength + $totalAppended));
+            $this->debugLog("FacebookCostAggregator: ===== BIND TYPE BUILDING DEBUG =====");
+            $this->debugLog("FacebookCostAggregator: Initial bind types: '{$initialBindTypes}' (length: {$initialBindTypesLength})");
+            $this->debugLog("FacebookCostAggregator: adsetNotExistsBindTypes: '{$adsetNotExistsBindTypes}' (length: {$adsetNotExistsLen})");
+            $this->debugLog("FacebookCostAggregator: adsetExistsBindTypes: '{$adsetExistsBindTypes}' (length: {$adsetExistsLen})");
+            $this->debugLog("FacebookCostAggregator: adsetNotExistsOtherBindTypes: '{$adsetNotExistsOtherBindTypes}' (length: {$adsetNotExistsOtherLen})");
+            $this->debugLog("FacebookCostAggregator: adNotExistsBindTypes: '{$adNotExistsBindTypes}' (length: {$adNotExistsLen})");
+            $this->debugLog("FacebookCostAggregator: adExistsBindTypes: '{$adExistsBindTypes}' (length: {$adExistsLen})");
+            $this->debugLog("FacebookCostAggregator: adNotExistsOtherBindTypes: '{$adNotExistsOtherBindTypes}' (length: {$adNotExistsOtherLen})");
+            $this->debugLog("FacebookCostAggregator: Total appended length: {$totalAppended}, Expected final length: " . ($initialBindTypesLength + $totalAppended));
             
             // Use $hasExistsTrafficSourceFilter (already calculated) for consistency
-            error_log("FacebookCostAggregator: Traffic source filter - hasExistsTrafficSourceFilter: " . ($hasExistsTrafficSourceFilter ? 'true' : 'false'));
-            error_log("FacebookCostAggregator: Campaign filter: " . ($campaignFilter ?? 'null'));
+            $this->debugLog("FacebookCostAggregator: Traffic source filter - hasExistsTrafficSourceFilter: " . ($hasExistsTrafficSourceFilter ? 'true' : 'false'));
+            $this->debugLog("FacebookCostAggregator: Campaign filter: " . ($campaignFilter ?? 'null'));
             
             // CRITICAL GUARD: Verify that traffic source bind types are only added when filter actually contains EXISTS
             // For simple campaign_id filters, hasExistsTrafficSourceFilter should be false
             if ($hasExistsTrafficSourceFilter && $campaignFilter && !preg_match('/EXISTS\s*\(\s*SELECT.*traffic_source_id\s*=\s*\?/i', $campaignFilter)) {
-                error_log("FacebookCostAggregator: WARNING - hasExistsTrafficSourceFilter is true but filter doesn't contain EXISTS subquery! Filter: " . $campaignFilter);
+                $this->debugLog("FacebookCostAggregator: WARNING - hasExistsTrafficSourceFilter is true but filter doesn't contain EXISTS subquery! Filter: " . $campaignFilter);
                 // This shouldn't happen, but if it does, we should not add traffic source bind types
                 $hasExistsTrafficSourceFilter = false;
                 // Rebuild bind types without traffic source if they were incorrectly added
@@ -2171,13 +2174,13 @@ class FacebookCostAggregator
                     // Check if last character was added for traffic source - if so, remove it
                     $adsetExistsBindTypes = 'i'; // Should only be 'i' for campaign_id
                     $adsetExistsLen = 1;
-                    error_log("FacebookCostAggregator: AUTO-FIX - Removed extra traffic source bind type from adsetExistsBindTypes");
+                    $this->debugLog("FacebookCostAggregator: AUTO-FIX - Removed extra traffic source bind type from adsetExistsBindTypes");
                 }
                 if (strlen($adExistsBindTypes) > 0 && substr($adExistsBindTypes, -1) === 'i' && $campaignIdForUnmatched !== null && $offerIdForUnmatched === null && $landingPageIdForUnmatched === null) {
                     // Check if last character was added for traffic source - if so, remove it
                     $adExistsBindTypes = 'i'; // Should only be 'i' for campaign_id
                     $adExistsLen = 1;
-                    error_log("FacebookCostAggregator: AUTO-FIX - Removed extra traffic source bind type from adExistsBindTypes");
+                    $this->debugLog("FacebookCostAggregator: AUTO-FIX - Removed extra traffic source bind type from adExistsBindTypes");
                 }
                 // Recalculate total appended
                 $totalAppended = $adsetNotExistsLen + $adsetExistsLen + $adsetNotExistsOtherLen + $adNotExistsLen + $adExistsLen + $adNotExistsOtherLen;
@@ -2191,26 +2194,26 @@ class FacebookCostAggregator
             $adExistsCount = count($adExistsParams);
             $adNotExistsOtherCount = count($adNotExistsOtherParams);
             
-            error_log("FacebookCostAggregator: Bind type vs value counts - adsetNotExists: {$adsetNotExistsLen} types vs {$adsetNotExistsCount} values, adsetExists: {$adsetExistsLen} types vs {$adsetExistsCount} values, adsetNotExistsOther: {$adsetNotExistsOtherLen} types vs {$adsetNotExistsOtherCount} values, adNotExists: {$adNotExistsLen} types vs {$adNotExistsCount} values, adExists: {$adExistsLen} types vs {$adExistsCount} values, adNotExistsOther: {$adNotExistsOtherLen} types vs {$adNotExistsOtherCount} values");
+            $this->debugLog("FacebookCostAggregator: Bind type vs value counts - adsetNotExists: {$adsetNotExistsLen} types vs {$adsetNotExistsCount} values, adsetExists: {$adsetExistsLen} types vs {$adsetExistsCount} values, adsetNotExistsOther: {$adsetNotExistsOtherLen} types vs {$adsetNotExistsOtherCount} values, adNotExists: {$adNotExistsLen} types vs {$adNotExistsCount} values, adExists: {$adExistsLen} types vs {$adExistsCount} values, adNotExistsOther: {$adNotExistsOtherLen} types vs {$adNotExistsOtherCount} values");
             
             // Verify each bind type string matches its corresponding parameter count
             if ($adsetNotExistsLen !== $adsetNotExistsCount) {
-                error_log("FacebookCostAggregator: MISMATCH - adsetNotExistsBindTypes length ({$adsetNotExistsLen}) doesn't match adsetNotExistsParams count ({$adsetNotExistsCount})");
+                $this->debugLog("FacebookCostAggregator: MISMATCH - adsetNotExistsBindTypes length ({$adsetNotExistsLen}) doesn't match adsetNotExistsParams count ({$adsetNotExistsCount})");
             }
             if ($adsetExistsLen !== $adsetExistsCount) {
-                error_log("FacebookCostAggregator: MISMATCH - adsetExistsBindTypes length ({$adsetExistsLen}) doesn't match adsetExistsParams count ({$adsetExistsCount})");
+                $this->debugLog("FacebookCostAggregator: MISMATCH - adsetExistsBindTypes length ({$adsetExistsLen}) doesn't match adsetExistsParams count ({$adsetExistsCount})");
             }
             if ($adsetNotExistsOtherLen !== $adsetNotExistsOtherCount) {
-                error_log("FacebookCostAggregator: MISMATCH - adsetNotExistsOtherBindTypes length ({$adsetNotExistsOtherLen}) doesn't match adsetNotExistsOtherParams count ({$adsetNotExistsOtherCount})");
+                $this->debugLog("FacebookCostAggregator: MISMATCH - adsetNotExistsOtherBindTypes length ({$adsetNotExistsOtherLen}) doesn't match adsetNotExistsOtherParams count ({$adsetNotExistsOtherCount})");
             }
             if ($adNotExistsLen !== $adNotExistsCount) {
-                error_log("FacebookCostAggregator: MISMATCH - adNotExistsBindTypes length ({$adNotExistsLen}) doesn't match adNotExistsParams count ({$adNotExistsCount})");
+                $this->debugLog("FacebookCostAggregator: MISMATCH - adNotExistsBindTypes length ({$adNotExistsLen}) doesn't match adNotExistsParams count ({$adNotExistsCount})");
             }
             if ($adExistsLen !== $adExistsCount) {
-                error_log("FacebookCostAggregator: MISMATCH - adExistsBindTypes length ({$adExistsLen}) doesn't match adExistsParams count ({$adExistsCount})");
+                $this->debugLog("FacebookCostAggregator: MISMATCH - adExistsBindTypes length ({$adExistsLen}) doesn't match adExistsParams count ({$adExistsCount})");
             }
             if ($adNotExistsOtherLen !== $adNotExistsOtherCount) {
-                error_log("FacebookCostAggregator: MISMATCH - adNotExistsOtherBindTypes length ({$adNotExistsOtherLen}) doesn't match adNotExistsOtherParams count ({$adNotExistsOtherCount})");
+                $this->debugLog("FacebookCostAggregator: MISMATCH - adNotExistsOtherBindTypes length ({$adNotExistsOtherLen}) doesn't match adNotExistsOtherParams count ({$adNotExistsOtherCount})");
             }
             
             // FINAL VALIDATION: Verify bind types match expected count before concatenation
@@ -2221,20 +2224,20 @@ class FacebookCostAggregator
             // If we have a simple campaign_id filter, verify the count
             if ($campaignIdForUnmatched !== null && $offerIdForUnmatched === null && $landingPageIdForUnmatched === null && !$hasExistsTrafficSourceFilter) {
                 if ($calculatedTotal !== $expectedTotalForCampaignId) {
-                    error_log("FacebookCostAggregator: CRITICAL - Expected {$expectedTotalForCampaignId} bind types for simple campaign_id filter, but calculated {$calculatedTotal}");
-                    error_log("FacebookCostAggregator: Initial: {$initialBindTypesLength}, Appended: {$totalAppended}");
-                    error_log("FacebookCostAggregator: adsetExistsBindTypes: '{$adsetExistsBindTypes}' (should be 'i'), adExistsBindTypes: '{$adExistsBindTypes}' (should be 'i')");
+                    $this->debugLog("FacebookCostAggregator: CRITICAL - Expected {$expectedTotalForCampaignId} bind types for simple campaign_id filter, but calculated {$calculatedTotal}");
+                    $this->debugLog("FacebookCostAggregator: Initial: {$initialBindTypesLength}, Appended: {$totalAppended}");
+                    $this->debugLog("FacebookCostAggregator: adsetExistsBindTypes: '{$adsetExistsBindTypes}' (should be 'i'), adExistsBindTypes: '{$adExistsBindTypes}' (should be 'i')");
                     
                     // Auto-fix: Ensure adsetExistsBindTypes and adExistsBindTypes are exactly 'i' for simple campaign_id
                     if ($adsetExistsBindTypes !== 'i') {
-                        error_log("FacebookCostAggregator: AUTO-FIX - Correcting adsetExistsBindTypes from '{$adsetExistsBindTypes}' to 'i'");
+                        $this->debugLog("FacebookCostAggregator: AUTO-FIX - Correcting adsetExistsBindTypes from '{$adsetExistsBindTypes}' to 'i'");
                         $adsetExistsBindTypes = 'i';
                         // Recalculate length
                         $adsetExistsLen = 1;
                         $totalAppended = $adsetNotExistsLen + $adsetExistsLen + $adsetNotExistsOtherLen + $adNotExistsLen + $adExistsLen + $adNotExistsOtherLen;
                     }
                     if ($adExistsBindTypes !== 'i') {
-                        error_log("FacebookCostAggregator: AUTO-FIX - Correcting adExistsBindTypes from '{$adExistsBindTypes}' to 'i'");
+                        $this->debugLog("FacebookCostAggregator: AUTO-FIX - Correcting adExistsBindTypes from '{$adExistsBindTypes}' to 'i'");
                         $adExistsBindTypes = 'i';
                         // Recalculate length
                         $adExistsLen = 1;
@@ -2244,8 +2247,8 @@ class FacebookCostAggregator
                     // Double-check after auto-fix
                     $calculatedTotalAfterFix = $initialBindTypesLength + $totalAppended;
                     if ($calculatedTotalAfterFix !== $expectedTotalForCampaignId) {
-                        error_log("FacebookCostAggregator: WARNING - Auto-fix did not resolve mismatch. Expected: {$expectedTotalForCampaignId}, Got: {$calculatedTotalAfterFix}");
-                        error_log("FacebookCostAggregator: Component breakdown - adsetNotExists: {$adsetNotExistsLen}, adsetExists: {$adsetExistsLen}, adsetNotExistsOther: {$adsetNotExistsOtherLen}, adNotExists: {$adNotExistsLen}, adExists: {$adExistsLen}, adNotExistsOther: {$adNotExistsOtherLen}");
+                        $this->debugLog("FacebookCostAggregator: WARNING - Auto-fix did not resolve mismatch. Expected: {$expectedTotalForCampaignId}, Got: {$calculatedTotalAfterFix}");
+                        $this->debugLog("FacebookCostAggregator: Component breakdown - adsetNotExists: {$adsetNotExistsLen}, adsetExists: {$adsetExistsLen}, adsetNotExistsOther: {$adsetNotExistsOtherLen}, adNotExists: {$adNotExistsLen}, adExists: {$adExistsLen}, adNotExistsOther: {$adNotExistsOtherLen}");
                     }
                 }
             }
@@ -2255,30 +2258,30 @@ class FacebookCostAggregator
             $expectedBindTypesCount = $initialBindTypesLength + $totalAppended;
             
             if ($expectedBindTypesCount !== $sqlPlaceholderCount) {
-                error_log("FacebookCostAggregator: CRITICAL PRE-CONCATENATION MISMATCH - Expected bind types count ({$expectedBindTypesCount}) doesn't match SQL placeholder count ({$sqlPlaceholderCount})");
-                error_log("FacebookCostAggregator: Filter: " . ($campaignFilter ?? 'null'));
-                error_log("FacebookCostAggregator: hasExistsTrafficSourceFilter: " . ($hasExistsTrafficSourceFilter ? 'true' : 'false'));
-                error_log("FacebookCostAggregator: Component breakdown - Initial: {$initialBindTypesLength}, adsetNotExists: {$adsetNotExistsLen}, adsetExists: {$adsetExistsLen}, adsetNotExistsOther: {$adsetNotExistsOtherLen}, adNotExists: {$adNotExistsLen}, adExists: {$adExistsLen}, adNotExistsOther: {$adNotExistsOtherLen}");
+                $this->debugLog("FacebookCostAggregator: CRITICAL PRE-CONCATENATION MISMATCH - Expected bind types count ({$expectedBindTypesCount}) doesn't match SQL placeholder count ({$sqlPlaceholderCount})");
+                $this->debugLog("FacebookCostAggregator: Filter: " . ($campaignFilter ?? 'null'));
+                $this->debugLog("FacebookCostAggregator: hasExistsTrafficSourceFilter: " . ($hasExistsTrafficSourceFilter ? 'true' : 'false'));
+                $this->debugLog("FacebookCostAggregator: Component breakdown - Initial: {$initialBindTypesLength}, adsetNotExists: {$adsetNotExistsLen}, adsetExists: {$adsetExistsLen}, adsetNotExistsOther: {$adsetNotExistsOtherLen}, adNotExists: {$adNotExistsLen}, adExists: {$adExistsLen}, adNotExistsOther: {$adNotExistsOtherLen}");
                 
                 // If we have exactly one extra bind type, try to identify and remove it
                 if ($expectedBindTypesCount === $sqlPlaceholderCount + 1) {
-                    error_log("FacebookCostAggregator: Attempting auto-fix for 1 extra bind type");
+                    $this->debugLog("FacebookCostAggregator: Attempting auto-fix for 1 extra bind type");
                     // For simple campaign_id filter, both EXISTS bind types should be exactly 'i'
                     if ($campaignIdForUnmatched !== null && $offerIdForUnmatched === null && $landingPageIdForUnmatched === null) {
                         if (strlen($adsetExistsBindTypes) > 1) {
-                            error_log("FacebookCostAggregator: AUTO-FIX - Trimming adsetExistsBindTypes from '{$adsetExistsBindTypes}' to 'i'");
+                            $this->debugLog("FacebookCostAggregator: AUTO-FIX - Trimming adsetExistsBindTypes from '{$adsetExistsBindTypes}' to 'i'");
                             $adsetExistsBindTypes = 'i';
                             $adsetExistsLen = 1;
                         }
                         if (strlen($adExistsBindTypes) > 1) {
-                            error_log("FacebookCostAggregator: AUTO-FIX - Trimming adExistsBindTypes from '{$adExistsBindTypes}' to 'i'");
+                            $this->debugLog("FacebookCostAggregator: AUTO-FIX - Trimming adExistsBindTypes from '{$adExistsBindTypes}' to 'i'");
                             $adExistsBindTypes = 'i';
                             $adExistsLen = 1;
                         }
                         // Recalculate total
                         $totalAppended = $adsetNotExistsLen + $adsetExistsLen + $adsetNotExistsOtherLen + $adNotExistsLen + $adExistsLen + $adNotExistsOtherLen;
                         $expectedBindTypesCount = $initialBindTypesLength + $totalAppended;
-                        error_log("FacebookCostAggregator: After auto-fix - Expected bind types count: {$expectedBindTypesCount}, SQL placeholder count: {$sqlPlaceholderCount}");
+                        $this->debugLog("FacebookCostAggregator: After auto-fix - Expected bind types count: {$expectedBindTypesCount}, SQL placeholder count: {$sqlPlaceholderCount}");
                     }
                 }
             }
@@ -2286,19 +2289,19 @@ class FacebookCostAggregator
             $unmatchedBindTypes .= $adsetNotExistsBindTypes . $adsetExistsBindTypes . $adsetNotExistsOtherBindTypes . $adNotExistsBindTypes . $adExistsBindTypes . $adNotExistsOtherBindTypes;
             
             $finalBindTypesLength = strlen($unmatchedBindTypes);
-            error_log("FacebookCostAggregator: Final bind types: '{$unmatchedBindTypes}' (length: {$finalBindTypesLength})");
-            error_log("FacebookCostAggregator: ===== END BIND TYPE BUILDING DEBUG =====");
+            $this->debugLog("FacebookCostAggregator: Final bind types: '{$unmatchedBindTypes}' (length: {$finalBindTypesLength})");
+            $this->debugLog("FacebookCostAggregator: ===== END BIND TYPE BUILDING DEBUG =====");
             
             // CRITICAL: Verify bind types match bind values before merging
             $totalAppendedParams = count($adsetNotExistsParams) + count($adsetExistsParams) + count($adsetNotExistsOtherParams) + count($adNotExistsParams) + count($adExistsParams) + count($adNotExistsOtherParams);
             if ($totalAppended !== $totalAppendedParams) {
-                error_log("FacebookCostAggregator: CRITICAL MISMATCH - Total appended bind types length ({$totalAppended}) doesn't match total appended params count ({$totalAppendedParams})");
-                error_log("FacebookCostAggregator: Breakdown - adsetNotExists: " . strlen($adsetNotExistsBindTypes) . " types vs " . count($adsetNotExistsParams) . " params");
-                error_log("FacebookCostAggregator: Breakdown - adsetExists: " . strlen($adsetExistsBindTypes) . " types vs " . count($adsetExistsParams) . " params");
-                error_log("FacebookCostAggregator: Breakdown - adsetNotExistsOther: " . strlen($adsetNotExistsOtherBindTypes) . " types vs " . count($adsetNotExistsOtherParams) . " params");
-                error_log("FacebookCostAggregator: Breakdown - adNotExists: " . strlen($adNotExistsBindTypes) . " types vs " . count($adNotExistsParams) . " params");
-                error_log("FacebookCostAggregator: Breakdown - adExists: " . strlen($adExistsBindTypes) . " types vs " . count($adExistsParams) . " params");
-                error_log("FacebookCostAggregator: Breakdown - adNotExistsOther: " . strlen($adNotExistsOtherBindTypes) . " types vs " . count($adNotExistsOtherParams) . " params");
+                $this->debugLog("FacebookCostAggregator: CRITICAL MISMATCH - Total appended bind types length ({$totalAppended}) doesn't match total appended params count ({$totalAppendedParams})");
+                $this->debugLog("FacebookCostAggregator: Breakdown - adsetNotExists: " . strlen($adsetNotExistsBindTypes) . " types vs " . count($adsetNotExistsParams) . " params");
+                $this->debugLog("FacebookCostAggregator: Breakdown - adsetExists: " . strlen($adsetExistsBindTypes) . " types vs " . count($adsetExistsParams) . " params");
+                $this->debugLog("FacebookCostAggregator: Breakdown - adsetNotExistsOther: " . strlen($adsetNotExistsOtherBindTypes) . " types vs " . count($adsetNotExistsOtherParams) . " params");
+                $this->debugLog("FacebookCostAggregator: Breakdown - adNotExists: " . strlen($adNotExistsBindTypes) . " types vs " . count($adNotExistsParams) . " params");
+                $this->debugLog("FacebookCostAggregator: Breakdown - adExists: " . strlen($adExistsBindTypes) . " types vs " . count($adExistsParams) . " params");
+                $this->debugLog("FacebookCostAggregator: Breakdown - adNotExistsOther: " . strlen($adNotExistsOtherBindTypes) . " types vs " . count($adNotExistsOtherParams) . " params");
             }
             
             $unmatchedBindValues = array_merge($unmatchedBindValues, 
@@ -2328,16 +2331,16 @@ class FacebookCostAggregator
         
         // FINAL SAFETY CHECK: If we have exactly one extra bind type, try to fix it
         if ($bindTypesCount === $placeholderCount + 1 && $bindValuesCount === $placeholderCount) {
-            error_log("FacebookCostAggregator: FINAL SAFETY CHECK - Detected exactly 1 extra bind type. Attempting auto-fix.");
-            error_log("FacebookCostAggregator: Bind types before fix: '{$unmatchedBindTypes}' (length: {$bindTypesCount})");
-            error_log("FacebookCostAggregator: Filter: " . ($campaignFilter ?? 'null'));
+            $this->debugLog("FacebookCostAggregator: FINAL SAFETY CHECK - Detected exactly 1 extra bind type. Attempting auto-fix.");
+            $this->debugLog("FacebookCostAggregator: Bind types before fix: '{$unmatchedBindTypes}' (length: {$bindTypesCount})");
+            $this->debugLog("FacebookCostAggregator: Filter: " . ($campaignFilter ?? 'null'));
             
             // For simple campaign_id filters, try removing the last character if it's an 'i'
             if ($campaignIdForUnmatched !== null && $offerIdForUnmatched === null && $landingPageIdForUnmatched === null && !$hasExistsTrafficSourceFilter) {
                 if (substr($unmatchedBindTypes, -1) === 'i') {
                     $unmatchedBindTypes = substr($unmatchedBindTypes, 0, -1);
                     $bindTypesCount = strlen($unmatchedBindTypes);
-                    error_log("FacebookCostAggregator: AUTO-FIX APPLIED - Removed last 'i' character. New bind types: '{$unmatchedBindTypes}' (length: {$bindTypesCount})");
+                    $this->debugLog("FacebookCostAggregator: AUTO-FIX APPLIED - Removed last 'i' character. New bind types: '{$unmatchedBindTypes}' (length: {$bindTypesCount})");
                 }
             }
         }
@@ -2345,18 +2348,18 @@ class FacebookCostAggregator
         // CRITICAL: Validate bind parameter counts match
         if ($bindTypesCount !== $bindValuesCount || $bindTypesCount !== $placeholderCount) {
             // Log detailed breakdown for debugging
-            error_log("FacebookCostAggregator: ===== BIND PARAMETER MISMATCH DETECTED =====");
-            error_log("FacebookCostAggregator: Bind Types Count: {$bindTypesCount}");
-            error_log("FacebookCostAggregator: Bind Values Count: {$bindValuesCount}");
-            error_log("FacebookCostAggregator: SQL Placeholder Count: {$placeholderCount}");
-            error_log("FacebookCostAggregator: Filter: " . ($campaignFilter ?? 'null'));
-            error_log("FacebookCostAggregator: Campaign ID: " . ($campaignIdForUnmatched ?? 'null'));
-            error_log("FacebookCostAggregator: Offer ID: " . ($offerIdForUnmatched ?? 'null'));
-            error_log("FacebookCostAggregator: Landing Page ID: " . ($landingPageIdForUnmatched ?? 'null'));
-            error_log("FacebookCostAggregator: Has Traffic Source Filter: " . (isset($hasExistsTrafficSourceFilter) && $hasExistsTrafficSourceFilter ? 'true' : 'false'));
-            error_log("FacebookCostAggregator: Final bind types string: '{$unmatchedBindTypes}'");
-            error_log("FacebookCostAggregator: Bind values: " . json_encode($unmatchedBindValues));
-            error_log("FacebookCostAggregator: ===== END MISMATCH DEBUG =====");
+            $this->debugLog("FacebookCostAggregator: ===== BIND PARAMETER MISMATCH DETECTED =====");
+            $this->debugLog("FacebookCostAggregator: Bind Types Count: {$bindTypesCount}");
+            $this->debugLog("FacebookCostAggregator: Bind Values Count: {$bindValuesCount}");
+            $this->debugLog("FacebookCostAggregator: SQL Placeholder Count: {$placeholderCount}");
+            $this->debugLog("FacebookCostAggregator: Filter: " . ($campaignFilter ?? 'null'));
+            $this->debugLog("FacebookCostAggregator: Campaign ID: " . ($campaignIdForUnmatched ?? 'null'));
+            $this->debugLog("FacebookCostAggregator: Offer ID: " . ($offerIdForUnmatched ?? 'null'));
+            $this->debugLog("FacebookCostAggregator: Landing Page ID: " . ($landingPageIdForUnmatched ?? 'null'));
+            $this->debugLog("FacebookCostAggregator: Has Traffic Source Filter: " . (isset($hasExistsTrafficSourceFilter) && $hasExistsTrafficSourceFilter ? 'true' : 'false'));
+            $this->debugLog("FacebookCostAggregator: Final bind types string: '{$unmatchedBindTypes}'");
+            $this->debugLog("FacebookCostAggregator: Bind values: " . json_encode($unmatchedBindValues));
+            $this->debugLog("FacebookCostAggregator: ===== END MISMATCH DEBUG =====");
             
             throw new \Exception("Bind parameter mismatch: Types={$bindTypesCount}, Values={$bindValuesCount}, Placeholders={$placeholderCount}. More parameters than placeholders - likely missing SQL condition. Filter: " . ($campaignFilter ?? 'null') . ". See error log for full details.");
         }
@@ -2371,15 +2374,15 @@ class FacebookCostAggregator
             if ($offerIdForUnmatched !== null) $existsFilterParamsCount++;
             if ($landingPageIdForUnmatched !== null) $existsFilterParamsCount++;
             $hasDateRangeInExists = (($offerIdForUnmatched !== null || $landingPageIdForUnmatched !== null) && $campaignIdForUnmatched === null);
-            error_log("FacebookCostAggregator: Filter params - Campaign ID: " . ($campaignIdForUnmatched ?? 'null') . ", Offer ID: " . ($offerIdForUnmatched ?? 'null') . ", Landing Page ID: " . ($landingPageIdForUnmatched ?? 'null'));
-            error_log("FacebookCostAggregator: paramsPerFilter: {$paramsPerFilter}, existsFilterParamsCount: {$existsFilterParamsCount}, hasDateRangeInExists: " . ($hasDateRangeInExists ? 'true' : 'false'));
+            $this->debugLog("FacebookCostAggregator: Filter params - Campaign ID: " . ($campaignIdForUnmatched ?? 'null') . ", Offer ID: " . ($offerIdForUnmatched ?? 'null') . ", Landing Page ID: " . ($landingPageIdForUnmatched ?? 'null'));
+            $this->debugLog("FacebookCostAggregator: paramsPerFilter: {$paramsPerFilter}, existsFilterParamsCount: {$existsFilterParamsCount}, hasDateRangeInExists: " . ($hasDateRangeInExists ? 'true' : 'false'));
         }
         
         // Validation check is now done earlier (before this point)
         // Prepare statement
         $unmatchedStmt = $this->db->prepare($unmatchedCostsQuery);
         if (!$unmatchedStmt) {
-            error_log("FacebookCostAggregator: Failed to prepare unmatched costs query - Error: " . $this->db->error);
+            $this->debugLog("FacebookCostAggregator: Failed to prepare unmatched costs query - Error: " . $this->db->error);
         }
         
         // Additional validation (redundant but kept for safety)
@@ -2400,9 +2403,9 @@ class FacebookCostAggregator
                 "SQL Preview (first 1000 chars): " . substr($unmatchedCostsQuery, 0, 1000)
             ];
             
-            error_log("FacebookCostAggregator: MISMATCH DETECTED!");
+            $this->debugLog("FacebookCostAggregator: MISMATCH DETECTED!");
             foreach ($errorDetails as $detail) {
-                error_log("FacebookCostAggregator: " . $detail);
+                $this->debugLog("FacebookCostAggregator: " . $detail);
             }
             
             // Determine which section has the mismatch
@@ -2423,7 +2426,7 @@ class FacebookCostAggregator
         $unmatchedStmt->bind_param($unmatchedBindTypes, ...$unmatchedBindValues);
         $unmatchedStmt->execute();
         if ($unmatchedStmt->error) {
-            error_log("FacebookCostAggregator: Error executing unmatched costs query - Error: " . $unmatchedStmt->error);
+            $this->debugLog("FacebookCostAggregator: Error executing unmatched costs query - Error: " . $unmatchedStmt->error);
         }
         $unmatchedResult = $unmatchedStmt->get_result()->fetch_assoc();
         $fbCostUnmatchedDelta = (float)($unmatchedResult['unmatched_cost'] ?? 0.0);
@@ -2440,7 +2443,7 @@ class FacebookCostAggregator
             // Delta correctly shows $0.00 or very small (no/minimal costs today), but cumulative includes previous days' spend
             // Use delta to avoid showing yesterday's costs in today's total
             $fbCostUnmatched = $fbCostUnmatchedDelta;
-            error_log("FacebookCostAggregator: Unmatched costs - MIDNIGHT SAFETY CHECK: Using delta: {$fbCostUnmatchedDelta} instead of cumulative: {$fbCostUnmatchedCumulative}. Delta correctly shows no/minimal costs for today, cumulative includes previous day's final cumulative spend. This prevents yesterday's costs from appearing in today's unmatched costs right after midnight.");
+            $this->debugLog("FacebookCostAggregator: Unmatched costs - MIDNIGHT SAFETY CHECK: Using delta: {$fbCostUnmatchedDelta} instead of cumulative: {$fbCostUnmatchedCumulative}. Delta correctly shows no/minimal costs for today, cumulative includes previous day's final cumulative spend. This prevents yesterday's costs from appearing in today's unmatched costs right after midnight.");
         } elseif ($fbCostUnmatchedCumulative > 0 && $fbCostUnmatchedDelta > 0) {
             // Both have values - prefer cumulative when both are non-zero (more accurate)
             $fbCostUnmatched = $fbCostUnmatchedCumulative;
@@ -2458,16 +2461,16 @@ class FacebookCostAggregator
             if ($campaignIdForUnmatched !== null) $filterInfo[] = "Campaign ID: {$campaignIdForUnmatched}";
             if ($offerIdForUnmatched !== null) $filterInfo[] = "Offer ID: {$offerIdForUnmatched}";
             if ($landingPageIdForUnmatched !== null) $filterInfo[] = "Landing Page ID: {$landingPageIdForUnmatched}";
-            error_log("FacebookCostAggregator: Unmatched costs result - " . implode(', ', $filterInfo) . ", Unmatched Cost (delta): {$fbCostUnmatched}, Unmatched Cost (cumulative): {$fbCostUnmatchedCumulative}, Using: {$fbCostUnmatched}");
+            $this->debugLog("FacebookCostAggregator: Unmatched costs result - " . implode(', ', $filterInfo) . ", Unmatched Cost (delta): {$fbCostUnmatched}, Unmatched Cost (cumulative): {$fbCostUnmatchedCumulative}, Using: {$fbCostUnmatched}");
             // For offer/landing page filters, log more details
             if ($offerIdForUnmatched !== null || $landingPageIdForUnmatched !== null) {
-                error_log("FacebookCostAggregator: DEBUG - Matched Cost: {$fbCostFromClicks}, Unmatched Cost (cumulative): {$fbCostUnmatched}, Calculated: " . ($fbCostFromClicks + $fbCostUnmatched));
+                $this->debugLog("FacebookCostAggregator: DEBUG - Matched Cost: {$fbCostFromClicks}, Unmatched Cost (cumulative): {$fbCostUnmatched}, Calculated: " . ($fbCostFromClicks + $fbCostUnmatched));
             }
         } else {
-            error_log("FacebookCostAggregator: Unmatched costs result (no filter) - Unmatched Cost (delta): {$fbCostUnmatched}, Unmatched Cost (cumulative): {$fbCostUnmatchedCumulative}, Using: {$fbCostUnmatched}");
+            $this->debugLog("FacebookCostAggregator: Unmatched costs result (no filter) - Unmatched Cost (delta): {$fbCostUnmatched}, Unmatched Cost (cumulative): {$fbCostUnmatchedCumulative}, Using: {$fbCostUnmatched}");
             // Log the actual SQL query for debugging (first 500 chars)
             $queryPreview = substr($unmatchedCostsQuery, 0, 500);
-            error_log("FacebookCostAggregator: Unmatched costs query preview: " . $queryPreview . "...");
+            $this->debugLog("FacebookCostAggregator: Unmatched costs query preview: " . $queryPreview . "...");
         }
 
         // Fallback safeguard: use max(total_spend) per adset/ad within the range to avoid undercounting
@@ -2606,7 +2609,7 @@ class FacebookCostAggregator
         $bindValuesCount = count($maxBindValues);
         if ($placeholderCount !== $bindTypesCount || $placeholderCount !== $bindValuesCount) {
             $errorMessage = "Max spend query bind mismatch: Types={$bindTypesCount}, Values={$bindValuesCount}, Placeholders={$placeholderCount}. Filter: " . ($campaignFilter ?? 'null');
-            error_log("FacebookCostAggregator: " . $errorMessage);
+            $this->debugLog("FacebookCostAggregator: " . $errorMessage);
             throw new \Exception($errorMessage);
         }
         
@@ -2619,9 +2622,9 @@ class FacebookCostAggregator
         
         // Log midnight hour filter status
         if ($usePstDateGrouping) {
-            error_log("FacebookCostAggregator: Max spend query - Including all hours (including hour 0) in user timezone ({$userTimezone}). DATE filtering prevents yesterday's costs. Result: {$fbCostByMax}");
+            $this->debugLog("FacebookCostAggregator: Max spend query - Including all hours (including hour 0) in user timezone ({$userTimezone}). DATE filtering prevents yesterday's costs. Result: {$fbCostByMax}");
         } else {
-            error_log("FacebookCostAggregator: Max spend query - Using UTC date/hour filtering (no timezone conversion). Result: {$fbCostByMax}");
+            $this->debugLog("FacebookCostAggregator: Max spend query - Using UTC date/hour filtering (no timezone conversion). Result: {$fbCostByMax}");
         }
 
         // Choose the higher between delta-based calculation and max-total safeguard
@@ -2639,9 +2642,9 @@ class FacebookCostAggregator
             } elseif (strpos($campaignFilter, 'landing_page_id') !== false) {
                 $filterType = 'Landing Page';
             }
-            error_log("FacebookCostAggregator: {$filterType} cost calculation - FromClicks: {$fbCostFromClicks}, Unmatched: {$fbCostUnmatched}, Calculated: {$calculatedCost}, MaxSafeguard: {$fbCostByMax}, Final: " . ($manualCost + max($calculatedCost, $fbCostByMax)));
+            $this->debugLog("FacebookCostAggregator: {$filterType} cost calculation - FromClicks: {$fbCostFromClicks}, Unmatched: {$fbCostUnmatched}, Calculated: {$calculatedCost}, MaxSafeguard: {$fbCostByMax}, Final: " . ($manualCost + max($calculatedCost, $fbCostByMax)));
         } else {
-            error_log("FacebookCostAggregator: Overall cost calculation - FromClicks: {$fbCostFromClicks}, Unmatched: {$fbCostUnmatched}, Calculated: {$calculatedCost}, MaxSafeguard: {$fbCostByMax}, Discrepancy: " . abs($fbCostByMax - $calculatedCost));
+            $this->debugLog("FacebookCostAggregator: Overall cost calculation - FromClicks: {$fbCostFromClicks}, Unmatched: {$fbCostUnmatched}, Calculated: {$calculatedCost}, MaxSafeguard: {$fbCostByMax}, Discrepancy: " . abs($fbCostByMax - $calculatedCost));
         }
         
         // CRITICAL FIX: When no campaign filter, calculate overall cost directly using single optimized query
@@ -2676,12 +2679,12 @@ class FacebookCostAggregator
                 // but cumulative is high (includes yesterday's final cumulative spend)
                 // Use delta sum to avoid showing yesterday's costs in today's total
                 $fbCost = $calculatedCost;
-                error_log("FacebookCostAggregator: Overall cost (no filter) - MIDNIGHT SAFETY CHECK: Using delta sum: {$calculatedCost} instead of cumulative: {$fbCostByMax}. Delta correctly shows no/minimal costs for today, cumulative includes previous day's final cumulative spend. This prevents yesterday's costs from appearing in today's total right after midnight.");
+                $this->debugLog("FacebookCostAggregator: Overall cost (no filter) - MIDNIGHT SAFETY CHECK: Using delta sum: {$calculatedCost} instead of cumulative: {$fbCostByMax}. Delta correctly shows no/minimal costs for today, cumulative includes previous day's final cumulative spend. This prevents yesterday's costs from appearing in today's total right after midnight.");
             } elseif ($fbCostFromClicks == 0.0 && $discrepancy > 5.0 && $fbCostByMax > 1.0) {
                 // No matched costs today (fbCostFromClicks = 0) but large discrepancy suggests yesterday's cumulative
                 // Use delta sum to avoid showing yesterday's costs
                 $fbCost = $calculatedCost;
-                error_log("FacebookCostAggregator: Overall cost (no filter) - MIDNIGHT SAFETY CHECK (no matched costs): Using delta sum: {$calculatedCost} instead of cumulative: {$fbCostByMax}. No matched costs today (fbCostFromClicks=0), large discrepancy ({$discrepancy}) suggests yesterday's cumulative spend is included. This prevents yesterday's costs from appearing in today's total right after midnight.");
+                $this->debugLog("FacebookCostAggregator: Overall cost (no filter) - MIDNIGHT SAFETY CHECK (no matched costs): Using delta sum: {$calculatedCost} instead of cumulative: {$fbCostByMax}. No matched costs today (fbCostFromClicks=0), large discrepancy ({$discrepancy}) suggests yesterday's cumulative spend is included. This prevents yesterday's costs from appearing in today's total right after midnight.");
             } elseif ($fbCostByMax > 0 && $calculatedCost > 0) {
                 // Both have values - prefer cumulative MAX when available (source of truth from Meta API)
                 // Cumulative MAX represents the actual spend from Meta API and is more reliable than summing deltas
@@ -2690,25 +2693,25 @@ class FacebookCostAggregator
                     // Cumulative MAX is available and reasonable - prefer it as source of truth
                     $fbCost = $fbCostByMax;
                     if ($calculatedCost > $fbCostByMax) {
-                        error_log("FacebookCostAggregator: Overall cost (no filter) - Using cumulative (MAX): {$fbCostByMax} instead of delta sum: {$calculatedCost} (discrepancy: {$discrepancy}). Cumulative MAX is source of truth from Meta API. Delta sum is higher but may include costs from wrong dates or be inflated.");
+                        $this->debugLog("FacebookCostAggregator: Overall cost (no filter) - Using cumulative (MAX): {$fbCostByMax} instead of delta sum: {$calculatedCost} (discrepancy: {$discrepancy}). Cumulative MAX is source of truth from Meta API. Delta sum is higher but may include costs from wrong dates or be inflated.");
                     } elseif ($discrepancy > 0.01) {
-                        error_log("FacebookCostAggregator: Overall cost (no filter) - Using cumulative (MAX): {$fbCostByMax} instead of delta sum: {$calculatedCost} (discrepancy: {$discrepancy}). Cumulative matches Meta API and is source of truth.");
+                        $this->debugLog("FacebookCostAggregator: Overall cost (no filter) - Using cumulative (MAX): {$fbCostByMax} instead of delta sum: {$calculatedCost} (discrepancy: {$discrepancy}). Cumulative matches Meta API and is source of truth.");
                     } else {
-                        error_log("FacebookCostAggregator: Overall cost (no filter) - Using cumulative (MAX): {$fbCostByMax}, Delta sum: {$calculatedCost} (match closely). Cumulative MAX is source of truth from Meta API.");
+                        $this->debugLog("FacebookCostAggregator: Overall cost (no filter) - Using cumulative (MAX): {$fbCostByMax}, Delta sum: {$calculatedCost} (match closely). Cumulative MAX is source of truth from Meta API.");
                     }
                 } else {
                     // Cumulative MAX is too small (< $0.01) - use delta sum as fallback
                     $fbCost = $calculatedCost;
-                    error_log("FacebookCostAggregator: Overall cost (no filter) - Using delta sum: {$calculatedCost} instead of cumulative: {$fbCostByMax} (cumulative MAX is too small, using delta sum as fallback).");
+                    $this->debugLog("FacebookCostAggregator: Overall cost (no filter) - Using delta sum: {$calculatedCost} instead of cumulative: {$fbCostByMax} (cumulative MAX is too small, using delta sum as fallback).");
                 }
             } elseif ($fbCostByMax > 0) {
                 // Only cumulative available - use it
                 $fbCost = $fbCostByMax;
-                error_log("FacebookCostAggregator: Overall cost (no filter) - Using cumulative (MAX): {$fbCostByMax} (delta sum not available).");
+                $this->debugLog("FacebookCostAggregator: Overall cost (no filter) - Using cumulative (MAX): {$fbCostByMax} (delta sum not available).");
             } else {
                 // Cumulative not available - use calculated (delta sum) as fallback
                 $fbCost = $calculatedCost;
-                error_log("FacebookCostAggregator: Overall cost (no filter, direct calculation) - Manual: {$manualCost}, FB Cost (calculated): {$calculatedCost}, Total: " . ($manualCost + $calculatedCost) . " (cumulative not available)");
+                $this->debugLog("FacebookCostAggregator: Overall cost (no filter, direct calculation) - Manual: {$manualCost}, FB Cost (calculated): {$calculatedCost}, Total: " . ($manualCost + $calculatedCost) . " (cumulative not available)");
             }
             
             $overallCost = $manualCost + $fbCost;
@@ -2734,40 +2737,40 @@ class FacebookCostAggregator
                     if (!$skipOverallSum) {
                         if ($calculatedCost > $fbCostByMax) {
                             if ($isTrafficSourceQuery) {
-                                error_log("FacebookCostAggregator: Traffic source query - Using cumulative (MAX): {$fbCostByMax} instead of delta sum: {$calculatedCost} (discrepancy: {$discrepancy}). Cumulative MAX is source of truth from Meta API. Delta sum is higher but may include costs from wrong dates.");
+                                $this->debugLog("FacebookCostAggregator: Traffic source query - Using cumulative (MAX): {$fbCostByMax} instead of delta sum: {$calculatedCost} (discrepancy: {$discrepancy}). Cumulative MAX is source of truth from Meta API. Delta sum is higher but may include costs from wrong dates.");
                             } else {
-                                error_log("FacebookCostAggregator: Filtered query - Using cumulative (MAX): {$fbCostByMax} instead of delta sum: {$calculatedCost} (discrepancy: {$discrepancy}). Cumulative MAX is source of truth from Meta API. Delta sum is higher but may include costs from wrong dates or be inflated.");
+                                $this->debugLog("FacebookCostAggregator: Filtered query - Using cumulative (MAX): {$fbCostByMax} instead of delta sum: {$calculatedCost} (discrepancy: {$discrepancy}). Cumulative MAX is source of truth from Meta API. Delta sum is higher but may include costs from wrong dates or be inflated.");
                             }
                         } elseif ($discrepancy > 1.00) {
                             if ($isTrafficSourceQuery) {
-                                error_log("FacebookCostAggregator: Traffic source query - Using cumulative (MAX): {$fbCostByMax} instead of delta sum: {$calculatedCost} (discrepancy: {$discrepancy}). Cumulative matches Meta API and is source of truth.");
+                                $this->debugLog("FacebookCostAggregator: Traffic source query - Using cumulative (MAX): {$fbCostByMax} instead of delta sum: {$calculatedCost} (discrepancy: {$discrepancy}). Cumulative matches Meta API and is source of truth.");
                             } else {
-                                error_log("FacebookCostAggregator: WARNING - Large discrepancy detected ({$discrepancy}) - Using cumulative (MAX): {$fbCostByMax} instead of delta sum: {$calculatedCost}. Cumulative matches Meta API and is source of truth.");
+                                $this->debugLog("FacebookCostAggregator: WARNING - Large discrepancy detected ({$discrepancy}) - Using cumulative (MAX): {$fbCostByMax} instead of delta sum: {$calculatedCost}. Cumulative matches Meta API and is source of truth.");
                             }
                         } elseif ($discrepancy > 0.10) {
-                            error_log("FacebookCostAggregator: Filtered query - Using cumulative (MAX): {$fbCostByMax}, Delta sum: {$calculatedCost} (moderate discrepancy: {$discrepancy}). Cumulative MAX is source of truth from Meta API.");
+                            $this->debugLog("FacebookCostAggregator: Filtered query - Using cumulative (MAX): {$fbCostByMax}, Delta sum: {$calculatedCost} (moderate discrepancy: {$discrepancy}). Cumulative MAX is source of truth from Meta API.");
                         } else {
-                            error_log("FacebookCostAggregator: Filtered query - Using cumulative (MAX): {$fbCostByMax}, Delta sum: {$calculatedCost} (match closely). Cumulative MAX is source of truth from Meta API.");
+                            $this->debugLog("FacebookCostAggregator: Filtered query - Using cumulative (MAX): {$fbCostByMax}, Delta sum: {$calculatedCost} (match closely). Cumulative MAX is source of truth from Meta API.");
                         }
                     }
                 } else {
                     // Cumulative MAX is too small (< $0.01) - use delta sum as fallback
                     $fbCost = $calculatedCost;
                     if (!$skipOverallSum) {
-                        error_log("FacebookCostAggregator: Filtered query - Using delta sum: {$calculatedCost} instead of cumulative: {$fbCostByMax} (cumulative MAX is too small, using delta sum as fallback).");
+                        $this->debugLog("FacebookCostAggregator: Filtered query - Using delta sum: {$calculatedCost} instead of cumulative: {$fbCostByMax} (cumulative MAX is too small, using delta sum as fallback).");
                     }
                 }
             } elseif ($fbCostByMax > 0) {
                 // Only cumulative available - use it
                 $fbCost = $fbCostByMax;
                 if (!$skipOverallSum) {
-                    error_log("FacebookCostAggregator: Filtered query - Using cumulative (MAX): {$fbCostByMax} (delta sum not available).");
+                    $this->debugLog("FacebookCostAggregator: Filtered query - Using cumulative (MAX): {$fbCostByMax} (delta sum not available).");
                 }
             } else {
                 // Cumulative not available - use calculated (delta sum) as fallback
                 $fbCost = $calculatedCost;
                 if (!$skipOverallSum) {
-                    error_log("FacebookCostAggregator: Filtered query - Using delta sum: {$calculatedCost} (cumulative not available).");
+                    $this->debugLog("FacebookCostAggregator: Filtered query - Using delta sum: {$calculatedCost} (cumulative not available).");
                 }
             }
         }

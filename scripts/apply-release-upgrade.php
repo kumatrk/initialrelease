@@ -147,6 +147,12 @@ if ($applyFiles) {
     $report['files_skipped'] = $applyResult['files_skipped'];
     $report['config_preserved'] = $applyResult['config_preserved'];
     $report['errors'] = array_merge($report['errors'], $applyResult['errors']);
+    if ($applyResult['ok'] && $applyResult['files_copied'] !== []) {
+        \SimpleKuma\Update\TreePermissionNormalizer::normalizeRelativeFiles(
+            $installRoot,
+            $applyResult['files_copied']
+        );
+    }
 }
 
 if ($applyFiles) {
@@ -220,6 +226,7 @@ function resolveSourceRoot(string $source): ?string
         }
         $zip->extractTo($tmp);
         $zip->close();
+        \SimpleKuma\Update\TreePermissionNormalizer::normalizeTree($tmp);
         return realpath($tmp) ?: null;
     }
     return null;

@@ -8,6 +8,7 @@ use mysqli;
 use SimpleKuma\Settings\SettingsManager;
 use SimpleKuma\Stats\CampaignStatsExpressions;
 use SimpleKuma\Stats\StatsExclusionFlag;
+use SimpleKuma\Support\AppDebugLog;
 
 /**
  * Redirectless Tracker
@@ -15,6 +16,8 @@ use SimpleKuma\Stats\StatsExclusionFlag;
  */
 class RedirectlessTracker
 {
+    use AppDebugLog;
+
     private mysqli $db;
     private ?SettingsManager $settings = null;
 
@@ -76,7 +79,7 @@ class RedirectlessTracker
         $detectedTrafficSourceId = $this->detectTrafficSource($campaign, $trackingParams);
         
         // Debug logging
-        error_log("RedirectlessTracker: campaign_id=$campaignId, slug_id=" . ($slugId ?? 'NULL') . ", detected_traffic_source_id=" . ($detectedTrafficSourceId ?? 'NULL') . ", Tf_param=" . ($trackingParams['Tf'] ?? 'not set') . ", campaign_default_ts_id=" . ($campaign['traffic_source_id'] ?? 'NULL'));
+        $this->debugLog("RedirectlessTracker: campaign_id=$campaignId, slug_id=" . ($slugId ?? 'NULL') . ", detected_traffic_source_id=" . ($detectedTrafficSourceId ?? 'NULL') . ", Tf_param=" . ($trackingParams['Tf'] ?? 'not set') . ", campaign_default_ts_id=" . ($campaign['traffic_source_id'] ?? 'NULL'));
 
         // Generate unique click ID
         $clickId = $this->generateClickId();
@@ -241,7 +244,7 @@ class RedirectlessTracker
             return null;
         }
 
-        error_log("RedirectlessTracker: reusing existing click_id=$clickId for campaign_id=$campaignId (skipped INSERT)");
+        $this->debugLog("RedirectlessTracker: reusing existing click_id=$clickId for campaign_id=$campaignId (skipped INSERT)");
         return $clickId;
     }
 
@@ -455,7 +458,7 @@ class RedirectlessTracker
                 $geoLocator = new \SimpleKuma\Enrichment\GeoLocator($ip);
                 $geoData = $geoLocator->getGeoData();
             } catch (\Exception $e) {
-                error_log("RedirectlessTracker: GeoLocator error for IP {$ip}: " . $e->getMessage());
+                $this->debugLog("RedirectlessTracker: GeoLocator error for IP {$ip}: " . $e->getMessage());
             }
         }
 
@@ -609,7 +612,7 @@ class RedirectlessTracker
         $lpClick = 0; // Will be set to 1 when user clicks button
         
         // Debug logging
-        error_log("RedirectlessTracker::storeClick: traffic_source_id=" . ($trafficSourceId ?? 'NULL') . ", campaign_id=$campaignId, click_id=$clickId, slug_id=" . ($slugId ?? 'NULL') . ", traffic_source_column_exists=" . ($trafficSourceColumnExists ? 'yes' : 'no'));
+        $this->debugLog("RedirectlessTracker::storeClick: traffic_source_id=" . ($trafficSourceId ?? 'NULL') . ", campaign_id=$campaignId, click_id=$clickId, slug_id=" . ($slugId ?? 'NULL') . ", traffic_source_column_exists=" . ($trafficSourceColumnExists ? 'yes' : 'no'));
 
         $offerId = null; // Redirectless: visitor on LP, no offer yet
         $bindValues = $trafficSourceColumnExists
@@ -639,7 +642,7 @@ class RedirectlessTracker
             if (!$result) {
                 error_log("RedirectlessTracker::storeClick ERROR: " . $stmt->error);
             } else {
-                error_log("RedirectlessTracker::storeClick SUCCESS: click_id=$clickId, traffic_source_id=" . ($trafficSourceId ?? 'NULL'));
+                $this->debugLog("RedirectlessTracker::storeClick SUCCESS: click_id=$clickId, traffic_source_id=" . ($trafficSourceId ?? 'NULL'));
                 // On-write: UPSERT clicks_daily_summary and token aggregates (no cron)
                 $updater = new DailySummaryUpdater($this->db);
                 $updater->upsertClick(

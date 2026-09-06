@@ -39,6 +39,19 @@ final class EdgeClickIngest
             return $this->fail(401, 'unauthorized', 'Invalid edge ingest authentication');
         }
 
+        // Health probe: auth-only round-trip so operators can verify nginx routes /api/edge-click
+        // without inserting a click row.
+        if (!empty($payload['health'])) {
+            return [
+                'ok' => true,
+                'http' => 200,
+                'body' => [
+                    'ok' => true,
+                    'health' => true,
+                ],
+            ];
+        }
+
         $clickId = trim((string) ($payload['click_id'] ?? ''));
         $campaignId = (int) ($payload['campaign_id'] ?? 0);
         if ($clickId === '' || $campaignId <= 0) {

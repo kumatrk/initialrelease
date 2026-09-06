@@ -151,9 +151,116 @@ final class EdgeDeployer
             return ['ok' => false, 'message' => $msg];
         }
 
-        $msg = 'Cloudflare token and KV namespace look healthy';
+        $ingestProbe = $this->probeOriginIngest();
+        if (!$ingestProbe['ok']) {
+            $this->settings->markHealth(false, $ingestProbe['message']);
+            return $ingestProbe;
+        }
+
+        $msg = 'Cloudflare token, KV namespace, and origin /api/edge-click ingest look healthy';
         $this->settings->markHealth(true, $msg);
         return ['ok' => true, 'message' => $msg];
+    }
+
+    /**
+     * Signed POST to origin ingest. Catches missing nginx rewrites that 302 to login.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    private function probeOriginIngest(): array
+    {
+        $ingestUrl = $this->settings->ingestUrl();
+        if ($ingestUrl === '') {
+            return [
+                'ok' => false,
+                'message' => 'Origin base URL is not configured — cannot probe /api/edge-click',
+            ];
+        }
+
+        $secret = $this->settings->getIngestSecret();
+        if ($secret === '') {
+            return [
+                'ok' => false,
+                'message' => 'Edge ingest secret is missing — redeploy the Worker',
+            ];
+        }
+
+        $body = json_encode(['health' => true], JSON_UNESCAPED_SLASHES);
+        if ($body === false) {
+            return ['ok' => false, 'message' => 'Could not build health probe payload'];
+        }
+
+        $ts = (string) time();
+        $sig = hash_hmac('sha256', $ts . '.' . $body, $secret);
+
+        if (!function_exists('curl_init')) {
+            return [
+                'ok' => false,
+                'message' => 'PHP cURL is required to probe origin ingest',
+            ];
+        }
+
+        $ch = curl_init($ingestUrl);
+        if ($ch === false) {
+            return ['ok' => false, 'message' => 'Could not start origin ingest probe'];
+        }
+
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $body,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_TIMEOUT => 15,
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'Accept: application/json',
+                'Authorization: Bearer ' . $secret,
+                'X-Edge-Timestamp: ' . $ts,
+                'X-Edge-Signature: ' . $sig,
+            ],
+        ]);
+
+        $responseBody = curl_exec($ch);
+        $errno = curl_errno($ch);
+        $error = curl_error($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $redirectUrl = (string) curl_getinfo($ch, CURLINFO_REDIRECT_URL);
+        curl_close($ch);
+
+        if ($errno !== 0) {
+            return [
+                'ok' => false,
+                'message' => 'Origin ingest probe failed: ' . ($error !== '' ? $error : "cURL error {$errno}"),
+            ];
+        }
+
+        if ($httpCode >= 200 && $httpCode < 300) {
+            return [
+                'ok' => true,
+                'message' => "Origin ingest returned HTTP {$httpCode}",
+            ];
+        }
+
+        $hint = '';
+        if ($httpCode === 302 || $httpCode === 301 || $httpCode === 303 || $httpCode === 307 || $httpCode === 308) {
+            $hint = ' (likely routed to the admin front controller — add the nginx location for /api/edge-click; see docs/EDGE_REDIRECT.md)';
+            if ($redirectUrl !== '') {
+                $hint .= ' Location: ' . $redirectUrl;
+            }
+        } elseif ($httpCode === 401 || $httpCode === 403) {
+            $hint = ' (authentication rejected — check ingest secret / Worker deploy)';
+        } elseif ($httpCode === 404) {
+            $hint = ' (ingest endpoint not found — check document root and web server rewrite)';
+        }
+
+        $snippet = is_string($responseBody) ? trim(substr($responseBody, 0, 120)) : '';
+        $extra = $snippet !== '' ? ' Body: ' . $snippet : '';
+
+        return [
+            'ok' => false,
+            'message' => "Origin ingest probe returned HTTP {$httpCode}{$hint}{$extra}",
+        ];
     }
 
     /**

@@ -7,6 +7,7 @@ namespace SimpleKuma\GeoIP\Providers;
 use IP2Location\Database;
 use SimpleKuma\GeoIP\GeoProvider;
 use SimpleKuma\GeoIP\GeoRecord;
+use SimpleKuma\Support\AppDebugLog;
 
 /**
  * IP2Location LITE Provider
@@ -17,6 +18,8 @@ use SimpleKuma\GeoIP\GeoRecord;
  */
 class IP2LocationProvider implements GeoProvider
 {
+    use AppDebugLog;
+
     private const SOURCE_NAME = 'ip2location';
     private const ATTRIBUTION = 'This product includes IP2Location LITE data available from https://lite.ip2location.com.';
     
@@ -108,19 +111,19 @@ class IP2LocationProvider implements GeoProvider
 
         // Check if file exists and is readable
         if (!file_exists($this->databasePath)) {
-            error_log("IP2LocationProvider: Database file does not exist: {$this->databasePath}");
+            self::logOnce('ip2:missing', "IP2LocationProvider: Database file does not exist: {$this->databasePath}");
             $this->available = false;
             return;
         }
 
         if (!is_readable($this->databasePath)) {
-            error_log("IP2LocationProvider: Database file is not readable: {$this->databasePath}");
+            self::logOnce('ip2:unreadable', "IP2LocationProvider: Database file is not readable: {$this->databasePath}");
             $this->available = false;
             return;
         }
 
         if (!class_exists(Database::class)) {
-            error_log("IP2LocationProvider: IP2Location\Database class not found. Make sure composer dependencies are installed.");
+            self::logOnce('ip2:class', "IP2LocationProvider: IP2Location\Database class not found. Make sure composer dependencies are installed.");
             $this->available = false;
             return;
         }
@@ -129,8 +132,8 @@ class IP2LocationProvider implements GeoProvider
             $this->db = new Database($this->databasePath, Database::FILE_IO);
             $this->available = true;
         } catch (\Exception $e) {
-            error_log("IP2LocationProvider: Failed to initialize database at {$this->databasePath}: " . $e->getMessage());
-            error_log("IP2LocationProvider: File size: " . filesize($this->databasePath) . " bytes");
+            self::logOnce('ip2:init', "IP2LocationProvider: Failed to initialize database at {$this->databasePath}: " . $e->getMessage());
+            self::logOnce('ip2:size', "IP2LocationProvider: File size: " . filesize($this->databasePath) . " bytes");
             $this->available = false;
             $this->db = null;
         }
@@ -169,7 +172,7 @@ class IP2LocationProvider implements GeoProvider
                 source: self::SOURCE_NAME
             );
         } catch (\Exception $e) {
-            error_log("IP2LocationProvider: Lookup error for IP {$ip}: " . $e->getMessage());
+            $this->debugLog("IP2LocationProvider: Lookup error for IP {$ip}: " . $e->getMessage());
             return null;
         }
     }

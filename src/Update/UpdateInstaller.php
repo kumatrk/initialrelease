@@ -93,6 +93,11 @@ final class UpdateInstaller
             if (!$applyResult['ok']) {
                 throw new RuntimeException(implode(' ', $applyResult['errors']));
             }
+            // ZIP extract + copy can leave 0666 under a permissive FPM umask.
+            TreePermissionNormalizer::normalizeRelativeFiles(
+                $this->projectRoot,
+                $applyResult['files_copied']
+            );
             $this->updateLogDetails(
                 $logId,
                 $applyResult['files_copied'],
@@ -312,6 +317,8 @@ final class UpdateInstaller
             throw new RuntimeException('Could not extract the update archive.');
         }
         $zip->close();
+
+        TreePermissionNormalizer::normalizeTree($extractPath);
     }
 
     private function copyConfigBackup(string $backupPath): void

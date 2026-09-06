@@ -530,7 +530,7 @@ async function postClick(env, payload) {
   const sig = await hmacSha256(secret, ts + '.' + body);
 
   try {
-    await fetch(ingestUrl, {
+    const res = await fetch(ingestUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -539,7 +539,11 @@ async function postClick(env, payload) {
         'X-Edge-Signature': sig,
       },
       body,
+      redirect: 'manual',
     });
+    if (res.status < 200 || res.status >= 300) {
+      console.error('edge ingest non-2xx', res.status, ingestUrl);
+    }
   } catch (err) {
     console.error('edge ingest failed', err);
   }

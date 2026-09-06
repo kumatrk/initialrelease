@@ -8,6 +8,7 @@ use GeoIp2\Database\Reader;
 use GeoIp2\Exception\AddressNotFoundException;
 use SimpleKuma\GeoIP\GeoProvider;
 use SimpleKuma\GeoIP\GeoRecord;
+use SimpleKuma\Support\AppDebugLog;
 
 /**
  * DB-IP Lite Provider
@@ -18,6 +19,8 @@ use SimpleKuma\GeoIP\GeoRecord;
  */
 class DBIPProvider implements GeoProvider
 {
+    use AppDebugLog;
+
     private const SOURCE_NAME = 'dbip';
     private const ATTRIBUTION = 'IP Geolocation by DB-IP. https://db-ip.com';
     
@@ -95,7 +98,7 @@ class DBIPProvider implements GeoProvider
         }
 
         // Log for debugging if not found
-        error_log("DBIPProvider: Database not found. Checked paths: " . implode(', ', array_filter($basePaths)));
+        self::logOnce('dbip:notfound', "DBIPProvider: Database not found. Checked paths: " . implode(', ', array_filter($basePaths)));
         return null;
     }
 
@@ -111,19 +114,19 @@ class DBIPProvider implements GeoProvider
 
         // Check if file exists and is readable
         if (!file_exists($this->databasePath)) {
-            error_log("DBIPProvider: Database file does not exist: {$this->databasePath}");
+            self::logOnce('dbip:missing', "DBIPProvider: Database file does not exist: {$this->databasePath}");
             $this->available = false;
             return;
         }
 
         if (!is_readable($this->databasePath)) {
-            error_log("DBIPProvider: Database file is not readable: {$this->databasePath}");
+            self::logOnce('dbip:unreadable', "DBIPProvider: Database file is not readable: {$this->databasePath}");
             $this->available = false;
             return;
         }
 
         if (!class_exists(Reader::class)) {
-            error_log("DBIPProvider: GeoIp2\Database\Reader class not found. Make sure composer dependencies are installed.");
+            self::logOnce('dbip:class', "DBIPProvider: GeoIp2\Database\Reader class not found. Make sure composer dependencies are installed.");
             $this->available = false;
             return;
         }
@@ -132,8 +135,8 @@ class DBIPProvider implements GeoProvider
             $this->reader = new Reader($this->databasePath);
             $this->available = true;
         } catch (\Exception $e) {
-            error_log("DBIPProvider: Failed to initialize database at {$this->databasePath}: " . $e->getMessage());
-            error_log("DBIPProvider: File size: " . filesize($this->databasePath) . " bytes");
+            self::logOnce('dbip:init', "DBIPProvider: Failed to initialize database at {$this->databasePath}: " . $e->getMessage());
+            self::logOnce('dbip:size', "DBIPProvider: File size: " . filesize($this->databasePath) . " bytes");
             $this->available = false;
             $this->reader = null;
         }
@@ -166,7 +169,7 @@ class DBIPProvider implements GeoProvider
             // IP not found in database
             return null;
         } catch (\Exception $e) {
-            error_log("DBIPProvider: Lookup error for IP {$ip}: " . $e->getMessage());
+            $this->debugLog("DBIPProvider: Lookup error for IP {$ip}: " . $e->getMessage());
             return null;
         }
     }

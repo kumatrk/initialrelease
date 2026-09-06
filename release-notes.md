@@ -1,4 +1,33 @@
-# Simple Kuma Tracker Version 1.1.5.19
+# Simple Kuma Tracker Version 1.1.5.20
+
+## Changes in 1.1.5.20
+
+### Security: Updater no longer leaves files world-writable
+- After each in-app update extract/apply, application files are normalized to `0644` / directories to `0755`
+- Prevents PHP-FPM permissive umask from leaving PHP sources as `0666` (local privilege-escalation risk)
+- `config/config.php` remains intentionally restricted (`0600`) and is skipped by the normalizer
+
+### GeoIP: Legacy GeoLite2 no longer disables the fallback chain
+- A leftover `storage/GeoLite2-City.mmdb` is only offered to providers whose format matches
+- IP2Location / IPinfo still discover their own databases under `geoip/`
+- Stops per-request init failures and error-log flooding when mixed databases are present
+
+### Edge Redirect: Real ingest health check + nginx guidance
+- Health check performs a signed round-trip to origin `/api/edge-click` and requires a 2xx response
+- Worker treats non-2xx (including 302 to login) as ingest failure instead of silent success
+- Nginx rewrite for `/api/edge-click` documented in `WEB_SERVER_SETUP.md` and settings UI copy
+
+### Hot-path logging: Debug spam gated behind `APP_DEBUG`
+- Redirector redirect-rules dumps and other verbose traces no longer flood `error.log` on every click
+- Redirectless tracker, Facebook cost aggregator, and GeoIP providers use the same gated logger
+
+### Performance: API `group_by` uses Hermes summary-first path
+- `GET /api/v1/stats/campaigns/{id}?group_by=…` now uses the same `CampaignStatsV2Service` breakdown path as Campaign Stats UI
+- Unfiltered token/geo/device breakdowns prefer pre-aggregates / lean cover indexes instead of raw `clicks` scans
+
+### Fix: LP offer update fatal (`incrementSummaryClickRow` argument count)
+- Restored correct `clickInc` / `lpInc` / `directInc` / `cost` arguments after the bot-summary signature change
+- Fixes fatal errors on `lp/click.php` → offer rotation (can break LP / popunder offer attribution)
 
 ## Changes in 1.1.5.19
 

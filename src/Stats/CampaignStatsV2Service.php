@@ -1026,7 +1026,7 @@ class CampaignStatsV2Service
         $this->assertValidParentPath($parentPath, $campaign, $dateFrom, $dateTo, $timezone);
 
         $utcRange = Formatter::convertDateRangeToUTC($dateFrom, $dateTo, $timezone);
-        $perPage = max(1, min(200, $perPage));
+        $perPage = max(1, min(1000, $perPage));
         $page = max(1, $page);
 
         $filterKeys = $this->filterableKeys($campaignId, $dateFrom, $dateTo, $timezone);

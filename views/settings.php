@@ -6282,7 +6282,7 @@ php composer.phar install --no-dev --optimize-autoloader</pre>
                 <li>
                     <strong>Save connection</strong>, then click <strong>Deploy / Update Worker</strong>.
                     That creates the KV namespace, uploads the redirect script, binds ingest credentials, and attaches the route.
-                    Use <strong>Health check</strong> afterward if you want to confirm the token and KV look good.
+                    Use <strong>Health check</strong> afterward to confirm the Cloudflare token, KV namespace, and a signed round-trip to origin <code>/api/edge-click</code> (nginx needs an explicit rewrite — see Edge Redirect docs).
                 </li>
                 <li>
                     <strong>Enable Edge redirect on each campaign</strong> you want accelerated, then save the campaign

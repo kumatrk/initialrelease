@@ -25,6 +25,16 @@ class Redirector
     }
 
     /**
+     * Verbose redirect-path tracing. Gated so production hot path does not flood error.log.
+     */
+    private function debugLog(string $message): void
+    {
+        if (defined('APP_DEBUG') && APP_DEBUG) {
+            error_log($message);
+        }
+    }
+
+    /**
      * Process click and redirect
      */
     public function process(string $campaignKey, array $params): void
@@ -33,7 +43,7 @@ class Redirector
         $campaign = $this->getCampaignByKey($campaignKey);
 
         if (!$campaign) {
-            error_log("Redirector: Campaign lookup failed for key/slug: {$campaignKey}. Checked both campaign_slugs table and campaign_key.");
+            $this->debugLog("Redirector: Campaign lookup failed for key/slug: {$campaignKey}. Checked both campaign_slugs table and campaign_key.");
             http_response_code(404);
             if (!headers_sent()) {
                 header('Content-Type: text/plain; charset=utf-8');
@@ -42,7 +52,7 @@ class Redirector
         }
         
         // Log successful lookup for debugging
-        error_log("Redirector: Campaign found - ID: {$campaign['id']}, Name: {$campaign['name']}, Key: " . ($campaign['campaign_key'] ?? 'N/A') . ", Slug ID: " . ($campaign['slug_id'] ?? 'N/A'));
+        $this->debugLog("Redirector: Campaign found - ID: {$campaign['id']}, Name: {$campaign['name']}, Key: " . ($campaign['campaign_key'] ?? 'N/A') . ", Slug ID: " . ($campaign['slug_id'] ?? 'N/A'));
 
         if ($campaign['status'] !== 'active') {
             http_response_code(403);
@@ -88,7 +98,7 @@ class Redirector
             $rotationJson = is_array($campaign['rotation_json'] ?? null) 
                 ? json_encode($campaign['rotation_json']) 
                 : ($campaign['rotation_json'] ?? '[]');
-            error_log("Redirector: No available offers for campaign ID {$campaignId} (flow_type: {$flowType}). All offers are outside time window or disabled. Rotation JSON: {$rotationJson}");
+            $this->debugLog("Redirector: No available offers for campaign ID {$campaignId} (flow_type: {$flowType}). All offers are outside time window or disabled. Rotation JSON: {$rotationJson}");
             
             // Store click even though no destination (for tracking purposes)
             $slugId = isset($campaign['slug_id']) ? (int)$campaign['slug_id'] : null;
@@ -218,7 +228,7 @@ class Redirector
             $campaign['redirect_rules_json'] = json_decode($campaign['redirect_rules_json'] ?? '[]', true) ?? [];
         } else {
             // Log for debugging when campaign is not found
-            error_log("Redirector: Campaign not found for key/slug: {$key}. Checked both campaign_slugs table and campaign_key.");
+            $this->debugLog("Redirector: Campaign not found for key/slug: {$key}. Checked both campaign_slugs table and campaign_key.");
         }
 
         return $campaign ?: null;
@@ -487,7 +497,7 @@ class Redirector
         
         // Ensure we have an array of offer objects (not empty, and has 'id' keys)
         if (empty($enabledOffers)) {
-            error_log("Redirector: No enabled offers in rotation_json for DTO campaign. Rotation structure: " . json_encode($rotation));
+            $this->debugLog("Redirector: No enabled offers in rotation_json for DTO campaign. Rotation structure: " . json_encode($rotation));
             return null;
         }
         
@@ -498,13 +508,13 @@ class Redirector
             $offerType = $offerConfig['type'] ?? 'offer';
             
             if (!$offerId) {
-                error_log("Redirector: Offer config missing 'id' field: " . json_encode($offerConfig));
+                $this->debugLog("Redirector: Offer config missing 'id' field: " . json_encode($offerConfig));
                 continue;
             }
             
             // Ensure type is 'offer' for DTO
             if ($offerType !== 'offer') {
-                error_log("Redirector: Invalid type '{$offerType}' for DTO offer, expected 'offer'. Config: " . json_encode($offerConfig));
+                $this->debugLog("Redirector: Invalid type '{$offerType}' for DTO offer, expected 'offer'. Config: " . json_encode($offerConfig));
                 continue;
             }
             
@@ -512,7 +522,7 @@ class Redirector
         }
         
         if (empty($validOffers)) {
-            error_log("Redirector: No valid offers found in rotation_json for DTO campaign. Rotation: " . json_encode($rotation));
+            $this->debugLog("Redirector: No valid offers found in rotation_json for DTO campaign. Rotation: " . json_encode($rotation));
             return null;
         }
         
@@ -532,7 +542,7 @@ class Redirector
                 // Load full offer data to check schedule
                 $offerData = $offerEntity->getById($offerId);
                 if (!$offerData) {
-                    error_log("Redirector: Offer ID {$offerId} not found in database");
+                    $this->debugLog("Redirector: Offer ID {$offerId} not found in database");
                     continue;
                 }
                 
@@ -540,9 +550,9 @@ class Redirector
                 $isAvailable = $offerEntity->isAvailableForRotation($offerData);
                 if ($isAvailable) {
                     $availableOffers[] = $offerConfig;
-                    error_log("Redirector: Offer ID {$offerId} is available and added to rotation");
+                    $this->debugLog("Redirector: Offer ID {$offerId} is available and added to rotation");
                 } else {
-                    error_log("Redirector: Offer ID {$offerId} is not available now (schedule or CAP check failed). Offer data: " . json_encode([
+                    $this->debugLog("Redirector: Offer ID {$offerId} is not available now (schedule or CAP check failed). Offer data: " . json_encode([
                         'is_24_7' => $offerData['is_24_7'] ?? null,
                         'schedule_days' => $offerData['schedule_days'] ?? null,
                         'schedule_start_time' => $offerData['schedule_start_time'] ?? null,
@@ -564,7 +574,7 @@ class Redirector
         $availableOffers = array_values($availableOffers); // Re-index after filtering
         
         if (empty($availableOffers)) {
-            error_log("Redirector: No available offers found for DTO campaign after schedule check. Campaign ID: " . ($campaign['id'] ?? 'unknown'));
+            $this->debugLog("Redirector: No available offers found for DTO campaign after schedule check. Campaign ID: " . ($campaign['id'] ?? 'unknown'));
             $fallback = $this->tryFallbackOffer($campaign);
             if ($fallback) {
                 return $fallback;
@@ -645,7 +655,7 @@ class Redirector
                 $result = $stmt->get_result();
                 $offer = $result->fetch_assoc();
                 if (!$offer || !isset($offer['url'])) {
-                    error_log("Redirector: Offer ID {$item['id']} not found or has no URL");
+                    $this->debugLog("Redirector: Offer ID {$item['id']} not found or has no URL");
                     return null;
                 }
                 return [
@@ -669,7 +679,7 @@ class Redirector
                 $result = $stmt->get_result();
                 $lp = $result->fetch_assoc();
                 if (!$lp || !isset($lp['url'])) {
-                    error_log("Redirector: Landing page ID {$item['id']} not found or has no URL");
+                    $this->debugLog("Redirector: Landing page ID {$item['id']} not found or has no URL");
                     return null;
                 }
                 return [
@@ -683,7 +693,7 @@ class Redirector
             }
         }
 
-        error_log("Redirector: Unknown item type in getDestinationData: " . ($item['type'] ?? 'unknown'));
+        $this->debugLog("Redirector: Unknown item type in getDestinationData: " . ($item['type'] ?? 'unknown'));
         return null;
     }
 
@@ -705,13 +715,13 @@ class Redirector
         $redirectRules = $campaign['redirect_rules_json'] ?? [];
         
         // Debug: Log redirect rules
-        error_log("=== REDIRECT RULES CHECK ===");
-        error_log("Execution point: " . $executionPoint);
-        error_log("Redirect rules count: " . count($redirectRules));
-        error_log("Redirect rules: " . json_encode($redirectRules, JSON_PRETTY_PRINT));
+        $this->debugLog("=== REDIRECT RULES CHECK ===");
+        $this->debugLog("Execution point: " . $executionPoint);
+        $this->debugLog("Redirect rules count: " . count($redirectRules));
+        $this->debugLog("Redirect rules: " . json_encode($redirectRules, JSON_PRETTY_PRINT));
         
         if (empty($redirectRules) || !is_array($redirectRules)) {
-            error_log("No redirect rules to check or rules is not an array");
+            $this->debugLog("No redirect rules to check or rules is not an array");
             return null;
         }
 
@@ -842,34 +852,34 @@ class Redirector
                 $builtInValues['browser_version'] = $deviceData['browser_version'] ?? '';
                 
                 // Debug logging
-                error_log("Device detection result: " . json_encode($deviceData));
-                error_log("Built-in values for redirect rules: device=" . $builtInValues['device']);
+                $this->debugLog("Device detection result: " . json_encode($deviceData));
+                $this->debugLog("Built-in values for redirect rules: device=" . $builtInValues['device']);
             } catch (\Exception $e) {
-                error_log("Device detection error: " . $e->getMessage());
+                $this->debugLog("Device detection error: " . $e->getMessage());
                 // Fallback to desktop if detection fails
                 $builtInValues['device'] = 'desktop';
             }
         } else {
             // No user agent - default to desktop
             $builtInValues['device'] = 'desktop';
-            error_log("No user agent provided, defaulting device to 'desktop'");
+            $this->debugLog("No user agent provided, defaulting device to 'desktop'");
         }
 
         // Check each rule in order (first match wins)
         foreach ($redirectRules as $ruleIndex => $rule) {
-            error_log("--- Checking Rule #" . ($ruleIndex + 1) . " ---");
-            error_log("Rule data: " . json_encode($rule, JSON_PRETTY_PRINT));
+            $this->debugLog("--- Checking Rule #" . ($ruleIndex + 1) . " ---");
+            $this->debugLog("Rule data: " . json_encode($rule, JSON_PRETTY_PRINT));
             
             // Check if rule applies to this execution point
             $executeOn = $rule['execute_on'] ?? [];
-            error_log("Rule execute_on: " . json_encode($executeOn) . ", Looking for: " . $executionPoint);
+            $this->debugLog("Rule execute_on: " . json_encode($executeOn) . ", Looking for: " . $executionPoint);
             
             if (!in_array($executionPoint, $executeOn, true)) {
-                error_log("Rule #" . ($ruleIndex + 1) . " does not apply to execution point '{$executionPoint}' - skipping");
+                $this->debugLog("Rule #" . ($ruleIndex + 1) . " does not apply to execution point '{$executionPoint}' - skipping");
                 continue;
             }
             
-            error_log("Rule #" . ($ruleIndex + 1) . " applies to execution point '{$executionPoint}' - evaluating");
+            $this->debugLog("Rule #" . ($ruleIndex + 1) . " applies to execution point '{$executionPoint}' - evaluating");
 
             // Get token display name from rule
             $tokenDisplayName = $rule['token_name'] ?? '';
@@ -881,7 +891,7 @@ class Redirector
             $tokenValue = '';
             if (isset($tokenMap[$tokenDisplayName])) {
                 $tokenInfo = $tokenMap[$tokenDisplayName];
-                error_log("Token '{$tokenDisplayName}' found in map. Type: {$tokenInfo['type']}, Info: " . json_encode($tokenInfo));
+                $this->debugLog("Token '{$tokenDisplayName}' found in map. Type: {$tokenInfo['type']}, Info: " . json_encode($tokenInfo));
                 
                 if ($tokenInfo['type'] === 'custom' || $tokenInfo['type'] === 'traffic_source') {
                     // Get from params using parameter name
@@ -895,7 +905,7 @@ class Redirector
                         $paramNameWithId = $paramName . '_id';
                         if (isset($params[$paramNameWithId])) {
                             $tokenValue = $params[$paramNameWithId];
-                            error_log("Token '{$tokenDisplayName}': Tried param '{$paramName}', found value in '{$paramNameWithId}': '{$tokenValue}'");
+                            $this->debugLog("Token '{$tokenDisplayName}': Tried param '{$paramName}', found value in '{$paramNameWithId}': '{$tokenValue}'");
                         } else {
                             // Try common parameter name mappings
                             $commonMappings = [
@@ -921,7 +931,7 @@ class Redirector
                                 foreach ($commonMappings[$paramName] as $mappedParam) {
                                     if (isset($params[$mappedParam])) {
                                         $tokenValue = $params[$mappedParam];
-                                        error_log("Token '{$tokenDisplayName}': Tried param '{$paramName}', found value in mapped param '{$mappedParam}': '{$tokenValue}'");
+                                        $this->debugLog("Token '{$tokenDisplayName}': Tried param '{$paramName}', found value in mapped param '{$mappedParam}': '{$tokenValue}'");
                                         break;
                                     }
                                 }
@@ -932,33 +942,33 @@ class Redirector
                     // Log available params for debugging if still empty
                     if (empty($tokenValue)) {
                         $availableParams = array_keys($params);
-                        error_log("Token '{$tokenDisplayName}' is custom/traffic_source. Param: '{$paramName}', Value from params: '(empty)'. Available params: " . implode(', ', $availableParams));
+                        $this->debugLog("Token '{$tokenDisplayName}' is custom/traffic_source. Param: '{$paramName}', Value from params: '(empty)'. Available params: " . implode(', ', $availableParams));
                     } else {
-                        error_log("Token '{$tokenDisplayName}' is custom/traffic_source. Param: '{$paramName}', Value from params: '{$tokenValue}'");
+                        $this->debugLog("Token '{$tokenDisplayName}' is custom/traffic_source. Param: '{$paramName}', Value from params: '{$tokenValue}'");
                     }
                 } elseif ($tokenInfo['type'] === 'builtin') {
                     // Get from enriched built-in values
                     $column = $tokenInfo['column'];
-                    error_log("Token '{$tokenDisplayName}' is builtin. Column: '{$column}'");
-                    error_log("Built-in values array keys: " . implode(', ', array_keys($builtInValues)));
-                    error_log("Built-in values array: " . json_encode($builtInValues));
+                    $this->debugLog("Token '{$tokenDisplayName}' is builtin. Column: '{$column}'");
+                    $this->debugLog("Built-in values array keys: " . implode(', ', array_keys($builtInValues)));
+                    $this->debugLog("Built-in values array: " . json_encode($builtInValues));
                     $tokenValue = $builtInValues[$column] ?? '';
-                    error_log("Token value retrieved from builtInValues[{$column}]: '" . ($tokenValue ?: '(empty)') . "'");
+                    $this->debugLog("Token value retrieved from builtInValues[{$column}]: '" . ($tokenValue ?: '(empty)') . "'");
                 }
             } else {
                 // Token not found in map - log for debugging
-                error_log("Redirect rule: Token '{$tokenDisplayName}' not found in token map. Available tokens: " . implode(', ', array_keys($tokenMap)));
+                $this->debugLog("Redirect rule: Token '{$tokenDisplayName}' not found in token map. Available tokens: " . implode(', ', array_keys($tokenMap)));
                 continue;
             }
             
             // Convert to string and trim (handle null/empty cases)
             $tokenValue = trim((string)$tokenValue);
             $operator = $rule['operator'] ?? '';
-            error_log("Token value after trim: '" . ($tokenValue !== '' ? $tokenValue : '(empty)') . "'");
+            $this->debugLog("Token value after trim: '" . ($tokenValue !== '' ? $tokenValue : '(empty)') . "'");
 
             // Missing URL params must still be evaluated for not_equals (e.g. hidden absent => redirect)
             if ($tokenValue === '' && $operator !== 'not_equals') {
-                error_log("Redirect rule: Token '{$tokenDisplayName}' has empty value. Rule skipped. TokenInfo: " . json_encode($tokenInfo ?? []));
+                $this->debugLog("Redirect rule: Token '{$tokenDisplayName}' has empty value. Rule skipped. TokenInfo: " . json_encode($tokenInfo ?? []));
                 continue;
             }
 
@@ -993,7 +1003,7 @@ class Redirector
             }
             
             // Debug logging for rule evaluation
-            error_log(sprintf(
+            $this->debugLog(sprintf(
                 "Redirect rule check: Token='%s', Value='%s', Operator='%s', RuleValue='%s', CaseSensitive=%s, Matches=%s",
                 $tokenDisplayName,
                 $tokenValue,
@@ -1005,7 +1015,7 @@ class Redirector
 
             // First matching rule triggers redirect
             if ($matches && !empty($rule['redirect_url'])) {
-                error_log("Redirect rule MATCHED: Redirecting to " . $rule['redirect_url']);
+                $this->debugLog("Redirect rule MATCHED: Redirecting to " . $rule['redirect_url']);
                 return $rule['redirect_url'];
             }
         }
@@ -1107,7 +1117,7 @@ class Redirector
                     error_log("Redirector: GeoLocator error for IP {$ip}: " . $e->getMessage());
                 }
             } else {
-                error_log("Redirector: Skipping geolocation - IP is localhost or invalid: " . ($ip ?? 'NULL'));
+                $this->debugLog("Redirector: Skipping geolocation - IP is localhost or invalid: " . ($ip ?? 'NULL'));
             }
 
             if ($ua) {

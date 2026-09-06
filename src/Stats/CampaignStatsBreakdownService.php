@@ -41,83 +41,32 @@ class CampaignStatsBreakdownService
             return ['rows' => [], 'total' => 0, 'totals' => []];
         }
 
-        $this->assertValidGroupBy($groupBy, $campaign);
+        $this->assertValidGroupBy($groupBy, $campaign, $dateFrom, $dateTo, $timezone);
 
-        $utcRange = Formatter::convertDateRangeToUTC($dateFrom, $dateTo, $timezone);
-
-        // Drill-down rows must include scoped FB/GA cost — always aggregate from raw clicks.
-        if (in_array($groupBy, ['date', 'offer', 'landing'], true)) {
-            if ($groupBy === 'date') {
-                $allRows = $this->queryDateFromClicks(
-                    $campaignId,
-                    $utcRange['from'],
-                    $utcRange['to'],
-                    $timezone,
-                    $dateFrom
-                );
-            } else {
-                $allRows = $this->queryRawClicksGroup(
-                    $campaignId,
-                    $groupBy,
-                    $utcRange['from'],
-                    $utcRange['to']
-                );
-            }
-        } else {
-            $allRows = $this->queryGroupedClicks(
+        // Hermes summary/lean path (same as campaign stats UI). Do not use
+        // scopedApiCostJoins for unfiltered group_by — that path is ~40× slower.
+        $v2 = new CampaignStatsV2Service($this->db);
+        try {
+            $bd = $v2->getBreakdown(
                 $campaignId,
-                $groupBy,
-                $utcRange['from'],
-                $utcRange['to'],
-                '',
-                '',
-                false
+                $dateFrom,
+                $dateTo,
+                $timezone,
+                [$groupBy],
+                [],
+                $page,
+                $perPage,
+                $sort,
+                $order
             );
-        }
-
-        if ($groupBy === 'date') {
-            $allRows = CampaignStatsExpressions::fillDateRangeRows($allRows, $dateFrom, $dateTo);
-        }
-
-        $sortCol = CampaignStatsExpressions::sortColumn($sort);
-        $orderDir = strtolower($order) === 'asc' ? 1 : -1;
-
-        usort($allRows, static function (array $a, array $b) use ($sortCol, $orderDir): int {
-            $av = $a[$sortCol] ?? 0;
-            $bv = $b[$sortCol] ?? 0;
-            if ($av === $bv) {
-                return strcmp((string)($a['group'] ?? ''), (string)($b['group'] ?? '')) * $orderDir;
-            }
-            if (is_numeric($av) && is_numeric($bv)) {
-                return ($av <=> $bv) * $orderDir;
-            }
-
-            return strcmp((string)$av, (string)$bv) * $orderDir;
-        });
-
-        $total = count($allRows);
-        $offset = ($page - 1) * $perPage;
-        $pageRows = array_slice($allRows, $offset, $perPage);
-
-        $summaryService = new CampaignStatsService($this->db);
-        $summaryRows = $summaryService->getCampaignStats($campaignId, $dateFrom, $dateTo, $timezone);
-        $totals = [];
-        if ($summaryRows !== []) {
-            $s = $summaryRows[0];
-            $totals = CampaignStatsExpressions::formatMetricsRow('', null, [
-                'clicks' => (int)$s['clicks'],
-                'lp_clicks' => (int)($s['lp_clicks'] ?? 0),
-                'conversions' => (int)$s['conversions'],
-                'cost' => (float)$s['cost'],
-                'revenue' => (float)$s['revenue'],
-            ]);
-            unset($totals['group']);
+        } catch (\RuntimeException $e) {
+            throw new \InvalidArgumentException($e->getMessage(), 0, $e);
         }
 
         return [
-            'rows' => $pageRows,
-            'total' => $total,
-            'totals' => $totals,
+            'rows' => $bd['rows'] ?? [],
+            'total' => (int) ($bd['total'] ?? 0),
+            'totals' => is_array($bd['totals'] ?? null) ? $bd['totals'] : [],
         ];
     }
 
