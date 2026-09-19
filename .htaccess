@@ -57,6 +57,11 @@
     RewriteCond %{REQUEST_URI} ^/.*api/v1(/.*)?$
     RewriteRule ^api/v1(/.*)?$ public/api/v1/index.php [L,QSA]
 
+    # Edge Redirect Worker async click ingest
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteCond %{REQUEST_URI} ^/.*api/edge-click/?$
+    RewriteRule ^api/edge-click/?$ public/api/edge-click.php [L,QSA]
+
     # Google Ads Data Manager requires path ending in .csv/.tsv
     RewriteCond %{REQUEST_URI} !^/public/
     RewriteCond %{REQUEST_URI} ^/.*api/google-conversions\.csv$
