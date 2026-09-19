@@ -3,4 +3,7 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
     RewriteRule ^google-conversions\.csv$ google-conversions.php [L,QSA]
+    # Edge Redirect Worker async click ingest
+    RewriteRule ^edge-click/?$ edge-click.php [L,QSA]
+
 </IfModule>
