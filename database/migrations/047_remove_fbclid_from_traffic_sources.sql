@@ -1,0 +1,6 @@
+-- Migration 047: Remove fbclid from Facebook traffic source tokens
+-- Facebook appends fbclid automatically; it should not be in link templates.
+--
+-- IMPLEMENTATION: Executed in PHP (RemoveFbclidFromTrafficSources) for compatibility with
+-- MariaDB 10.3+ and MySQL 8+. The original JSON_TABLE SQL fails on many MariaDB hosts.
+-- See src/Database/Migrations/RemoveFbclidFromTrafficSources.php

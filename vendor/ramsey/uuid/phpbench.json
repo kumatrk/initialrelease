@@ -1,0 +1,10 @@
+{
+    "runner.bootstrap": "vendor/autoload.php",
+    "runner.path": "tests/benchmark",
+    "runner.retry_threshold": 5,
+    "report.generators": {
+        "report": {
+            "extends": "aggregate"
+        }
+    }
+}

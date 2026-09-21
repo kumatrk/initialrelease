@@ -1,0 +1,19 @@
+# Google Ads Data Manager requires the HTTPS import URL path to end in .csv
+# Maps /api/google-conversions.csv → google-conversions.php (query string preserved)
+#
+# IMPORTANT: This file replaces parent public/.htaccess rewrite rules for all
+# requests under /api/ (Apache per-directory rules do not inherit). Keep the
+# v1 API route and Authorization passthrough here or /api/v1/* returns Apache
+# 404 and Bearer auth never reaches PHP.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Pass Authorization header through to PHP (Bearer API keys)
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # REST API v1 front controller (directory-relative: api/ prefix already stripped)
+    RewriteCond %{REQUEST_URI} !/api/v1/index\.php
+    RewriteRule ^v1(/.*)?$ v1/index.php [L,QSA]
+
+    RewriteRule ^google-conversions\.csv$ google-conversions.php [L,QSA]
+</IfModule>

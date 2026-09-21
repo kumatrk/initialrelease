@@ -1,0 +1,132 @@
+# Simple KUMA - Public Directory Configuration
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Pass Authorization header to PHP (Apache often strips it on rewritten requests)
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # CRITICAL: Allow ALL PHP files FIRST (including km.php when rewritten from root)
+    # When root .htaccess rewrites /km/dnVlJoT7 to public/km.php, Apache processes this .htaccess
+    # REQUEST_FILENAME will be the full path to the PHP file
+    # This MUST be first to prevent any other rules from interfering
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteCond %{REQUEST_FILENAME} \.php$ [NC]
+    RewriteRule . - [L]
+
+    # Allow direct access to static assets (images, CSS, JS, fonts, etc.)
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteCond %{REQUEST_URI} \.(jpg|jpeg|png|gif|ico|css|js|woff|woff2|ttf|svg|eot)$ [NC]
+    RewriteRule . - [L]
+
+    # Handle installer
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^install\.php$ install.php [L]
+
+    # Handle tracking redirector /km/<key-or-slug> and /km/<key>/<slug>
+    # NOTE: This rule is needed when custom tracking domains point directly to public/ directory
+    # This handles both:
+    # - /km/testslugger (custom slug used directly)
+    # - /km/dnVlJoT7 (campaign key)
+    # - /km/dnVlJoT7/testslugger (campaign key + slug for tracking)
+    # Skip this if km.php is being accessed directly (already handled above)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    # Match /km/<key-or-slug> (single segment)
+    RewriteCond %{REQUEST_URI} ^/km/([^/]+)/?$
+    RewriteRule ^km/([^/]+)/?$ km.php?key=$1 [QSA,L]
+    # Match /km/<key>/<slug> (two segments)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} ^/km/([^/]+)/(.+)$
+    RewriteRule ^km/([^/]+)/(.+)$ km.php?key=$1&slug=$2 [QSA,L]
+
+    # Pretty click path /go/{key} when CLICK_URL_STYLE=path (legacy /km/ and /c/ above remain)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} ^/go/([^/]+)/?$
+    RewriteRule ^go/([^/]+)/?$ km.php?key=$1 [QSA,L]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} ^/go/([^/]+)/(.+)$
+    RewriteRule ^go/([^/]+)/(.+)$ km.php?key=$1&slug=$2 [QSA,L]
+
+    # Legacy /c/ short path (CPV-style installs that set CLICK_PATH_PREFIX=c)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} ^/c/([^/]+)/?$
+    RewriteRule ^c/([^/]+)/?$ km.php?key=$1 [QSA,L]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} ^/c/([^/]+)/(.+)$
+    RewriteRule ^c/([^/]+)/(.+)$ km.php?key=$1&slug=$2 [QSA,L]
+
+    # REST API v1 — route to front controller
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^api/v1(/.*)?$ api/v1/index.php [L,QSA]
+
+    # Google Ads Data Manager requires path ending in .csv/.tsv
+    # (query-string tricks like &camp=google.csv break camp= filtering)
+    RewriteRule ^api/google-conversions\.csv$ api/google-conversions.php [L,QSA]
+
+    # Edge Redirect Worker async click ingest
+    RewriteRule ^api/edge-click/?$ api/edge-click.php [L,QSA]
+    
+    # Route everything else to index.php (only if file doesn't exist)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ index.php [QSA,L]
+</IfModule>
+
+# Security headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+    # HSTS only when request is HTTPS (safe for local HTTP dev)
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains" env=HTTPS
+</IfModule>
+
+# PHP settings (Note: mod_php may not work with PHP-FPM, but harmless if not available)
+<IfModule mod_php.c>
+    php_value upload_max_filesize 10M
+    php_value post_max_size 10M
+    php_value max_execution_time 60
+    php_value memory_limit 128M
+</IfModule>
+
+# Protect sensitive files from public access
+<FilesMatch "^(config\.php|\.env|\.git)">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Block access to test, debug, utility, and migration scripts (production security)
+# diagnose.php uses $ (exact) — do not put diagnose\.php inside (...).*\.php$ or it never matches
+<FilesMatch "^(test-|debug-|check-|diagnose-|fix-|clear-|cleanup-|backfill-|backup-|convert-|revert-|set-|sync-|remove-|run-migration-|run-timezone-|analyze-|find-|modsecurity-|verify-|km-|install-composer|install-maxmind|fire-postback-|api-v1-smoke|update-base-url|login-preview).*\.php$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+<FilesMatch "^(diagnose\.php|dashboard\.php|index2\.php|simple-asset-test\.php|api-v1-smoke\.php)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Block access to scripts directory if somehow accessible
+<IfModule mod_rewrite.c>
+    RewriteCond %{REQUEST_URI} ^/scripts/
+    RewriteRule .* - [F,L]
+</IfModule>

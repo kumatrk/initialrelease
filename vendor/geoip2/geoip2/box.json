@@ -1,0 +1,40 @@
+{
+    "stub": "phar-stub.php",
+    "main": false,
+    "output": "geoip2.phar",
+    "compactors": [
+        "KevinGH\\Box\\Compactor\\Php",
+        "KevinGH\\Box\\Compactor\\Json"
+    ],
+    "files": [
+        "LICENSE"
+    ],
+    "finder": [
+        {
+            "name": [
+                "LICENSE",
+                "LICENSE.*",
+                "*.php",
+                "*.pem",
+                "*.pem.md5"
+            ],
+            "exclude": [
+                "phpunit",
+                "satooshi",
+                "Tests",
+                "tests",
+                "yaml"
+            ],
+            "in": "vendor"
+            }
+    ],
+    "finder-bin": [
+        {
+            "name": [
+                "*.php"
+            ],
+            "in": "src"
+            }
+    ],
+    "git-version": "git-version"
+}

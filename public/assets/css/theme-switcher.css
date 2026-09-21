@@ -1,0 +1,82 @@
+.theme-select {
+    margin-left: var(--spacing-md);
+    /* Native select arrow ignores padding in some browsers (Chrome/Win).
+       Use a custom caret so we can inset it. */
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    padding: 8px 44px 8px 12px;
+    font-size: var(--font-size-sm);
+    font-family: var(--font-family);
+    color: var(--color-gray-800);
+    background: var(--color-gray-100);
+    border: 1px solid var(--color-gray-300);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    min-width: 100px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20'%3E%3Cpath fill='%236b7280' d='M5.6 7.6a1 1 0 0 1 1.4 0L10 10.6l3-3a1 1 0 1 1 1.4 1.4l-3.7 3.7a1 1 0 0 1-1.4 0L5.6 9a1 1 0 0 1 0-1.4z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+}
+
+[data-theme-base="dark"] .theme-select {
+    /* brighter caret in dark mode */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20'%3E%3Cpath fill='%23e8edf3' d='M5.6 7.6a1 1 0 0 1 1.4 0L10 10.6l3-3a1 1 0 1 1 1.4 1.4l-3.7 3.7a1 1 0 0 1-1.4 0L5.6 9a1 1 0 0 1 0-1.4z'/%3E%3C/svg%3E");
+}
+
+.theme-select:focus {
+    outline: none;
+    border-color: var(--color-forest);
+}
+
+.navbar-logout-btn {
+    margin-left: var(--spacing-md);
+    padding: 8px 16px;
+    background: var(--color-bark);
+    color: var(--btn-on-primary-text, #f5f1e8);
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    font-size: var(--font-size-sm);
+    transition: background 0.2s;
+}
+
+.navbar-logout-btn:hover {
+    background: var(--color-bark-dark);
+    color: var(--btn-on-primary-text, #f5f1e8);
+}
+
+.sidebar-header {
+    padding: var(--spacing-md) var(--spacing-sm) var(--spacing-lg);
+}
+
+.sidebar-logo-img {
+    display: block;
+    margin: 0 auto;
+    width: auto;
+    max-width: 220px;
+    max-height: 220px;
+    height: auto;
+    object-fit: contain;
+    object-position: center;
+}
+
+/* Portrait logos; dark-base themes use a slightly taller max height */
+[data-theme-base="dark"] .sidebar-logo-img {
+    max-height: 232px;
+}
+
+@media (min-width: 769px) {
+    html.sidebar-collapsed .sidebar-logo-img {
+        max-width: 44px;
+        max-height: 44px;
+    }
+}
+
+@media (max-width: 768px) {
+    .theme-select {
+        min-width: 80px;
+        padding: 6px 38px 6px 8px;
+        background-position: right 12px center;
+        font-size: var(--font-size-xs);
+    }
+}

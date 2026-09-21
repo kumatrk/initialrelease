@@ -1,0 +1,407 @@
+/* 
+ * Legacy mobile Campaign Stats styles (campaign-stats-legacy page only).
+ */
+
+/* Desktop: Hide mobile cards, show tables */
+.desktop-only {
+    display: block;
+}
+.mobile-only {
+    display: none;
+}
+
+@media (max-width: 768px) {
+    /* Desktop: Hide tables, show mobile cards */
+    .desktop-only {
+        display: none !important;
+    }
+    .mobile-only {
+        display: block !important;
+    }
+    
+    /* General Layout */
+    .campaign-stats-page {
+        padding: 0 !important;
+    }
+    
+    .page-header {
+        padding: 12px 16px !important;
+    }
+    
+    .page-title {
+        font-size: 20px !important;
+    }
+    
+    /* Filter Panel */
+    .stats-filter-panel {
+        padding: 12px !important;
+        margin-bottom: 16px !important;
+    }
+    
+    .filter-compact-grid {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 12px !important;
+    }
+    
+    .filter-field,
+    .campaign-field,
+    .date-field-group {
+        width: 100% !important;
+    }
+    
+    .date-field-group {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 12px !important;
+    }
+    
+    /* Campaign Select Row - Stack on mobile */
+    .campaign-select-row {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 8px !important;
+    }
+    
+    .campaign-select-row > select {
+        width: 100% !important;
+        min-width: 100% !important;
+    }
+    
+    .campaign-edit-btn {
+        width: 100% !important;
+        height: 40px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    
+    /* Date Preset Buttons */
+    .filter-compact-grid > div[style*="grid-column: 1 / -1"] {
+        width: 100% !important;
+    }
+    
+    .filter-compact-grid > div[style*="grid-column: 1 / -1"] > div {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 6px !important;
+    }
+    
+    .filter-compact-grid > div[style*="grid-column: 1 / -1"] button {
+        padding: 4px 8px !important;
+        font-size: 11px !important;
+        white-space: nowrap !important;
+    }
+    
+    /* Chart Container */
+    .chart-container {
+        padding: 12px !important;
+        margin-bottom: 16px !important;
+    }
+    
+    .chart-container canvas {
+        max-height: 300px !important;
+    }
+    
+    /* Stats Table Container */
+    .stats-table-container {
+        margin-bottom: 20px !important;
+    }
+    
+    .stats-table-container h3 {
+        font-size: 16px !important;
+        margin-bottom: 12px !important;
+        padding: 0 16px !important;
+    }
+    
+    .stats-table-container p {
+        font-size: 12px !important;
+        padding: 0 16px !important;
+        margin-bottom: 12px !important;
+    }
+    
+    /* Mobile Offer Cards */
+    .mobile-offer-performance-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 0 16px;
+    }
+    
+    .mobile-offer-performance-card {
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 12px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .mobile-offer-performance-card .offer-name {
+        font-weight: 600;
+        font-size: 14px;
+        color: #3d5a26;
+        margin-bottom: 8px;
+    }
+    
+    .mobile-offer-performance-card .offer-stats {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        font-size: 12px;
+    }
+    
+    .mobile-offer-performance-card .offer-stat {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .mobile-offer-performance-card .offer-stat-label {
+        color: #666;
+        font-size: 11px;
+        margin-bottom: 2px;
+    }
+    
+    .mobile-offer-performance-card .offer-stat-value {
+        font-weight: 600;
+        color: #333;
+    }
+    
+    .mobile-offer-performance-card .offer-stat-value.positive {
+        color: #28a745;
+    }
+    
+    .mobile-offer-performance-card .offer-stat-value.negative {
+        color: #dc3545;
+    }
+    
+    /* Mobile Landing Page Cards */
+    .mobile-landing-page-performance-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 0 16px;
+    }
+    
+    .mobile-landing-page-performance-card {
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 12px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .mobile-landing-page-performance-card .lp-name {
+        font-weight: 600;
+        font-size: 14px;
+        color: #3d5a26;
+        margin-bottom: 8px;
+    }
+    
+    .mobile-landing-page-performance-card .lp-stats {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        font-size: 12px;
+    }
+    
+    .mobile-landing-page-performance-card .lp-stat {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .mobile-landing-page-performance-card .lp-stat-label {
+        color: #666;
+        font-size: 11px;
+        margin-bottom: 2px;
+    }
+    
+    .mobile-landing-page-performance-card .lp-stat-value {
+        font-weight: 600;
+        color: #333;
+    }
+    
+    /* Mobile Campaign Performance Cards */
+    .mobile-campaign-performance-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 0 16px;
+    }
+    
+    .mobile-campaign-performance-card {
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 12px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .mobile-campaign-performance-card .campaign-name {
+        font-weight: 600;
+        font-size: 14px;
+        color: #3d5a26;
+        margin-bottom: 4px;
+    }
+    
+    .mobile-campaign-performance-card .campaign-status {
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+    
+    .mobile-campaign-performance-card .campaign-status.active {
+        background: #28a745;
+        color: #fff;
+    }
+    
+    .mobile-campaign-performance-card .campaign-status.paused {
+        background: #ffc107;
+        color: #000;
+    }
+    
+    .mobile-campaign-performance-card .campaign-status.archived {
+        background: #6c757d;
+        color: #fff;
+    }
+    
+    .mobile-campaign-performance-card .campaign-stats {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        font-size: 12px;
+    }
+    
+    .mobile-campaign-performance-card .campaign-stat {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .mobile-campaign-performance-card .campaign-stat-label {
+        color: #666;
+        font-size: 11px;
+        margin-bottom: 2px;
+    }
+    
+    .mobile-campaign-performance-card .campaign-stat-value {
+        font-weight: 600;
+        color: #333;
+    }
+    
+    .mobile-campaign-performance-card .campaign-stat-value.positive {
+        color: #28a745;
+    }
+    
+    .mobile-campaign-performance-card .campaign-stat-value.negative {
+        color: #dc3545;
+    }
+    
+    /* Search and Pagination Controls */
+    .stats-table-container > div[style*="display: flex"] {
+        flex-direction: column !important;
+        gap: 12px !important;
+        padding: 0 16px !important;
+    }
+    
+    .stats-table-container > div[style*="display: flex"] > div {
+        width: 100% !important;
+    }
+    
+    .stats-table-container input[type="text"],
+    .stats-table-container select {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+    
+    /* Traffic Source Header Banner */
+    .stats-table-container > div[style*="background: linear-gradient"] {
+        padding: 20px 16px !important;
+        margin: 16px 0 !important;
+    }
+    
+    .stats-table-container > div[style*="background: linear-gradient"] h2 {
+        font-size: 24px !important;
+        flex-direction: column !important;
+        gap: 8px !important;
+    }
+    
+    /* Empty State */
+    .mobile-offer-performance-cards .empty-state,
+    .mobile-landing-page-performance-cards .empty-state,
+    .mobile-campaign-performance-cards .empty-state {
+        text-align: center;
+        padding: 40px 16px;
+        color: #999;
+        font-size: 14px;
+    }
+    
+    /* Token Breakdown Styling - Base (only applies if not overridden by nested rules) */
+    .mobile-token-breakdown {
+        margin-top: 12px !important;
+        padding: 12px !important;
+        border-top: 2px solid #e8e8e8 !important;
+        border-radius: 6px !important;
+        margin-left: 0 !important;
+    }
+    
+    .mobile-token-breakdown .token-name {
+        font-weight: 600 !important;
+        color: #3d5a26 !important;
+        font-size: 13px !important;
+        margin-bottom: 10px !important;
+        padding-bottom: 6px !important;
+        border-bottom: 1px solid #ddd !important;
+        display: block !important;
+    }
+    
+    /* Group 2 (First level of token breakdown, level 0) - Light green tint */
+    /* Only apply green to level 0 */
+    .mobile-token-breakdown.token-level-0,
+    .mobile-offer-performance-card > .mobile-token-breakdown.token-level-0,
+    .mobile-landing-page-performance-card > .mobile-token-breakdown.token-level-0 {
+        margin-left: 16px !important;
+        background: #f0f5f0 !important;
+        border-left: 3px solid #5a7a3a !important;
+    }
+    
+    /* Group 3 (Second level, level 1) - Light blue tint */
+    /* Level 1 gets blue - MUST override level 0 - use most specific selector */
+    div.mobile-token-breakdown.token-level-1,
+    .mobile-offer-performance-card div.mobile-token-breakdown.token-level-1,
+    .mobile-landing-page-performance-card div.mobile-token-breakdown.token-level-1,
+    .mobile-offer-performance-card > div.mobile-token-breakdown.token-level-1,
+    .mobile-landing-page-performance-card > div.mobile-token-breakdown.token-level-1 {
+        margin-left: 16px !important;
+        background: #e8f0f8 !important;
+        border-left: 3px solid #4a7a9a !important;
+    }
+    
+    /* Group 4 (Third level, level 2) - Light purple tint */
+    /* Level 2 gets purple - MUST override level 1 - use most specific selector */
+    div.mobile-token-breakdown.token-level-2,
+    .mobile-offer-performance-card div.mobile-token-breakdown.token-level-2,
+    .mobile-landing-page-performance-card div.mobile-token-breakdown.token-level-2,
+    .mobile-offer-performance-card > div.mobile-token-breakdown.token-level-2,
+    .mobile-landing-page-performance-card > div.mobile-token-breakdown.token-level-2 {
+        margin-left: 16px !important;
+        background: #f5e8f5 !important;
+        border-left: 3px solid #9a5a9a !important;
+    }
+    
+    /* Make token breakdown stats more compact */
+    .mobile-token-breakdown .offer-stats,
+    .mobile-token-breakdown .lp-stats {
+        margin-top: 8px !important;
+    }
+    
+    /* Add visual separator between main card and token breakdowns */
+    .mobile-offer-performance-card > .mobile-token-breakdown:first-of-type,
+    .mobile-landing-page-performance-card > .mobile-token-breakdown:first-of-type {
+        margin-top: 16px !important;
+        border-top: 2px solid #3d5a26 !important;
+        padding-top: 16px !important;
+    }
+}
+

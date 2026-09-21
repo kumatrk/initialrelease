@@ -1,0 +1,217 @@
+name: "Continuous Integration"
+
+on:
+  - push
+  - pull_request
+
+permissions:
+  contents: read
+
+env:
+  COMPOSER_ROOT_VERSION: dev-main
+
+jobs:
+  tests:
+    name: "CI (PHP ${{ matrix.php-version }}, ${{ matrix.dependencies }} deps)"
+
+    runs-on: "${{ matrix.operating-system }}"
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        php-version:
+          - "8.1"
+          - "8.2"
+          - "8.3"
+          - "8.4"
+
+        dependencies: [highest]
+
+        composer-options: [""]
+
+        operating-system:
+          - "ubuntu-latest"
+
+        include:
+          - php-version: "8.1"
+            dependencies: lowest
+            operating-system: ubuntu-latest
+          - php-version: "8.4"
+            dependencies: highest
+            operating-system: ubuntu-latest
+            composer-options: "--ignore-platform-req=php+"
+
+    steps:
+      - uses: "actions/checkout@v4"
+
+      - name: Run CouchDB
+        timeout-minutes: 3
+        continue-on-error: true
+        uses: "cobot/couchdb-action@master"
+        with:
+          couchdb version: '2.3.1'
+
+      - name: Run MongoDB
+        uses: supercharge/mongodb-github-action@1.12.0
+        with:
+          mongodb-version: 5.0
+
+      - uses: "shivammathur/setup-php@v2"
+        with:
+          coverage: "none"
+          php-version: "${{ matrix.php-version }}"
+          extensions: mongodb, redis, amqp
+          tools: "composer:v2"
+          ini-values: "memory_limit=-1"
+
+      - name: Add require for mongodb/mongodb to make tests runnable
+        run: 'composer require mongodb/mongodb --dev --no-update'
+
+      - name: "Change dependencies"
+        run: |
+          composer require --no-update --no-interaction --dev elasticsearch/elasticsearch:^7
+
+      - uses: "ramsey/composer-install@v3"
+        with:
+          dependency-versions: "${{ matrix.dependencies }}"
+          composer-options: "${{ matrix.composer-options }}"
+
+      - name: "Run tests"
+        if: "matrix.php-version >= '8.2'"
+        run: "composer exec phpunit -- --exclude-group Elasticsearch --exclude-group Elastica"
+
+      - name: "Run tests"
+        if: "matrix.php-version == '8.1'"
+        run: "composer exec phpunit -- --exclude-group Elasticsearch,Elastica"
+
+  tests-es-7:
+    name: "CI with ES ${{ matrix.es-version }} on PHP ${{ matrix.php-version }}"
+
+    needs: "tests"
+
+    runs-on: "${{ matrix.operating-system }}"
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        operating-system:
+          - "ubuntu-latest"
+
+        php-version:
+          - "8.1"
+
+        dependencies:
+          - "highest"
+          - "lowest"
+
+        es-version:
+          - "7.0.0"
+          - "7.17.0"
+
+    steps:
+      - uses: "actions/checkout@v4"
+
+      # required for elasticsearch
+      - name: Configure sysctl limits
+        run: |
+          sudo swapoff -a
+          sudo sysctl -w vm.swappiness=1
+          sudo sysctl -w fs.file-max=262144
+          sudo sysctl -w vm.max_map_count=262144
+
+      - name: Run Elasticsearch
+        timeout-minutes: 3
+        uses: elastic/elastic-github-actions/elasticsearch@master
+        with:
+          stack-version: "${{ matrix.es-version }}"
+
+      - uses: "shivammathur/setup-php@v2"
+        with:
+          coverage: "none"
+          php-version: "${{ matrix.php-version }}"
+          extensions: mongodb, redis, amqp
+          tools: "composer:v2"
+          ini-values: "memory_limit=-1"
+
+      - name: "Change dependencies"
+        run: "composer require --no-update --no-interaction --dev elasticsearch/elasticsearch:^${{ matrix.es-version }}"
+
+      - uses: "ramsey/composer-install@v3"
+        with:
+          dependency-versions: "${{ matrix.dependencies }}"
+
+      - name: "Run tests"
+        run: "composer exec phpunit -- --group Elasticsearch,Elastica"
+
+      - name: "Run tests with psr/log 3"
+        if: "contains(matrix.dependencies, 'highest') && matrix.php-version >= '8.0'"
+        run: |
+          composer remove --no-update --dev graylog2/gelf-php ruflin/elastica elasticsearch/elasticsearch rollbar/rollbar
+          composer require --no-update --no-interaction --dev ruflin/elastica:^7 elasticsearch/elasticsearch:^7
+          composer require --no-update psr/log:^3
+          composer update
+          composer exec phpunit -- --group Elasticsearch,Elastica
+
+  tests-es-8:
+    name: "CI with ES ${{ matrix.es-version }} on PHP ${{ matrix.php-version }}"
+
+    needs: "tests"
+
+    runs-on: "${{ matrix.operating-system }}"
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        operating-system:
+          - "ubuntu-latest"
+
+        php-version:
+          - "8.1"
+
+        dependencies:
+          - "highest"
+          - "lowest"
+
+        es-version:
+          - "8.0.0"
+          - "8.2.0"
+
+    steps:
+      - uses: "actions/checkout@v4"
+
+      # required for elasticsearch
+      - name: Configure sysctl limits
+        run: |
+          sudo swapoff -a
+          sudo sysctl -w vm.swappiness=1
+          sudo sysctl -w fs.file-max=262144
+          sudo sysctl -w vm.max_map_count=262144
+
+      - name: Run Elasticsearch
+        timeout-minutes: 3
+        uses: elastic/elastic-github-actions/elasticsearch@master
+        with:
+          stack-version: "${{ matrix.es-version }}"
+
+      - uses: "shivammathur/setup-php@v2"
+        with:
+          coverage: "none"
+          php-version: "${{ matrix.php-version }}"
+          extensions: mongodb, redis, amqp
+          tools: "composer:v2"
+          ini-values: "memory_limit=-1"
+
+      - name: "Change dependencies"
+        run: |
+          composer remove --no-update --dev graylog2/gelf-php ruflin/elastica elasticsearch/elasticsearch rollbar/rollbar
+          composer require --no-update --no-interaction --dev elasticsearch/elasticsearch:^8 ruflin/elastica:^8
+
+      - uses: "ramsey/composer-install@v3"
+        with:
+          dependency-versions: "${{ matrix.dependencies }}"
+
+      - name: "Run tests"
+        run: "composer exec phpunit -- --group Elasticsearch,Elastica"
