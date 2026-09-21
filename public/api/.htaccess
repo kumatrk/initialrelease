@@ -2,5 +2,17 @@
 # Maps /api/google-conversions.csv → google-conversions.php (query string preserved)
 <IfModule mod_rewrite.c>
     RewriteEngine On
+
+    # mod_rewrite does not inherit per-directory rules: because this file exists it
+    # shadows public/.htaccess for everything under /api/. Both directives the REST
+    # API depends on live there, so they have to be repeated here.
+    # Patterns are relative to public/api/, hence ^v1 and not ^api/v1.
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
     RewriteRule ^google-conversions\.csv$ google-conversions.php [L,QSA]
+
+    # REST API v1 router. The RewriteCond keeps the rule from re-applying to its
+    # own substitution after the internal redirect.
+    RewriteCond %{REQUEST_URI} !/api/v1/index\.php
+    RewriteRule ^v1(/.*)?$ v1/index.php [L,QSA]
 </IfModule>
