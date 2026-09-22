@@ -295,8 +295,9 @@
                         <?php endforeach; ?>
                         <p style="margin-top: 12px; font-size: 14px;">
                             If a migration failed partway through, update to the latest files and click
-                            <strong>Run Migrations</strong> again — migrations are idempotent and skip work already applied.
-                            Failed migrations are not marked complete until every statement succeeds.
+                            <strong>Run Migrations</strong> again. Pending migrations re-run from where they left off;
+                            schema-changing steps that already applied (for example existing columns) are skipped when possible.
+                            A migration is not marked complete until it finishes successfully.
                         </p>
                     </div>
                 <?php endif; ?>

@@ -1,12 +1,3 @@
-# Simple Kuma Tracker Version 1.1.5.23
-
-## Changes in 1.1.5.23
-
-### Fixes & polish
-- REST API v1 routing under Apache: `/api/v1` and Bearer auth now work when `public/api/.htaccess` is present
-- Campaign Stats: DTO click counts no longer double; small CPC/EPC values show extra precision under $0.01
-- Reporting: single-day ranges in non-UTC timezones include the full local day; `America/Bogota` available in the timezone selector
-
 # Simple Kuma Tracker Version 1.1.5.22
 
 ## Changes in 1.1.5.22
@@ -56,6 +47,8 @@
 - Customer zip includes Honeycomb kernel + empty secured `honeycomb/` runtime (addons are catalog-installed, not bundled)
 - Required migrations include Honeycomb **090 / 092 / 093** and ISP **091**
 - Production crons allowlisted: `kuma-traffic-api-cron.php`, `honeycomb-cron.php`
+- **Installer:** migration **091** (ISP / connection / language) is idempotent in PHP — re-running after a partial apply no longer fails with `Duplicate column name 'isp'`
+- Custom postbacks skip empty network click ids (e.g. PropellerAds `visitor_id`) and do not retry HTTP 4xx
 
 ## Changes in 1.1.5.21
 

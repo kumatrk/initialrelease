@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SimpleKuma\Database;
 
+use SimpleKuma\Database\Migrations\AddClicksIspConnectionLanguage;
 use SimpleKuma\Database\Migrations\AddStatsExclusionFlag;
 use SimpleKuma\Database\Migrations\RemoveFbclidFromTrafficSources;
 use mysqli;
@@ -246,6 +247,12 @@ class MigrationRunner
             return $this->runPhpMigration(
                 $migration,
                 static fn (mysqli $db): ?string => AddStatsExclusionFlag::run($db)
+            );
+        }
+        if ($migration === '091_add_clicks_isp_connection_language.sql') {
+            return $this->runPhpMigration(
+                $migration,
+                static fn (mysqli $db): ?string => AddClicksIspConnectionLanguage::run($db)
             );
         }
 

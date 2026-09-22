@@ -1154,13 +1154,13 @@ class PostbackDispatcher
         // Log the attempt
         $this->logPostback($type, $conversionId, $url, $httpCode, $response, $error, $attempt, $body);
 
-        // Retry on failure
-        if ($httpCode < 200 || $httpCode >= 300) {
-            if ($attempt < self::MAX_RETRIES) {
-                $delay = self::INITIAL_RETRY_DELAY * pow(2, $attempt - 1);
-                sleep($delay);
-                $this->sendHttpRequest($url, $type, $conversionId, $method, $body, $attempt + 1);
-            }
+        // Retry transport / 5xx / unexpected non-2xx, but never HTTP 4xx (client errors are permanent).
+        $isClientError = $httpCode >= 400 && $httpCode < 500;
+        $isFailure = $httpCode < 200 || $httpCode >= 300;
+        if ($isFailure && !$isClientError && $attempt < self::MAX_RETRIES) {
+            $delay = self::INITIAL_RETRY_DELAY * pow(2, $attempt - 1);
+            sleep($delay);
+            $this->sendHttpRequest($url, $type, $conversionId, $method, $body, $attempt + 1);
         }
     }
 
@@ -1431,7 +1431,24 @@ class PostbackDispatcher
 
         foreach ($postbacks as $postback) {
             $postbackUrl = $tokenReplacer->replace($postback['postback_url'], $context);
-            
+
+            $skipReason = $this->customPostbackSkipReason($postbackUrl);
+            if ($skipReason !== null) {
+                error_log(
+                    "PostbackDispatcher: Skipping custom postback for conversion_id={$conversion['id']}: {$skipReason}"
+                );
+                $this->logPostback(
+                    'custom_postback',
+                    (int) $conversion['id'],
+                    $postbackUrl,
+                    0,
+                    null,
+                    $skipReason,
+                    1
+                );
+                continue;
+            }
+
             // Fire HTTP request
             $this->sendHttpRequest(
                 $postbackUrl,
@@ -1440,6 +1457,31 @@ class PostbackDispatcher
                 'GET'
             );
         }
+    }
+
+    /**
+     * Skip firing when the resolved URL still has placeholders or empty network click ids
+     * (e.g. PropellerAds visitor_id) — those requests fail with HTTP 400 permanently.
+     */
+    private function customPostbackSkipReason(string $url): ?string
+    {
+        if (preg_match('/\{[a-zA-Z0-9_:.]+\}/', $url) === 1) {
+            return 'Unresolved token placeholders in postback URL';
+        }
+
+        $query = parse_url($url, PHP_URL_QUERY);
+        if (!is_string($query) || $query === '') {
+            return null;
+        }
+
+        parse_str($query, $params);
+        foreach (['visitor_id', 'clickid', 'click_id', 'external_id', 'subid', 'cid'] as $key) {
+            if (array_key_exists($key, $params) && trim((string) $params[$key]) === '') {
+                return "Empty {$key} in postback URL";
+            }
+        }
+
+        return null;
     }
 
     /**
