@@ -2,29 +2,43 @@
     {
         "slug": "taboola-cost",
         "name": "Taboola Cost API",
-        "version": "1.0.1",
+        "version": "1.0.2",
         "type": "traffic_source",
         "provider_key": "taboola",
         "min_kuma": "1.1.5",
         "summary": "Pull Taboola Backstage campaign spend into Kuma via Honeycomb (client credentials + campaign bindings).",
-        "zip_url": "https://github.com/kumatrk/honeycomb-addons/releases/download/taboola-cost-1.0.1/taboola-cost.zip",
-        "sha256": "9c9dbf1652eb30b2c8af17b4b6dc86485a3b417f2e1d7cc4f988a4f7485be737",
+        "zip_url": "https://github.com/kumatrk/honeycomb-addons/releases/download/taboola-cost-1.0.2/taboola-cost.zip",
+        "sha256": "009d2f58420c3fd56e2db7a98020bbf7c454484c42177f2736e2031297de84d6",
         "zip_path": "C:\\xampp\\htdocs\\simplekuma\\storage\\honeycomb-publish\\taboola-cost.zip",
-        "tag": "taboola-cost-1.0.1",
-        "bytes": 8949
+        "tag": "taboola-cost-1.0.2",
+        "bytes": 9109
     },
     {
         "slug": "whop-ads",
         "name": "Whop Ads",
-        "version": "1.1.1",
+        "version": "1.1.2",
         "type": "traffic_source",
         "provider_key": "whop",
         "min_kuma": "1.1.5",
         "summary": "Whop Ads: send conversions via Events API and sync ad spend from Ad Reports into Kuma stats.",
-        "zip_url": "https://github.com/kumatrk/honeycomb-addons/releases/download/whop-ads-1.1.1/whop-ads.zip",
-        "sha256": "c4cea35f57ea1d88362a05852fbe299ae910a6c6733107c44ff4da13889f2e0f",
+        "zip_url": "https://github.com/kumatrk/honeycomb-addons/releases/download/whop-ads-1.1.2/whop-ads.zip",
+        "sha256": "8403b3006f5a4f3aeb004242455a5f6ad6bfccd906bc989c33eefa1fa450ba78",
         "zip_path": "C:\\xampp\\htdocs\\simplekuma\\storage\\honeycomb-publish\\whop-ads.zip",
-        "tag": "whop-ads-1.1.1",
-        "bytes": 16318
+        "tag": "whop-ads-1.1.2",
+        "bytes": 16509
+    },
+    {
+        "slug": "ringba",
+        "name": "Ringba",
+        "version": "1.1.1",
+        "type": "utility",
+        "provider_key": "",
+        "min_kuma": "1.1.5",
+        "summary": "Pay-per-call helper: optional Ringba API campaign pickers, LP scripts with click_id tagging, and pixels into Kuma postbacks.",
+        "zip_url": "https://github.com/kumatrk/honeycomb-addons/releases/download/ringba-1.1.1/ringba.zip",
+        "sha256": "b4a84a765ef20c9642fe84d39f6a24aab8329a86817a572af751797febb645d4",
+        "zip_path": "C:\\xampp\\htdocs\\simplekuma\\storage\\honeycomb-publish\\ringba.zip",
+        "tag": "ringba-1.1.1",
+        "bytes": 12883
     }
 ]

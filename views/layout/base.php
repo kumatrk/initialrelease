@@ -510,6 +510,171 @@ $dashboardChartsHidden = !empty($GLOBALS['dashboardChartsHidden']);
             <?php endif; ?>
 
             <?php
+            // Honeycomb addon updates — cache-only on render; lazy refresh like core.
+            $showHoneycombUpdateCheck = !empty($currentPage) && $currentPage !== 'tracking';
+            $honeycombBannerShown = false;
+            $scheduleLazyHoneycombCheck = false;
+            if ($showHoneycombUpdateCheck) {
+                try {
+                    $honeyDb = $GLOBALS['db'] ?? null;
+                    $closeHoneyDb = false;
+                    if (!$honeyDb instanceof mysqli || $honeyDb->connect_error) {
+                        $honeyDb = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
+                        $closeHoneyDb = true;
+                    }
+                    if (!$honeyDb->connect_error) {
+                        $honeySettings = new \SimpleKuma\Settings\SettingsManager($honeyDb);
+                        $honeyUpdateChecker = new \SimpleKuma\Honeycomb\AddonUpdateChecker($honeyDb, $honeySettings);
+                        $honeyUpdateInfo = $honeyUpdateChecker->getCachedResult(true);
+                        $scheduleLazyHoneycombCheck = !$honeyUpdateChecker->isCacheFresh();
+
+                        if (
+                            is_array($honeyUpdateInfo)
+                            && !empty($honeyUpdateInfo['success'])
+                            && (int) ($honeyUpdateInfo['outdated_count'] ?? 0) > 0
+                        ) {
+                            $honeyCount = (int) $honeyUpdateInfo['outdated_count'];
+                            $honeyFp = preg_replace('/[^a-zA-Z0-9@.,_-]/', '', (string) ($honeyUpdateInfo['fingerprint'] ?? '')) ?: 'unknown';
+                            $honeyNames = [];
+                            foreach (($honeyUpdateInfo['outdated'] ?? []) as $ou) {
+                                if (is_array($ou) && isset($ou['name'])) {
+                                    $honeyNames[] = (string) $ou['name'];
+                                }
+                            }
+                            $honeyLabel = $honeyCount === 1
+                                ? (($honeyNames[0] ?? 'An addon') . ' has an update')
+                                : ($honeyCount . ' Honeycomb addons have updates');
+                            $honeycombBannerShown = true;
+                            ?>
+                        <div id="honeycomb-update-banner" style="background: linear-gradient(135deg, #e65100 0%, #ef6c00 100%); color: #ffffff; padding: 16px 24px; margin: 0; border-bottom: 2px solid rgba(255,255,255,0.2); box-shadow: 0 2px 8px rgba(0,0,0,0.1); position: relative; z-index: 99;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; max-width: 1400px; margin: 0 auto; flex-wrap: wrap; gap: 16px;">
+                                <div style="display: flex; align-items: center; gap: 16px; flex: 1; min-width: 200px;">
+                                    <img src="<?= ASSETS_BASE_URL ?>/assets/images/honeycombsmall.png" alt="" width="28" height="28" style="flex-shrink: 0;">
+                                    <div>
+                                        <strong style="font-size: 18px; display: block; margin-bottom: 4px;">Honeycomb Addon Updates</strong>
+                                        <span style="font-size: 15px; opacity: 0.95;"><?= htmlspecialchars($honeyLabel) ?><?php if ($honeyCount > 1 && $honeyNames !== []): ?> (<?= htmlspecialchars(implode(', ', array_slice($honeyNames, 0, 3))) ?><?= count($honeyNames) > 3 ? '…' : '' ?>)<?php endif; ?></span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <a href="?page=honeycomb"
+                                       style="padding: 10px 20px; background: rgba(255,255,255,0.2); color: #ffffff; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; text-decoration: none; font-size: 15px; font-weight: 600; transition: all 0.2s; white-space: nowrap;"
+                                       onmouseover="this.style.background='rgba(255,255,255,0.3)'; this.style.borderColor='rgba(255,255,255,0.5)'"
+                                       onmouseout="this.style.background='rgba(255,255,255,0.2)'; this.style.borderColor='rgba(255,255,255,0.3)'">
+                                        Open Honeycomb
+                                    </a>
+                                    <button type="button" onclick="document.getElementById('honeycomb-update-banner').style.display='none'; localStorage.setItem('honeycomb_update_dismissed_<?= htmlspecialchars($honeyFp) ?>', 'true');"
+                                            style="padding: 10px 14px; background: transparent; color: #ffffff; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; cursor: pointer; font-size: 22px; line-height: 1; transition: all 0.2s;"
+                                            onmouseover="this.style.background='rgba(255,255,255,0.2)'"
+                                            onmouseout="this.style.background='transparent'"
+                                            title="Dismiss">
+                                        ×
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <script>
+                        if (localStorage.getItem('honeycomb_update_dismissed_<?= htmlspecialchars($honeyFp) ?>') === 'true') {
+                            document.getElementById('honeycomb-update-banner').style.display = 'none';
+                        }
+                        </script>
+                            <?php
+                        }
+                    }
+                    if ($closeHoneyDb && isset($honeyDb) && $honeyDb instanceof mysqli) {
+                        $honeyDb->close();
+                    }
+                } catch (\Throwable $e) {
+                    error_log('Honeycomb update check error: ' . $e->getMessage());
+                }
+            }
+
+            if ($scheduleLazyHoneycombCheck && !$honeycombBannerShown):
+                $lazyHoneycombCheckUrl = APP_BASE_URL . '/api-check-honeycomb-updates.php';
+                ?>
+            <div id="honeycomb-update-slot"></div>
+            <script>
+            (function () {
+                var apiUrl = <?= json_encode($lazyHoneycombCheckUrl, JSON_THROW_ON_ERROR) ?>;
+
+                function showHoneyBanner(info) {
+                    if (!info || !info.outdated_count || info.outdated_count < 1) return;
+                    var fp = String(info.fingerprint || 'unknown').replace(/[^a-zA-Z0-9@.,_-]/g, '') || 'unknown';
+                    if (localStorage.getItem('honeycomb_update_dismissed_' + fp) === 'true') return;
+                    if (document.getElementById('honeycomb-update-banner')) return;
+
+                    var slot = document.getElementById('honeycomb-update-slot');
+                    if (!slot) return;
+
+                    var count = parseInt(info.outdated_count, 10) || 0;
+                    var names = [];
+                    (info.outdated || []).forEach(function (row) {
+                        if (row && row.name) names.push(String(row.name));
+                    });
+                    var label = count === 1
+                        ? ((names[0] || 'An addon') + ' has an update')
+                        : (count + ' Honeycomb addons have updates');
+                    if (count > 1 && names.length) {
+                        label += ' (' + names.slice(0, 3).join(', ') + (names.length > 3 ? '…' : '') + ')';
+                    }
+                    var esc = function (s) {
+                        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+                    };
+                    var iconUrl = <?= json_encode(ASSETS_BASE_URL . '/assets/images/honeycombsmall.png', JSON_THROW_ON_ERROR) ?>;
+
+                    slot.outerHTML =
+                        '<div id="honeycomb-update-banner" style="background: linear-gradient(135deg, #e65100 0%, #ef6c00 100%); color: #ffffff; padding: 16px 24px; margin: 0; border-bottom: 2px solid rgba(255,255,255,0.2); box-shadow: 0 2px 8px rgba(0,0,0,0.1); position: relative; z-index: 99;">' +
+                        '<div style="display: flex; align-items: center; justify-content: space-between; max-width: 1400px; margin: 0 auto; flex-wrap: wrap; gap: 16px;">' +
+                        '<div style="display: flex; align-items: center; gap: 16px; flex: 1; min-width: 200px;">' +
+                        '<img src="' + esc(iconUrl) + '" alt="" width="28" height="28" style="flex-shrink: 0;">' +
+                        '<div><strong style="font-size: 18px; display: block; margin-bottom: 4px;">Honeycomb Addon Updates</strong>' +
+                        '<span style="font-size: 15px; opacity: 0.95;">' + esc(label) + '</span></div></div>' +
+                        '<div style="display: flex; align-items: center; gap: 12px;">' +
+                        '<a href="?page=honeycomb" style="padding: 10px 20px; background: rgba(255,255,255,0.2); color: #ffffff; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; text-decoration: none; font-size: 15px; font-weight: 600; white-space: nowrap;">Open Honeycomb</a>' +
+                        '<button type="button" id="honeycomb-update-dismiss" style="padding: 10px 14px; background: transparent; color: #ffffff; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; cursor: pointer; font-size: 22px; line-height: 1;" title="Dismiss">×</button>' +
+                        '</div></div></div>';
+
+                    var dismissBtn = document.getElementById('honeycomb-update-dismiss');
+                    if (dismissBtn) {
+                        dismissBtn.addEventListener('click', function () {
+                            var banner = document.getElementById('honeycomb-update-banner');
+                            if (banner) banner.style.display = 'none';
+                            localStorage.setItem('honeycomb_update_dismissed_' + fp, 'true');
+                        });
+                    }
+                }
+
+                function runCheck() {
+                    fetch(apiUrl, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                        .then(function (r) { return r.json(); })
+                        .then(showHoneyBanner)
+                        .catch(function () { /* ignore */ });
+                }
+
+                if ('requestIdleCallback' in window) {
+                    requestIdleCallback(runCheck, { timeout: 5000 });
+                } else {
+                    setTimeout(runCheck, 2000);
+                }
+            })();
+            </script>
+            <?php elseif ($scheduleLazyHoneycombCheck): ?>
+            <script>
+            (function () {
+                var apiUrl = <?= json_encode(APP_BASE_URL . '/api-check-honeycomb-updates.php', JSON_THROW_ON_ERROR) ?>;
+                function runCheck() {
+                    fetch(apiUrl, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                        .catch(function () { /* ignore */ });
+                }
+                if ('requestIdleCallback' in window) {
+                    requestIdleCallback(runCheck, { timeout: 5000 });
+                } else {
+                    setTimeout(runCheck, 2000);
+                }
+            })();
+            </script>
+            <?php endif; ?>
+
+            <?php
             // In-app host resource warnings (CPU / RAM / disk) — no email
             $showHostResourceBanner = !empty($currentPage)
                 && $currentPage !== 'tracking'

@@ -490,6 +490,14 @@ class DataManagementCleanup
                 $stmt->close();
             }
         }
+        if ($this->tableExists('clicks_stats_by_token_hourly')) {
+            $stmt = $this->db->prepare('DELETE FROM clicks_stats_by_token_hourly WHERE campaign_id = ?');
+            if ($stmt) {
+                $stmt->bind_param('i', $campaignId);
+                $stmt->execute();
+                $stmt->close();
+            }
+        }
     }
 
     private function purgeAllSummaries(): void
@@ -499,6 +507,9 @@ class DataManagementCleanup
         }
         if ($this->tableExists('clicks_stats_by_token_daily')) {
             $this->db->query('DELETE FROM clicks_stats_by_token_daily');
+        }
+        if ($this->tableExists('clicks_stats_by_token_hourly')) {
+            $this->db->query('DELETE FROM clicks_stats_by_token_hourly');
         }
     }
 

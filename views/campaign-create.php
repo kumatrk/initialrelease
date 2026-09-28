@@ -102,6 +102,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_campaign'])) {
             $initialStep = 3;
         } elseif (!empty($errors['slugs']) || !empty($errors['redirect_rules'])) {
             $initialStep = 4;
+        } elseif (
+            !empty($errors['inactive_redirect_campaign_id'])
+            || !empty($errors['inactive_redirect_url'])
+            || !empty($errors['inactive_redirect_mode'])
+        ) {
+            $initialStep = 1;
         }
     }
 }
@@ -180,7 +186,11 @@ $extraJs = ASSETS_BASE_URL . '/assets/js/campaign-create-wizard.js?v=' . (file_e
 <?php
 $fbPickerJsPath = __DIR__ . '/../public/assets/js/facebook-campaign-picker.js';
 $fbPickerJs = ASSETS_BASE_URL . '/assets/js/facebook-campaign-picker.js?v=' . (file_exists($fbPickerJsPath) ? filemtime($fbPickerJsPath) : '1');
+$ringbaJsPath = __DIR__ . '/../public/assets/js/campaign-ringba.js';
+$ringbaJs = ASSETS_BASE_URL . '/assets/js/campaign-ringba.js?v=' . (file_exists($ringbaJsPath) ? filemtime($ringbaJsPath) : '1');
 ?>
+<script>window.APP_BASE_URL = <?= json_encode(rtrim(APP_BASE_URL, '/'), JSON_THROW_ON_ERROR) ?>;</script>
+<script src="<?= htmlspecialchars($ringbaJs) ?>"></script>
 <script src="<?= htmlspecialchars($fbPickerJs) ?>"></script>
 <script>
 document.body.setAttribute('data-initial-step', '<?= (int)$initialStep ?>');
@@ -189,6 +199,12 @@ document.addEventListener('DOMContentLoaded', function () {
         window.FacebookCampaignPicker.init({
             selectedCampaignId: <?= json_encode(cc_input('facebook_marketing_campaign_id')) ?>,
         });
+    }
+    if (typeof toggleHoneycombBindings === 'function') {
+        toggleHoneycombBindings();
+    }
+    if (typeof toggleRingbaLpCodes === 'function') {
+        toggleRingbaLpCodes();
     }
 });
 </script>

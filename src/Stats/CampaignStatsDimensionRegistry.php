@@ -25,6 +25,9 @@ final class CampaignStatsDimensionRegistry
         'offer' => ['key' => 'offer', 'label' => 'Offer', 'group' => 'core'],
         'landing' => ['key' => 'landing', 'label' => 'Landing Page', 'group' => 'core'],
         'date' => ['key' => 'date', 'label' => 'Date', 'group' => 'core'],
+        'hour' => ['key' => 'hour', 'label' => 'Hour', 'group' => 'core'],
+        'week' => ['key' => 'week', 'label' => 'Week', 'group' => 'core'],
+        'day_of_week' => ['key' => 'day_of_week', 'label' => 'Day of week', 'group' => 'core'],
     ];
 
     /** @var array<string, array{key: string, label: string, group: string}> */
@@ -184,7 +187,7 @@ final class CampaignStatsDimensionRegistry
     }
 
     /** @var list<string> */
-    private const NON_FILTER_KEYS = ['offer', 'landing', 'date'];
+    private const NON_FILTER_KEYS = ['offer', 'landing', 'date', 'hour', 'week', 'day_of_week'];
 
     /**
      * Dimensions usable as advanced token/value filters (excludes offer, landing, date).

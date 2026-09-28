@@ -126,6 +126,16 @@ try {
             echo json_encode(['ok' => true, 'data' => $payload]);
             break;
 
+        case 'chart_insights':
+            $cacheKey = CampaignStatsResponseCache::makeKey($userId, 'chart_insights', $cacheParts);
+            $payload = CampaignStatsResponseCache::remember($cacheKey, static function () use ($service, $campaignId, $dateFrom, $dateTo, $userTimezone, $filters) {
+                return ReportingConcurrencyGuard::run(
+                    static fn () => $service->getChartInsights($campaignId, $dateFrom, $dateTo, $userTimezone, $filters)
+                );
+            }, StatsResponseCache::TTL_CHART);
+            echo json_encode(['ok' => true, 'data' => $payload]);
+            break;
+
         case 'dimensions':
             $cacheKey = CampaignStatsResponseCache::makeKey($userId, 'dimensions', [
                 'campaign_id' => $campaignId,

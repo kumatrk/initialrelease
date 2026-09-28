@@ -49,11 +49,68 @@ final class AddonInstaller
     }
 
     /**
+     * Fresh install from catalog (always enables the addon).
+     *
      * @param array<string, mixed> $catalogEntry
      * @return array{ok: bool, message: string}
      */
     public function installFromCatalogEntry(array $catalogEntry): array
     {
+        return $this->installOrUpdateFromCatalogEntry($catalogEntry, 'enabled', false);
+    }
+
+    /**
+     * Update an already-installed addon from the catalog.
+     * Rejects downgrades; preserves enabled/disabled status; same SHA-256 trust path as install.
+     *
+     * @param array<string, mixed> $catalogEntry
+     * @return array{ok: bool, message: string}
+     */
+    public function updateFromCatalogEntry(array $catalogEntry): array
+    {
+        $slug = trim((string) ($catalogEntry['slug'] ?? ''));
+        if ($slug === '' || preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $slug) !== 1) {
+            return ['ok' => false, 'message' => 'Invalid addon slug.'];
+        }
+
+        $installedVersion = $this->resolveInstalledVersion($slug);
+        if ($installedVersion === null) {
+            return ['ok' => false, 'message' => 'Addon is not installed. Use Import instead.'];
+        }
+
+        $catalogVersion = trim((string) ($catalogEntry['version'] ?? ''));
+        if ($catalogVersion === '') {
+            return ['ok' => false, 'message' => 'Catalog entry is missing a version.'];
+        }
+        if (version_compare($installedVersion, $catalogVersion) >= 0) {
+            return [
+                'ok' => false,
+                'message' => 'No update available (installed ' . $installedVersion . ', catalog ' . $catalogVersion . ').',
+            ];
+        }
+
+        $row = $this->store->getBySlug($slug);
+        $preserveStatus = 'enabled';
+        if (is_array($row) && in_array((string) ($row['status'] ?? ''), ['enabled', 'disabled'], true)) {
+            $preserveStatus = (string) $row['status'];
+        } elseif (is_dir(HoneycombPaths::addonDir($slug))) {
+            // Disk-only install with no DB row: keep disabled until admin enables.
+            $preserveStatus = 'disabled';
+        }
+
+        return $this->installOrUpdateFromCatalogEntry($catalogEntry, $preserveStatus, true, $installedVersion);
+    }
+
+    /**
+     * @param array<string, mixed> $catalogEntry
+     * @return array{ok: bool, message: string}
+     */
+    private function installOrUpdateFromCatalogEntry(
+        array $catalogEntry,
+        string $status,
+        bool $isUpdate,
+        ?string $previousVersion = null
+    ): array {
         $slug = trim((string) ($catalogEntry['slug'] ?? ''));
         $zipUrl = trim((string) ($catalogEntry['zip_url'] ?? ''));
         $sha256 = strtolower(trim((string) ($catalogEntry['sha256'] ?? '')));
@@ -69,6 +126,9 @@ final class AddonInstaller
         }
         if (empty($catalogEntry['compatible'])) {
             return ['ok' => false, 'message' => 'This addon requires a newer Kuma version.'];
+        }
+        if (!in_array($status, ['enabled', 'disabled'], true)) {
+            $status = 'enabled';
         }
 
         $repo = HoneycombConfig::catalogRepository($this->settings);
@@ -109,13 +169,35 @@ final class AddonInstaller
                 throw new RuntimeException('Addon min_kuma is higher than this Kuma install.');
             }
 
+            if ($isUpdate && $previousVersion !== null) {
+                $manifestVersion = $manifest->version();
+                if (version_compare($previousVersion, $manifestVersion) >= 0) {
+                    throw new RuntimeException(
+                        'Package version ' . $manifestVersion . ' is not newer than installed ' . $previousVersion . '.'
+                    );
+                }
+                $catalogVersion = trim((string) ($catalogEntry['version'] ?? ''));
+                if ($catalogVersion !== '' && $manifestVersion !== $catalogVersion) {
+                    throw new RuntimeException(
+                        'Package version ' . $manifestVersion . ' does not match catalog version ' . $catalogVersion . '.'
+                    );
+                }
+            }
+
             $target = HoneycombPaths::addonDir($slug);
             if (is_dir($target)) {
                 $this->deleteTree($target);
             }
             $this->copyTree($sourceRoot, $target);
-            $this->store->upsert($manifest, 'enabled');
+            $this->store->upsert($manifest, $status);
             $this->deleteTree($tmpDir);
+
+            if ($isUpdate && $previousVersion !== null) {
+                return [
+                    'ok' => true,
+                    'message' => $manifest->name() . ' updated from ' . $previousVersion . ' to ' . $manifest->version() . '.',
+                ];
+            }
 
             return ['ok' => true, 'message' => $manifest->name() . ' ' . $manifest->version() . ' installed.'];
         } catch (Throwable $e) {
@@ -124,6 +206,29 @@ final class AddonInstaller
             }
             return ['ok' => false, 'message' => $e->getMessage()];
         }
+    }
+
+    private function resolveInstalledVersion(string $slug): ?string
+    {
+        $dir = HoneycombPaths::addonDir($slug);
+        $manifestPath = $dir . DIRECTORY_SEPARATOR . 'honeycomb.json';
+        if (is_file($manifestPath)) {
+            try {
+                $manifest = Manifest::fromJsonFile($manifestPath);
+                if ($manifest->slug() === $slug) {
+                    $v = trim($manifest->version());
+                    return $v !== '' ? $v : null;
+                }
+            } catch (Throwable) {
+                // Fall through to DB.
+            }
+        }
+        $row = $this->store->getBySlug($slug);
+        if ($row === null) {
+            return null;
+        }
+        $v = trim((string) ($row['version'] ?? ''));
+        return $v !== '' ? $v : null;
     }
 
     /**

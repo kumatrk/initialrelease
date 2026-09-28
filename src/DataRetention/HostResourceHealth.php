@@ -78,6 +78,7 @@ class HostResourceHealth
             'clicks_archive',
             'clicks_daily_summary',
             'clicks_stats_by_token_daily',
+            'clicks_stats_by_token_hourly',
             'conversions',
         ];
         $out = [];

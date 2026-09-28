@@ -8,6 +8,7 @@ use SimpleKuma\Auth\Permission;
 use SimpleKuma\Honeycomb\AddonInstaller;
 use SimpleKuma\Honeycomb\AddonLoader;
 use SimpleKuma\Honeycomb\AddonStore;
+use SimpleKuma\Honeycomb\AddonUpdateChecker;
 use SimpleKuma\Honeycomb\CatalogClient;
 use SimpleKuma\Honeycomb\HoneycombConfig;
 use SimpleKuma\Honeycomb\HourlyCostStore;
@@ -21,6 +22,7 @@ $store = new AddonStore($db);
 $loader = new AddonLoader($db, $store);
 $catalog = new CatalogClient($db, $settings);
 $installer = new AddonInstaller($db, $settings, $store);
+$updateChecker = new AddonUpdateChecker($db, $settings, $catalog, $loader);
 
 $errors = [];
 $success = '';
@@ -41,10 +43,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $action = (string) ($_POST['action'] ?? '');
         if ($action === 'refresh_catalog') {
             $catalog->fetch(true);
+            $updateChecker->checkForUpdates(true);
             header('Location: ' . APP_BASE_URL . '/index.php?page=honeycomb&success=catalog_refreshed');
             exit;
         }
-        if ($action === 'install_addon') {
+        if ($action === 'install_addon' || $action === 'update_addon') {
             $slug = trim((string) ($_POST['slug'] ?? ''));
             $result = $catalog->fetch(false);
             $entry = null;
@@ -57,12 +60,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($entry === null) {
                 $errors['general'] = 'That addon is not in the current catalog. Refresh and try again.';
             } else {
-                $install = $installer->installFromCatalogEntry($entry);
-                if ($install['ok']) {
-                    header('Location: ' . APP_BASE_URL . '/index.php?page=honeycomb&success=installed');
-                    exit;
+                $lockName = 'simplekuma_honeycomb_addon_update';
+                $lockOk = false;
+                $lockResult = $db->query("SELECT GET_LOCK('" . $db->real_escape_string($lockName) . "', 0) AS got");
+                if ($lockResult !== false) {
+                    $lockRow = $lockResult->fetch_assoc();
+                    $lockOk = isset($lockRow['got']) && (int) $lockRow['got'] === 1;
+                    $lockResult->free();
                 }
-                $errors['general'] = $install['message'];
+                if (!$lockOk) {
+                    $errors['general'] = 'Another Honeycomb install or update is already in progress. Try again in a moment.';
+                } else {
+                    try {
+                        if ($action === 'update_addon') {
+                            $install = $installer->updateFromCatalogEntry($entry);
+                            if ($install['ok']) {
+                                $updateChecker->clearCache();
+                                $updateChecker->checkForUpdates(true);
+                                header('Location: ' . APP_BASE_URL . '/index.php?page=honeycomb&success=updated&msg=' . rawurlencode($install['message']));
+                                exit;
+                            }
+                        } else {
+                            $install = $installer->installFromCatalogEntry($entry);
+                            if ($install['ok']) {
+                                $updateChecker->clearCache();
+                                $updateChecker->checkForUpdates(true);
+                                header('Location: ' . APP_BASE_URL . '/index.php?page=honeycomb&success=installed');
+                                exit;
+                            }
+                        }
+                        $errors['general'] = $install['message'];
+                    } finally {
+                        $db->query("SELECT RELEASE_LOCK('" . $db->real_escape_string($lockName) . "')");
+                    }
+                }
             }
         }
         if ($action === 'enable_addon' || $action === 'disable_addon') {
@@ -78,6 +109,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $slug = trim((string) ($_POST['slug'] ?? ''));
             $removed = $installer->uninstall($slug);
             if ($removed['ok']) {
+                $updateChecker->clearCache();
+                $updateChecker->checkForUpdates(true);
                 header('Location: ' . APP_BASE_URL . '/index.php?page=honeycomb&success=removed');
                 exit;
             }
@@ -88,8 +121,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 if (isset($_GET['success'])) {
     $success = match ((string) $_GET['success']) {
-        'catalog_refreshed' => 'Catalog refreshed from GitHub.',
+        'catalog_refreshed' => 'Catalog refreshed from GitHub. Update status rechecked.',
         'installed' => 'Addon installed.',
+        'updated' => trim((string) ($_GET['msg'] ?? '')) !== ''
+            ? (string) $_GET['msg']
+            : 'Addon updated.',
         'status' => 'Addon status updated.',
         'removed' => 'Addon removed.',
         default => '',
@@ -103,6 +139,16 @@ foreach ($installed as $row) {
     $installedSlugs[(string) $row['slug']] = $row;
 }
 
+// Cache-first compare; Refresh catalog / Update actions force a fresh check.
+$updateInfo = $updateChecker->checkForUpdates(false);
+$outdatedBySlug = [];
+foreach (($updateInfo['outdated'] ?? []) as $outdatedRow) {
+    if (is_array($outdatedRow) && isset($outdatedRow['slug'])) {
+        $outdatedBySlug[(string) $outdatedRow['slug']] = $outdatedRow;
+    }
+}
+$outdatedCount = (int) ($updateInfo['outdated_count'] ?? 0);
+
 $honeyRepo = HoneycombConfig::DEFAULT_REPO;
 
 $lastCheckRaw = (string) $settings->get(HoneycombConfig::SETTING_LAST_CHECK, '');
@@ -110,7 +156,7 @@ $lastCheck = $lastCheckRaw !== '' ? json_decode($lastCheckRaw, true) : null;
 $schemaReady = $store->tableExists();
 $hourlyReady = (new HourlyCostStore($db))->tableExists();
 ?>
-<link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/honeycomb.css?v=5">
+<link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/honeycomb.css?v=6">
 
 <div class="honeycomb-page">
     <header class="honeycomb-hero">
@@ -120,7 +166,7 @@ $hourlyReady = (new HourlyCostStore($db))->tableExists();
             <h1 class="honeycomb-hero__title">Add-ons for Kuma</h1>
             <p class="honeycomb-hero__lede">
                 Import Honeycomb addons without replacing Kuma. Browse the catalog, import only what you need,
-                and update those addons independently of core.
+                and update those addons independently of core. Updates use the same verified catalog checksums as Import.
             </p>
         </div>
     </header>
@@ -130,6 +176,13 @@ $hourlyReady = (new HourlyCostStore($db))->tableExists();
     <?php endif; ?>
     <?php if (!empty($errors['general'])): ?>
         <div class="honeycomb-flash honeycomb-flash--err"><?= htmlspecialchars((string) $errors['general']) ?></div>
+    <?php endif; ?>
+
+    <?php if ($outdatedCount > 0): ?>
+        <div class="honeycomb-flash honeycomb-flash--update" role="status">
+            <strong><?= (int) $outdatedCount ?> Honeycomb addon<?= $outdatedCount === 1 ? '' : 's' ?> need<?= $outdatedCount === 1 ? 's' : '' ?> updating.</strong>
+            Use <em>Update</em> on each addon below. Packages are verified with the catalog SHA-256 before files are replaced.
+        </div>
     <?php endif; ?>
 
     <?php if (!$schemaReady): ?>
@@ -255,10 +308,26 @@ $hourlyReady = (new HourlyCostStore($db))->tableExists();
                                 <?php endif; ?>
                             </td>
                             <td class="honeycomb-catalog-col-ver">
-                                <code class="honeycomb-catalog-ver"><?= htmlspecialchars((string) $addon['version']) ?></code>
+                                <?php if (isset($outdatedBySlug[$slug])): ?>
+                                    <?php $ou = $outdatedBySlug[$slug]; ?>
+                                    <code class="honeycomb-catalog-ver"><?= htmlspecialchars((string) $ou['current_version']) ?></code>
+                                    <span class="honeycomb-ver-arrow" aria-hidden="true">→</span>
+                                    <code class="honeycomb-catalog-ver honeycomb-catalog-ver--new"><?= htmlspecialchars((string) $ou['latest_version']) ?></code>
+                                <?php else: ?>
+                                    <code class="honeycomb-catalog-ver"><?= htmlspecialchars((string) $addon['version']) ?></code>
+                                <?php endif; ?>
                             </td>
                             <td class="honeycomb-catalog-col-action">
-                                <?php if ($local): ?>
+                                <?php if ($local && isset($outdatedBySlug[$slug]) && $canEdit): ?>
+                                    <?php $ou = $outdatedBySlug[$slug]; ?>
+                                    <form method="POST" action="<?= APP_BASE_URL ?>/index.php?page=honeycomb"
+                                          onsubmit="return confirm('Update <?= htmlspecialchars((string) $addon['name'], ENT_QUOTES) ?> from <?= htmlspecialchars((string) $ou['current_version'], ENT_QUOTES) ?> to <?= htmlspecialchars((string) $ou['latest_version'], ENT_QUOTES) ?>? Credentials and bindings are kept.');">
+                                        <?= Csrf::field() ?>
+                                        <input type="hidden" name="action" value="update_addon">
+                                        <input type="hidden" name="slug" value="<?= htmlspecialchars($slug) ?>">
+                                        <button type="submit" class="btn btn-primary" <?= empty($ou['compatible']) ? 'disabled' : '' ?>>Update</button>
+                                    </form>
+                                <?php elseif ($local): ?>
                                     <span class="honeycomb-pill">Installed</span>
                                 <?php elseif ($canEdit): ?>
                                     <form method="POST" action="<?= APP_BASE_URL ?>/index.php?page=honeycomb">
@@ -406,16 +475,36 @@ $hourlyReady = (new HourlyCostStore($db))->tableExists();
                                 <?php endif; ?>
                             </td>
                             <td class="honeycomb-catalog-col-ver">
-                                <code class="honeycomb-catalog-ver"><?= htmlspecialchars((string) ($row['version'] ?? '')) ?></code>
+                                <?php if (isset($outdatedBySlug[$slug])): ?>
+                                    <?php $ou = $outdatedBySlug[$slug]; ?>
+                                    <code class="honeycomb-catalog-ver"><?= htmlspecialchars((string) $ou['current_version']) ?></code>
+                                    <span class="honeycomb-ver-arrow" aria-hidden="true">→</span>
+                                    <code class="honeycomb-catalog-ver honeycomb-catalog-ver--new"><?= htmlspecialchars((string) $ou['latest_version']) ?></code>
+                                <?php else: ?>
+                                    <code class="honeycomb-catalog-ver"><?= htmlspecialchars((string) ($row['version'] ?? '')) ?></code>
+                                <?php endif; ?>
                             </td>
                             <td class="honeycomb-catalog-col-status">
                                 <span class="honeycomb-pill honeycomb-pill--<?= htmlspecialchars($status) ?>">
                                     <?= htmlspecialchars($status) ?>
                                 </span>
+                                <?php if (isset($outdatedBySlug[$slug])): ?>
+                                    <span class="honeycomb-pill honeycomb-pill--update">Update available</span>
+                                <?php endif; ?>
                             </td>
                             <td class="honeycomb-catalog-col-action">
                                 <?php if ($canEdit): ?>
                                     <div class="honeycomb-row-actions">
+                                        <?php if (isset($outdatedBySlug[$slug])): ?>
+                                            <?php $ou = $outdatedBySlug[$slug]; ?>
+                                            <form method="POST" action="<?= APP_BASE_URL ?>/index.php?page=honeycomb"
+                                                  onsubmit="return confirm('Update <?= htmlspecialchars((string) ($row['name'] ?? $slug), ENT_QUOTES) ?> from <?= htmlspecialchars((string) $ou['current_version'], ENT_QUOTES) ?> to <?= htmlspecialchars((string) $ou['latest_version'], ENT_QUOTES) ?>? Credentials and bindings are kept.');">
+                                                <?= Csrf::field() ?>
+                                                <input type="hidden" name="action" value="update_addon">
+                                                <input type="hidden" name="slug" value="<?= htmlspecialchars($slug) ?>">
+                                                <button type="submit" class="honeycomb-row-btn honeycomb-row-btn--primary" <?= empty($ou['compatible']) ? 'disabled' : '' ?>>Update</button>
+                                            </form>
+                                        <?php endif; ?>
                                         <?php if (!empty($row['valid']) && $status === 'enabled'): ?>
                                             <form method="GET" action="<?= APP_BASE_URL ?>/index.php">
                                                 <input type="hidden" name="page" value="honeycomb-addon">

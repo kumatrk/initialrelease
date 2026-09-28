@@ -23,6 +23,9 @@ final class HoneycombKernel
     /** @var list<ConversionExportProvider> */
     private array $conversionExporters = [];
 
+    /** @var list<CampaignFieldsProvider> */
+    private array $campaignFieldsProviders = [];
+
     public function __construct(private mysqli $db)
     {
     }
@@ -50,6 +53,11 @@ final class HoneycombKernel
     public function addConversionExportProvider(ConversionExportProvider $provider): void
     {
         $this->conversionExporters[] = $provider;
+    }
+
+    public function addCampaignFieldsProvider(CampaignFieldsProvider $provider): void
+    {
+        $this->campaignFieldsProviders[] = $provider;
     }
 
     /**
@@ -82,6 +90,19 @@ final class HoneycombKernel
     public function conversionExporters(): array
     {
         return $this->conversionExporters;
+    }
+
+    /**
+     * @return list<CampaignFieldsProvider>
+     */
+    public function campaignFieldsProviders(): array
+    {
+        $list = $this->campaignFieldsProviders;
+        usort(
+            $list,
+            static fn(CampaignFieldsProvider $a, CampaignFieldsProvider $b): int => $a->priority() <=> $b->priority()
+        );
+        return $list;
     }
 
     /**

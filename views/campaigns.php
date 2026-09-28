@@ -104,9 +104,16 @@ if ($action === 'clone' && $id && $_SERVER['REQUEST_METHOD'] === 'POST') {
             'min_postback_payout' => $originalCampaign['min_postback_payout'] ?? null,
             'allow_multiple_conversions' => !empty($originalCampaign['allow_multiple_conversions']),
             'fallback_offer_id' => $originalCampaign['fallback_offer_id'] ?? null,
+            'inactive_redirect_mode' => $originalCampaign['inactive_redirect_mode'] ?? 'off',
+            'inactive_redirect_campaign_id' => $originalCampaign['inactive_redirect_campaign_id'] ?? null,
+            'inactive_redirect_url' => $originalCampaign['inactive_redirect_url'] ?? null,
             'custom_tokens' => $originalCampaign['custom_tokens_json'] ?? [],
             'redirect_rules' => $originalCampaign['redirect_rules_json'] ?? []
         ];
+        $cloneData = array_merge(
+            $cloneData,
+            \SimpleKuma\Campaign\InactiveRedirectParser::fromInput($cloneData)
+        );
         
         // Debug: Log what we're about to save
         error_log('=== CLONE DATA ===');
@@ -259,6 +266,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $tables = $db->query("SHOW TABLES LIKE 'clicks_stats_by_token_daily'");
                 if ($tables && $tables->num_rows > 0) {
                     $stmt = $db->prepare("DELETE FROM clicks_stats_by_token_daily WHERE campaign_id = ?");
+                    $stmt->bind_param('i', $campaignId);
+                    $stmt->execute();
+                    $stmt->close();
+                }
+
+                $tables = $db->query("SHOW TABLES LIKE 'clicks_stats_by_token_hourly'");
+                if ($tables && $tables->num_rows > 0) {
+                    $stmt = $db->prepare("DELETE FROM clicks_stats_by_token_hourly WHERE campaign_id = ?");
                     $stmt->bind_param('i', $campaignId);
                     $stmt->execute();
                     $stmt->close();
@@ -451,6 +466,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'fallback_offer_id' => !empty($_POST['fallback_offer_id']) ? (int)$_POST['fallback_offer_id'] : null,
         'tags' => !empty($_POST['tags']) ? trim((string)$_POST['tags']) : null,
     ];
+        $data = array_merge($data, \SimpleKuma\Campaign\InactiveRedirectParser::fromInput($_POST));
+        if ($action === 'edit' && $id) {
+            $data['_editing_campaign_id'] = (int) $id;
+        }
 
         // Parse traffic source postbacks for auto-detect campaigns
         $trafficSourcePostbacks = [];
@@ -796,7 +815,15 @@ $verifiedTrackingDomains = [];
 $firstSelectableTrafficSource = null;
 $honeycombAddonsByProvider = [];
 $honeycombBindingsBySlug = [];
+$honeycombCampaignFieldProviders = [];
 $whopBizAccountId = '';
+$ringbaAddonEnabled = false;
+$ringbaBindingExtra = [
+    'enabled' => false,
+    'js_tag_id' => '',
+    'click_param' => 'click_id',
+    'number_to_replace' => '',
+];
 $isLegacyAutoDetectCampaign = $action === 'edit' && $editCampaign && empty($editCampaign['traffic_source_id']);
 
 if ($action !== 'list') {
@@ -815,10 +842,27 @@ if ($action !== 'list') {
     $firstSelectableTrafficSource = TrafficSourceReleaseHelper::getFirstSelectable($trafficSources);
     $honeyFields = new \SimpleKuma\Honeycomb\HoneycombCampaignFields($db);
     $honeycombAddonsByProvider = $honeyFields->enabledByProviderKey();
+    $honeycombCampaignFieldProviders = $honeyFields->campaignFieldsProviders();
+    foreach ($honeycombCampaignFieldProviders as $honeyProvider) {
+        if ($honeyProvider->addonSlug() === 'ringba') {
+            $ringbaAddonEnabled = true;
+            break;
+        }
+    }
     if ($action === 'edit' && !empty($editCampaign['id'])) {
-        foreach ($honeycombAddonsByProvider as $addonMeta) {
-            $slug = (string) $addonMeta['slug'];
+        foreach ($honeycombCampaignFieldProviders as $honeyProvider) {
+            $slug = $honeyProvider->addonSlug();
             $honeycombBindingsBySlug[$slug] = $honeyFields->bindingForCampaign((int) $editCampaign['id'], $slug);
+        }
+        $rb = $honeycombBindingsBySlug['ringba'] ?? null;
+        if (is_array($rb)) {
+            $rbExtra = is_array($rb['extra'] ?? null) ? $rb['extra'] : [];
+            $ringbaBindingExtra = [
+                'enabled' => !empty($rbExtra['enabled']),
+                'js_tag_id' => (string) ($rbExtra['js_tag_id'] ?? ''),
+                'click_param' => (string) ($rbExtra['click_param'] ?? 'click_id'),
+                'number_to_replace' => (string) ($rbExtra['number_to_replace'] ?? ''),
+            ];
         }
     }
     // Whop Ads: biz_ for campaign-editor copy snippets
@@ -2341,546 +2385,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                 <?php if ($id): ?>
                 <input type="hidden" name="id" value="<?= (int)$id ?>">
                 <?php endif; ?>
-                <!-- Main Settings Box -->
-                <div style="background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%); 
-                             border: 3px solid #3d5a26; 
-                             border-radius: 12px; 
-                             padding: 0; 
-                             margin-bottom: 24px;
-                             box-shadow: 0 4px 12px rgba(61, 90, 38, 0.15);">
-                    <!-- Styled Header -->
-                    <div style="background: linear-gradient(135deg, #3d5a26 0%, #558b2f 100%); 
-                                padding: 16px 24px; 
-                                border-radius: 9px 9px 0 0;
-                                border-bottom: 2px solid #2d451f;">
-                        <h3 style="margin: 0; color: #ffffff; font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 10px;">
-                            <span style="font-size: 20px;">⚙️</span>
-                            Main Settings
-                        </h3>
-                </div>
-
-                    <!-- Settings Content -->
-                    <div style="padding: 24px;">
-                        <!-- Campaign Name & Default CPC Row -->
-                        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 20px;">
-                            <div>
-                                <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">
-                                    Campaign Name <span style="color: #d32f2f;">*</span>
-                                </label>
-                                <input type="text" name="name" value="<?= htmlspecialchars($editCampaign['name'] ?? '') ?>" 
-                                       required placeholder="e.g., FB Keto Campaign"
-                                   style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px; font-size: 14px;">
-                            </div>
-                            <div>
-                                <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">Default CPC</label>
-                                <?php
-                                $editDefaultCpc = $editCampaign['default_cpc'] ?? null;
-                                $editDefaultCpcValue = ($editDefaultCpc === null || $editDefaultCpc === '')
-                                    ? ''
-                                    : rtrim(rtrim(number_format((float) $editDefaultCpc, 6, '.', ''), '0'), '.');
-                                ?>
-                                <input type="number" name="default_cpc" step="any" min="0"
-                                       value="<?= htmlspecialchars($editDefaultCpcValue) ?>"
-                                       placeholder="0.00"
-                                       style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px; font-size: 14px;">
-                                <div style="font-size: 12px; color: #666; margin-top: 4px;">Used when cost param not provided</div>
-                            </div>
-                        </div>
-
-                        <!-- Tags Row -->
-                        <div style="margin-bottom: 20px;">
-                            <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">
-                                Tags
-                            </label>
-                            <input type="text" name="tags" value="<?= htmlspecialchars($editCampaign['tags'] ?? '') ?>" 
-                                   placeholder="e.g. sweeps, tier1, test (comma-separated)"
-                                   style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px; font-size: 14px;">
-                            <div style="font-size: 12px; color: #666; margin-top: 4px;">Comma-separated tags for filtering and organizing</div>
-                        </div>
-
-                        <!-- Status, Group, Referrer privacy Row -->
-                        <div class="campaign-settings-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #e0e0e0;">
-                            <div>
-                                <label style="display: block; font-weight: 600; margin-bottom: 6px; font-size: 13px; color: #333;">Status</label>
-                                <select name="status" style="width: 100%; padding: 8px; border: 2px solid #ddd; border-radius: 4px; font-size: 14px;">
-                                    <option value="active" <?= ($editCampaign['status'] ?? 'active') === 'active' ? 'selected' : '' ?>>Active</option>
-                                    <option value="paused" <?= ($editCampaign['status'] ?? '') === 'paused' ? 'selected' : '' ?>>Paused</option>
-                                    <option value="archived" <?= ($editCampaign['status'] ?? '') === 'archived' ? 'selected' : '' ?>>Archived</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label style="display: block; font-weight: 600; margin-bottom: 6px; font-size: 13px; color: #333;">Group (Optional)</label>
-                                <select name="campaign_group_id" 
-                                        style="width: 100%; padding: 8px; border: 2px solid #ddd; border-radius: 4px; font-size: 14px;">
-                                    <option value="">No Group</option>
-                                    <?php foreach ($campaignGroups as $group): ?>
-                                        <option value="<?= $group['id'] ?>" <?= ($editCampaign['campaign_group_id'] ?? 0) == $group['id'] ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($group['name']) ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                                <div style="font-size: 11px; color: #666; margin-top: 3px;">
-                                    <a href="?page=settings&tab=campaign-groups" style="color: #3d5a26; text-decoration: none;">Manage Groups</a>
-                                </div>
-                            </div>
-                            <?php $editReferrerMode = $editCampaign['referrer_mode'] ?? $editCampaign['cloaking_mode'] ?? ''; ?>
-                            <div>
-                                <label style="display: block; font-weight: 600; margin-bottom: 6px; font-size: 13px; color: #333;">Referrer privacy</label>
-                                <select name="referrer_mode" style="width: 100%; padding: 8px; border: 2px solid #ddd; border-radius: 4px; font-size: 14px;">
-                                    <option value="" <?= $editReferrerMode === '' ? 'selected' : '' ?>>Standard redirect</option>
-                                    <option value="blank" <?= $editReferrerMode === 'blank' ? 'selected' : '' ?>>Strip referrer (meta refresh)</option>
-                                    <option value="noreferrer" <?= $editReferrerMode === 'noreferrer' ? 'selected' : '' ?>>No referrer header</option>
-                                    <option value="double" <?= $editReferrerMode === 'double' ? 'selected' : '' ?>>Bear hop (two-step)</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <?php
-                        $editCampaignSafe = is_array($editCampaign) ? $editCampaign : [];
-                        $editEdgeEnabled = !empty($editCampaignSafe['edge_enabled']);
-                        $edgeEligibility = \SimpleKuma\Edge\EdgeEligibility::evaluate(array_merge($editCampaignSafe, [
-                            'edge_enabled' => true,
-                            'status' => $editCampaignSafe['status'] ?? 'active',
-                            'referrer_mode' => $editReferrerMode,
-                            'redirectless_tracking' => !empty($editCampaignSafe['redirectless_tracking']),
-                        ]));
-                        $edgeSyncedAt = $editCampaignSafe['edge_synced_at'] ?? null;
-                        $edgeSyncError = $editCampaignSafe['edge_sync_error'] ?? null;
-                        ?>
-                        <div class="campaign-edge-redirect-box" style="margin-bottom: 20px; padding: 14px 16px; border-radius: 6px;">
-                            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; margin-bottom: 0;">
-                                <input type="checkbox" name="edge_enabled" value="1" <?= $editEdgeEnabled ? 'checked' : '' ?>
-                                       style="margin-top: 3px; width: 16px; height: 16px; flex-shrink: 0;">
-                                <span>
-                                    <strong class="edge-box-title" style="display: block; margin-bottom: 4px;">Edge redirect (Cloudflare Worker)</strong>
-                                    <span class="edge-box-desc" style="font-size: 13px; line-height: 1.4; display: block;">
-                                        Serve redirects from Cloudflare’s edge for much lower latency worldwide.
-                                        Requires Edge Redirect setup under Settings. Phase 1 supports standard 302 only (no referrer privacy modes).
-                                        Offer and landing-page weight changes sync to the edge after save; propagation is usually within about a minute (Cloudflare KV). Origin links update immediately.
-                                    </span>
-                                </span>
-                            </label>
-                            <?php if ($action === 'edit' && $editEdgeEnabled): ?>
-                                <div class="edge-box-status" style="margin-top: 10px; font-size: 12px;">
-                                    <?php if (!$edgeEligibility['eligible']): ?>
-                                        <div class="edge-status-ineligible" style="font-weight: 500;">Not eligible while enabled: <?= htmlspecialchars((string) $edgeEligibility['reason']) ?></div>
-                                    <?php elseif ($edgeSyncError): ?>
-                                        <div class="edge-status-error" style="font-weight: 500;">Last sync error: <?= htmlspecialchars((string) $edgeSyncError) ?></div>
-                                    <?php elseif ($edgeSyncedAt): ?>
-                                        <div class="edge-status-synced" style="font-weight: 500;">Last synced to edge: <?= htmlspecialchars((string) $edgeSyncedAt) ?> UTC</div>
-                                    <?php else: ?>
-                                        <div class="edge-status-waiting">Waiting for first edge sync…</div>
-                                    <?php endif; ?>
-                                </div>
-                            <?php endif; ?>
-                            <div style="margin-top: 8px; font-size: 12px;">
-                                <a href="?page=settings&tab=edge-redirect" class="edge-box-link">Configure Edge Redirect →</a>
-                            </div>
-                        </div>
-
-                        <!-- Traffic Source -->
-                        <div style="margin-bottom: 20px;">
-                            <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">
-                                Traffic Source <span style="color:#d32f2f;">*</span>
-                            </label>
-                            <?php if ($isLegacyAutoDetectCampaign): ?>
-                            <div style="background: #fff3e0; border: 1px solid #ff9800; border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; font-size: 13px; color: #5d4037; line-height: 1.45;">
-                                This campaign was using <strong>Kuma Auto Detected</strong>, which is no longer available. Select a specific traffic source before saving.
-                            </div>
-                            <?php endif; ?>
-                            <select name="traffic_source_id" id="traffic_source_id" 
-                                    onchange="updateTrackingLink(); toggleFacebookIntegration(); toggleGoogleAdsIntegration(); toggleHoneycombBindings(); toggleWhopLpCodes(); toggleTrafficSourceSelector(); syncRedirectlessTrafficSourceFromCampaign();"
-                                    style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px; font-size: 14px;"
-                                    aria-label="Select traffic source" required>
-                                <?php if ($isLegacyAutoDetectCampaign): ?>
-                                <option value="">Select traffic source...</option>
-                                <?php endif; ?>
-                                <?php foreach ($trafficSources as $ts):
-                                    $isSelectable = TrafficSourceReleaseHelper::isSelectableForRelease($ts);
-                                    $isFacebook = stripos($ts['name'], 'facebook') !== false;
-                                    $isGoogle = TrafficSourceReleaseHelper::usesGoogleAdsIntegration($ts);
-                                    $providerKey = trim((string) ($ts['provider_key'] ?? ''));
-                                    $isSelected = ($editCampaign['traffic_source_id'] ?? 0) == $ts['id']
-                                        || ($action === 'add' && $firstSelectableTrafficSource && (int)$firstSelectableTrafficSource['id'] === (int)$ts['id']);
-                                ?>
-                                    <option value="<?= $ts['id'] ?>" 
-                                            data-tokens='<?= htmlspecialchars(json_encode($ts['tokens_json'] ?? [])) ?>'
-                                            data-cost-param='<?= htmlspecialchars($ts['cost_param_key'] ?? '') ?>'
-                                            data-is-facebook="<?= $isFacebook ? '1' : '0' ?>"
-                                            data-is-google="<?= $isGoogle ? '1' : '0' ?>"
-                                            data-provider-key="<?= htmlspecialchars($providerKey) ?>"
-                                            <?= !$isSelectable ? ' disabled' : '' ?>
-                                            <?= $isSelected ? 'selected' : '' ?>>
-                                <?= htmlspecialchars($ts['name']) ?><?= !$isSelectable ? ' (Coming soon)' : '' ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                    <div style="font-size: 12px; color: #666; margin-top: 4px; line-height: 1.45;">
-                        Facebook, Google Ads, YouTube, or a custom source with manual cost in the URL.
-                        Google/YouTube conversions use scheduled CSV import (Settings → Integrations). API cost sync is optional.
-                    </div>
-                </div>
-
-                        <!-- Minimum payout to fire postbacks -->
-                        <div style="margin-bottom: 20px; padding: 14px; background: #f9faf7; border: 1px solid #e0e6d8; border-radius: 6px;">
-                            <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">Minimum payout to fire postbacks (optional)</label>
-                            <?php
-                            $editMinPostbackPayout = $editCampaign['min_postback_payout'] ?? null;
-                            $editMinPostbackPayoutValue = ($editMinPostbackPayout === null || $editMinPostbackPayout === '')
-                                ? ''
-                                : rtrim(rtrim(number_format((float)$editMinPostbackPayout, 6, '.', ''), '0'), '.');
-                            ?>
-                            <input type="number" name="min_postback_payout" step="any" min="0"
-                                   value="<?= htmlspecialchars($editMinPostbackPayoutValue) ?>"
-                                   placeholder="No minimum — fire all postbacks"
-                                   style="width:100%;max-width:280px;padding:10px;border:2px solid #ddd;border-radius:4px;">
-                            <p style="font-size: 12px; color: #666; margin-top: 6px; line-height: 1.45;">
-                                Optional. All conversions always appear in Kuma. When set, outbound postbacks only fire when value or payout meets this minimum.
-                            </p>
-                        </div>
-
-                        <div style="margin-bottom: 20px; padding: 14px; background: #f9faf7; border: 1px solid #e0e6d8; border-radius: 6px;">
-                            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
-                                <input type="checkbox" name="allow_multiple_conversions" value="1"
-                                       <?= !empty($editCampaign['allow_multiple_conversions']) ? 'checked' : '' ?>
-                                       style="margin-top: 3px;">
-                                <span>
-                                    <span style="display: block; font-weight: 600; color: #333; margin-bottom: 4px;">Allow multiple conversions on the same click</span>
-                                    <span style="display: block; font-size: 12px; color: #666; line-height: 1.45;">
-                                        For networks like Propush that can send several payouts on one click ID.
-                                        Prefer a unique <code>txid</code> when the network provides one. Same <code>txid</code>/<code>event_id</code> is still treated as a duplicate.
-                                    </span>
-                                </span>
-                            </label>
-                        </div>
-
-                        <!-- Tracking Domain Selection -->
-                        <div style="margin-bottom: 20px;">
-                            <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">
-                                Tracking Domain (Optional)
-                            </label>
-                            <select name="tracking_domain_id" 
-                                    id="campaign-tracking-domain-select"
-                                    onchange="updateChompJSCode()"
-                                    style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px; font-size: 14px;">
-                                <option value="" data-domain-url="<?= htmlspecialchars(BASE_URL) ?>">Use Main Tracker Domain (<?= parse_url(BASE_URL, PHP_URL_HOST) ?>)</option>
-                                <?php if (!empty($verifiedTrackingDomains)): ?>
-                                    <option value="">─────────────────────────</option>
-                                    <?php foreach ($verifiedTrackingDomains as $domain): ?>
-                                        <?php $domainStatusLabel = ($domain['status'] ?? '') === 'verified_manual' ? ' (Manual)' : ''; ?>
-                                        <option value="<?= $domain['id'] ?>" 
-                                                data-domain-url="<?= htmlspecialchars($domain['domain']) ?>"
-                                                <?= ($editCampaign['tracking_domain_id'] ?? null) == $domain['id'] ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($domain['domain']) ?><?= $domainStatusLabel ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                <?php endif; ?>
-                            </select>
-                            <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                                Select a custom tracking domain to use for this campaign's tracking links. Only verified domains are shown.
-                                <a href="?page=settings&tab=domains" target="_blank" style="color: #3d5a26;">Manage domains</a>
-                            </div>
-                        </div>
-
-                        <!-- Facebook integrations (only visible when Facebook is selected) -->
-                        <div id="facebook_integration_field" style="margin-bottom: 24px; display: none;">
-                            <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">
-                                Facebook CAPI Integration (Optional)
-                            </label>
-                            <select name="facebook_capi_integration_id" id="facebook_capi_integration_id"
-                                    style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px; font-size: 14px;">
-                                <option value="">No Facebook Integration</option>
-                                <?php foreach ($facebookIntegrations as $fbIntegration): ?>
-                                    <option value="<?= $fbIntegration['id'] ?>" 
-                                            <?= ($editCampaign['facebook_capi_integration_id'] ?? null) == $fbIntegration['id'] ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($fbIntegration['name']) ?> (<?= htmlspecialchars($fbIntegration['pixel_id']) ?>)
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                                Select a Facebook CAPI integration to use for this campaign. 
-                                <a href="?page=settings&tab=integrations" target="_blank" style="color: #3d5a26;">Manage integrations</a>
-                            </div>
-
-                            <!-- Facebook Marketing Ad Account (cost tracking + Meta campaign linking) -->
-                            <div style="margin-top: 20px;">
-                                <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">
-                                    Facebook Ad Account (For Cost Tracking)
-                                </label>
-                                <select name="facebook_marketing_ad_account_id" id="facebook_marketing_ad_account_id"
-                                        style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px; font-size: 14px;">
-                                    <option value="">No Facebook Ad Account</option>
-                                    <?php foreach ($allFacebookAdAccounts as $adAccount): ?>
-                                        <option value="<?= $adAccount['id'] ?>" 
-                                                <?= ($editCampaign['facebook_marketing_ad_account_id'] ?? null) == $adAccount['id'] ? 'selected' : '' ?>
-                                                <?= ($adAccount['integration_status'] ?? 'active') !== 'active' ? 'style="color: #999;"' : '' ?>>
-                                            <?= htmlspecialchars($adAccount['ad_account_name']) ?>
-                                            <?= !empty($adAccount['ad_account_id']) ? ' (' . htmlspecialchars($adAccount['ad_account_id']) . ')' : '' ?>
-                                            <?= !empty($adAccount['currency']) ? ' - ' . htmlspecialchars($adAccount['currency']) : '' ?>
-                                            <?= !empty($adAccount['integration_name']) ? ' [' . htmlspecialchars($adAccount['integration_name']) . ']' : '' ?>
-                                            <?= ($adAccount['integration_status'] ?? 'active') !== 'active' ? ' [Integration Paused]' : '' ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                                    Select the specific Facebook ad account for this campaign. This ensures cost tracking queries the correct ad account. 
-                                    <a href="?page=settings&tab=api-costs" target="_blank" style="color: #3d5a26;">Manage integrations</a>
-                                </div>
-
-                                <div id="facebook_meta_campaign_field" style="margin-top: 16px;">
-                                    <div style="background: #f5f8f2; border: 1px solid #c5d4b8; border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; font-size: 13px; color: #444; line-height: 1.45;">
-                                        <strong style="color: #3d5a26;">Meta campaign for cost tracking</strong><br>
-                                        Choose the Facebook/Meta campaign whose ad spend you want Kuma to pull into reports.
-                                        Pick your ad account above first, click <strong>Refresh Meta campaigns</strong>, then select the matching campaign.
-                                        Optional — leave blank to infer costs from clicks only (slower, less accurate on large ad accounts).
-                                    </div>
-                                    <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">
-                                        Meta Campaign (optional)
-                                    </label>
-                                    <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px;">
-                                        <button type="button" id="fb_refresh_meta_campaigns_btn" class="btn btn-secondary" style="padding: 8px 14px;">
-                                            Refresh Meta campaigns
-                                        </button>
-                                        <span id="fb_meta_campaign_status" style="font-size: 12px; color: #666;"></span>
-                                    </div>
-                                    <select name="facebook_marketing_campaign_id" id="facebook_marketing_campaign_id"
-                                            style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px; font-size: 14px;" disabled>
-                                        <option value="">Select ad account first</option>
-                                    </select>
-                                    <p style="font-size: 12px; color: #666; margin-top: 6px;">
-                                        Only <strong>ACTIVE</strong> campaigns are listed. Sync pulls the latest from Meta for the selected ad account.
-                                        <a href="?page=settings&tab=api-costs" target="_blank" style="color: #3d5a26;">Manage ad accounts</a>
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Google Ads Integration Dropdown (only when Google/YouTube is selected) -->
-                        <div id="google_ads_integration_field" style="margin-bottom: 24px; display: none;">
-                            <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">
-                                Google Ads Integration (Optional)
-                            </label>
-                            <select name="google_ads_integration_id" id="google_ads_integration_id"
-                                    style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px; font-size: 14px;">
-                                <option value="">No Google Ads Integration</option>
-                                <?php foreach ($googleAdsIntegrations as $gaIntegration): ?>
-                                    <option value="<?= (int)$gaIntegration['id'] ?>"
-                                            <?= ($editCampaign['google_ads_integration_id'] ?? null) == $gaIntegration['id'] ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($gaIntegration['name']) ?>
-                                        <?php if (!empty($gaIntegration['customer_id'])): ?>
-                                            (<?= htmlspecialchars($gaIntegration['customer_id']) ?>)
-                                        <?php endif; ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <div style="font-size: 12px; color: #666; margin-top: 4px; line-height: 1.45;">
-                                Optional. Link an integration for CSV/Data Manager import and/or API conversion upload. Cost sync uses the Google Ads API cost cron when credentials are configured.
-                                <a href="?page=settings&tab=api-costs" target="_blank" style="color: #3d5a26;">Manage integrations</a>
-                            </div>
-                        </div>
-
-                        <?php if ($honeycombAddonsByProvider !== []): ?>
-                        <!-- Honeycomb traffic-source bindings (Taboola, Whop, etc.) -->
-                        <div id="honeycomb_binding_fields" style="margin-bottom: 24px; display: none;">
-                            <?php foreach ($honeycombAddonsByProvider as $providerKey => $addonMeta):
-                                $slug = (string) $addonMeta['slug'];
-                                $binding = $honeycombBindingsBySlug[$slug] ?? null;
-                                $bindingExtra = is_array($binding['extra'] ?? null) ? $binding['extra'] : [];
-                                $provides = is_array($addonMeta['provides'] ?? null) ? $addonMeta['provides'] : [];
-                                $hasConversionExport = in_array('conversion_export', $provides, true);
-                                $hasCostSync = in_array('cost_sync', $provides, true);
-                                $exportOn = !empty($bindingExtra['conversion_export']);
-                                $eventName = (string) ($bindingExtra['event_name'] ?? 'lead');
-                            ?>
-                                <div class="honeycomb-binding-panel" data-provider-key="<?= htmlspecialchars($providerKey) ?>" style="display:none;margin-bottom:16px;padding:14px;background:#f5f8f2;border:1px solid #c5d4b8;border-radius:6px;">
-                                    <strong style="color:#3d5a26;"><?= htmlspecialchars((string) $addonMeta['name']) ?> (Honeycomb)</strong>
-                                    <?php if ($hasConversionExport): ?>
-                                    <p style="font-size:12px;color:#666;margin:8px 0 12px;line-height:1.45;">
-                                        Send conversions to this network’s Events API when this campaign converts.
-                                        Credentials are under <a href="?page=honeycomb" style="color:#3d5a26;">Honeycomb</a>.
-                                        Copy-ready Whop Pixel + Kuma CTA codes appear below when this traffic source is selected.
-                                    </p>
-                                    <label style="display:flex;align-items:center;gap:10px;margin-bottom:12px;cursor:pointer;">
-                                        <input type="hidden" name="honeycomb_binding[<?= htmlspecialchars($slug) ?>][conversion_export]" value="0">
-                                        <input type="checkbox"
-                                               name="honeycomb_binding[<?= htmlspecialchars($slug) ?>][conversion_export]"
-                                               value="1"
-                                               <?= $exportOn ? 'checked' : '' ?>
-                                               style="width:18px;height:18px;">
-                                        <span style="font-weight:600;color:#333;">Send conversions to <?= htmlspecialchars((string) $addonMeta['name']) ?></span>
-                                    </label>
-                                    <label style="display:block;font-weight:600;margin-bottom:6px;">Event name</label>
-                                    <select name="honeycomb_binding[<?= htmlspecialchars($slug) ?>][event_name]"
-                                            style="width:100%;padding:10px;border:2px solid #ddd;border-radius:4px;margin-bottom:12px;">
-                                        <?php foreach (['lead', 'schedule', 'contact', 'complete_registration', 'submit_application'] as $ev): ?>
-                                            <option value="<?= $ev ?>" <?= $eventName === $ev ? 'selected' : '' ?>><?= $ev ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                    <?php endif; ?>
-                                    <?php if ($hasCostSync): ?>
-                                    <p style="font-size:12px;color:#666;margin:<?= $hasConversionExport ? '12px' : '8px' ?> 0 12px;line-height:1.45;">
-                                        Link this Kuma campaign to the remote account + campaign IDs so Honeycomb can sync ad spend hourly.
-                                        Credentials are managed under <a href="?page=honeycomb" style="color:#3d5a26;">Honeycomb</a>.
-                                    </p>
-                                    <label style="display:block;font-weight:600;margin-bottom:6px;">Remote account ID</label>
-                                    <input type="text" name="honeycomb_binding[<?= htmlspecialchars($slug) ?>][remote_account_id]"
-                                           value="<?= htmlspecialchars((string) ($binding['remote_account_id'] ?? '')) ?>"
-                                           placeholder="e.g. biz_… or advertiser id"
-                                           style="width:100%;padding:10px;border:2px solid #ddd;border-radius:4px;margin-bottom:12px;">
-                                    <label style="display:block;font-weight:600;margin-bottom:6px;">Remote campaign ID</label>
-                                    <input type="text" name="honeycomb_binding[<?= htmlspecialchars($slug) ?>][remote_campaign_id]"
-                                           value="<?= htmlspecialchars((string) ($binding['remote_campaign_id'] ?? '')) ?>"
-                                           placeholder="Ad campaign id from the network"
-                                           style="width:100%;padding:10px;border:2px solid #ddd;border-radius:4px;">
-                                    <?php elseif ($hasConversionExport): ?>
-                                    <input type="hidden" name="honeycomb_binding[<?= htmlspecialchars($slug) ?>][remote_account_id]" value="">
-                                    <input type="hidden" name="honeycomb_binding[<?= htmlspecialchars($slug) ?>][remote_campaign_id]" value="">
-                                    <?php endif; ?>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                        <?php endif; ?>
-
-                        <!-- Per-Traffic-Source Integration Selection (only visible for auto-detect campaigns) -->
-                        <div id="traffic_source_postbacks_section" style="margin-bottom: 24px; display: none;">
-                            <div style="background: #fff3e0; border: 2px solid #ff9800; border-radius: 6px; padding: 16px;">
-                                <h4 style="margin: 0 0 12px 0; color: #e65100; font-size: 16px;">
-                                    🎯 Integration Selection for Auto-Detect Campaign
-                                </h4>
-                                <p style="margin: 0 0 16px 0; color: #666; font-size: 12px; line-height: 1.5;">
-                                    Select which integrations to use for each traffic source type. When a conversion occurs, Kuma will automatically use the correct integration based on the detected traffic source.
-                                </p>
-                                
-                                <?php
-                                // Load existing traffic source postback configs if editing
-                                $existingTsPostbacks = [];
-                                if ($action === 'edit' && $editCampaign && !empty($editCampaign['traffic_source_postbacks_json'])) {
-                                    $existingTsPostbacks = is_array($editCampaign['traffic_source_postbacks_json']) 
-                                        ? $editCampaign['traffic_source_postbacks_json'] 
-                                        : json_decode($editCampaign['traffic_source_postbacks_json'], true) ?? [];
-                                }
-                                
-                                // Group traffic sources by type for simpler UI
-                                $trafficSourceGroups = [];
-                                foreach ($trafficSources as $ts) {
-                                    if (empty($ts['id'])) continue;
-                                    $name = strtolower($ts['name'] ?? '');
-                                    $group = 'other';
-                                    if (strpos($name, 'facebook') !== false) $group = 'facebook';
-                                    elseif (strpos($name, 'google') !== false && strpos($name, 'youtube') === false) $group = 'google';
-                                    elseif (strpos($name, 'youtube') !== false) $group = 'youtube';
-                                    elseif (strpos($name, 'bing') !== false) $group = 'bing';
-                                    
-                                    if (!isset($trafficSourceGroups[$group])) {
-                                        $trafficSourceGroups[$group] = [];
-                                    }
-                                    $trafficSourceGroups[$group][] = $ts;
-                                }
-                                
-                                // Show integration selectors for main traffic source types
-                                $integrationGroups = [
-                                    'facebook' => ['label' => 'Facebook', 'integrations' => $facebookIntegrations, 'type' => 'facebook_capi_integration_id'],
-                                    'google' => ['label' => 'Google Ads', 'integrations' => $googleAdsIntegrations, 'type' => 'google_ads_integration_id'],
-                                    'youtube' => ['label' => 'YouTube', 'integrations' => $googleAdsIntegrations, 'type' => 'google_ads_integration_id'],
-                                    'bing' => ['label' => 'Bing', 'integrations' => [], 'type' => null], // Bing doesn't have integrations yet
-                                ];
-                                
-                                foreach ($integrationGroups as $groupKey => $groupConfig):
-                                    if (empty($groupConfig['integrations']) && $groupConfig['type'] !== null) continue;
-                                    
-                                    // Find traffic sources in this group
-                                    $groupTrafficSources = $trafficSourceGroups[$groupKey] ?? [];
-                                    if (empty($groupTrafficSources)) continue;
-                                    
-                                    // Use first traffic source ID as the key (they'll all use the same integration)
-                                    $firstTsId = $groupTrafficSources[0]['id'];
-                                    $tsConfig = $existingTsPostbacks[$firstTsId] ?? [];
-                                ?>
-                                <div style="margin-bottom: 12px;">
-                                    <label style="display: block; font-weight: 600; margin-bottom: 6px; color: #333; font-size: 13px;">
-                                        <?= htmlspecialchars($groupConfig['label']) ?> Integration
-                                    </label>
-                                    <?php if ($groupConfig['type'] === 'facebook_capi_integration_id'): ?>
-                                        <select name="traffic_source_postbacks[<?= $firstTsId ?>][facebook_capi_integration_id]"
-                                                style="width: 100%; max-width: 400px; padding: 8px; border: 2px solid #ddd; border-radius: 4px; font-size: 13px;">
-                                            <option value="">None</option>
-                                            <?php foreach ($groupConfig['integrations'] as $integration): ?>
-                                                <option value="<?= $integration['id'] ?>" 
-                                                        <?= ($tsConfig['facebook_capi_integration_id'] ?? null) == $integration['id'] ? 'selected' : '' ?>>
-                                                    <?= htmlspecialchars($integration['name']) ?> (<?= htmlspecialchars($integration['pixel_id']) ?>)
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    <?php elseif ($groupConfig['type'] === 'google_ads_integration_id'): ?>
-                                        <select name="traffic_source_postbacks[<?= $firstTsId ?>][google_ads_integration_id]"
-                                                style="width: 100%; max-width: 400px; padding: 8px; border: 2px solid #ddd; border-radius: 4px; font-size: 13px;">
-                                            <option value="">None</option>
-                                            <?php foreach ($groupConfig['integrations'] as $integration): ?>
-                                                <option value="<?= $integration['id'] ?>"
-                                                        <?= ($tsConfig['google_ads_integration_id'] ?? null) == $integration['id'] ? 'selected' : '' ?>>
-                                                    <?= htmlspecialchars($integration['name']) ?>
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                        <div style="font-size: 11px; color: #666; margin-top: 6px; line-height: 1.4;">
-                                            Used for scheduled CSV conversion import. Configure the import URL under
-                                            <a href="?page=settings&tab=integrations" style="color: #3d5a26;">Settings → Integrations</a>.
-                                        </div>
-                                    <?php endif; ?>
-                                </div>
-                                <?php endforeach; ?>
-                                
-                                <div style="margin-top: 12px; padding: 10px; background: #fff3cd; border-radius: 4px; border-left: 3px solid #ff9800;">
-                                    <p style="margin: 0; font-size: 11px; color: #856404; line-height: 1.4;">
-                                        <strong>Note:</strong> Custom postbacks configured below will fire for all traffic sources. Use this section only to select platform-specific integrations (Facebook CAPI, Google Ads) per traffic source type.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Custom Postbacks — always available for every traffic source -->
-                        <div id="custom_postbacks_section" style="margin-bottom: 24px;">
-                            <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">
-                                Custom Postbacks (Optional)
-                            </label>
-                            <?php if (!empty($allCustomPostbacks)): ?>
-                            <div class="custom-postbacks-container" style="border: 2px solid #ddd; border-radius: 4px; padding: 12px; background: #fff; max-height: 200px; overflow-y: auto;">
-                                <?php foreach ($allCustomPostbacks as $postback): ?>
-                                    <label class="custom-postback-item" style="display: flex; align-items: flex-start; gap: 10px; padding: 10px; border-radius: 4px; cursor: pointer; transition: background 0.2s; margin-bottom: 4px;"
-                                           onmouseover="this.style.background='#f5f5f5';"
-                                           onmouseout="this.style.background='transparent';">
-                                        <input type="checkbox" 
-                                               name="custom_postback_ids[]" 
-                                               value="<?= $postback['id'] ?>"
-                                               <?= in_array($postback['id'], $selectedCustomPostbackIds) ? 'checked' : '' ?>
-                                               style="margin-top: 2px; cursor: pointer; width: 18px; height: 18px; flex-shrink: 0;">
-                                        <div class="custom-postback-content" style="flex: 1; min-width: 0;">
-                                            <div style="font-weight: 500; color: #333; margin-bottom: 2px; word-wrap: break-word; overflow-wrap: break-word;">
-                                                <?= htmlspecialchars($postback['name']) ?>
-                                            </div>
-                                            <?php if (!empty($postback['description'])): ?>
-                                                <div style="font-size: 12px; color: #666; word-wrap: break-word; overflow-wrap: break-word;">
-                                                    <?= htmlspecialchars($postback['description']) ?>
-                                                </div>
-                                            <?php endif; ?>
-                                        </div>
-                                    </label>
-                                <?php endforeach; ?>
-                            </div>
-                            <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                                Select one or more postbacks to fire when conversions occur for this campaign (any traffic source).
-                                <a href="?page=settings&tab=integrations" target="_blank" style="color: #3d5a26;">Manage postbacks</a>
-                            </div>
-                            <?php else: ?>
-                            <div style="border: 2px dashed #ddd; border-radius: 4px; padding: 14px; background: #fafafa; color: #666; font-size: 13px; line-height: 1.45;">
-                                No custom postbacks yet. Create outbound postback URLs under
-                                <a href="?page=settings&tab=integrations" target="_blank" style="color: #3d5a26;">Settings → Integrations</a>,
-                                then attach them here — they work for every traffic source (including PropellerAds).
-                            </div>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                </div>
+                <?php include __DIR__ . '/partials/campaign-form-main-settings.php'; ?>
 
                 <!-- Redirect Rules (Accordion) -->
                 <details style="margin-bottom: 24px;">
@@ -3979,6 +3484,11 @@ whop.track("page");
                 </div>
             </div>
 
+            <?php
+            $ringbaLpCodesCompact = false;
+            include __DIR__ . '/partials/campaign-ringba-lp-codes.php';
+            ?>
+
             <!-- CTA Configuration Guide (Only show for LP and Split flows, not DTO) -->
             <?php if (!empty($editCampaign['flow_type']) && $editCampaign['flow_type'] !== 'DTO'): ?>
             <div id="standard-cta-guide-panel" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border: 2px solid #3d5a26; border-radius: 8px; padding: 20px; margin-top: 24px;">
@@ -4730,6 +4240,9 @@ $clickId = $_GET['click_id'] ?? $kumaClickId ?? $_COOKIE['kuma_click_id'] ?? '';
             
             // Whole Facebook block (CAPI, ad account, Meta campaign linking) only when FB is source
             facebookField.style.display = isFacebook ? 'block' : 'none';
+            if (typeof toggleTsIntegrationEmpty === 'function') {
+                toggleTsIntegrationEmpty();
+            }
         }
 
         function toggleGoogleAdsIntegration() {
@@ -4740,21 +4253,43 @@ $clickId = $_GET['click_id'] ?? $kumaClickId ?? $_COOKIE['kuma_click_id'] ?? '';
             const selectedOption = trafficSourceSelect.options[trafficSourceSelect.selectedIndex];
             const isGoogle = selectedOption && selectedOption.getAttribute('data-is-google') === '1';
             googleAdsField.style.display = isGoogle ? 'block' : 'none';
+            if (typeof toggleTsIntegrationEmpty === 'function') {
+                toggleTsIntegrationEmpty();
+            }
+        }
+
+        function toggleTsIntegrationEmpty() {
+            const empty = document.getElementById('ts_integration_empty');
+            const facebookField = document.getElementById('facebook_integration_field');
+            const googleAdsField = document.getElementById('google_ads_integration_field');
+            if (!empty) return;
+            const fbOn = facebookField && facebookField.style.display !== 'none';
+            const gaOn = googleAdsField && googleAdsField.style.display !== 'none';
+            empty.style.display = (fbOn || gaOn) ? 'none' : 'block';
         }
 
         function toggleHoneycombBindings() {
             const trafficSourceSelect = document.getElementById('traffic_source_id');
             const wrap = document.getElementById('honeycomb_binding_fields');
+            const section = document.getElementById('campaign-form-section-honeycomb');
             if (!trafficSourceSelect || !wrap) return;
             const selectedOption = trafficSourceSelect.options[trafficSourceSelect.selectedIndex];
             const providerKey = selectedOption ? (selectedOption.getAttribute('data-provider-key') || '') : '';
             let any = false;
             wrap.querySelectorAll('.honeycomb-binding-panel').forEach(function (panel) {
-                const match = providerKey !== '' && panel.getAttribute('data-provider-key') === providerKey;
+                const always = panel.getAttribute('data-always-visible') === '1'
+                    || panel.getAttribute('data-provider-key') === '*';
+                const match = always || (providerKey !== '' && panel.getAttribute('data-provider-key') === providerKey);
                 panel.style.display = match ? 'block' : 'none';
                 if (match) any = true;
             });
             wrap.style.display = any ? 'block' : 'none';
+            if (section) {
+                section.style.display = any ? '' : 'none';
+            }
+            if (typeof toggleRingbaLpCodes === 'function') {
+                toggleRingbaLpCodes();
+            }
         }
 
         function toggleWhopLpCodes() {
@@ -6484,6 +6019,9 @@ if (!empty(\$_GET['click_id'])) {
         document.addEventListener('DOMContentLoaded', function() {
             toggleFacebookIntegration();
             toggleGoogleAdsIntegration();
+            if (typeof toggleTsIntegrationEmpty === 'function') {
+                toggleTsIntegrationEmpty();
+            }
             if (typeof toggleHoneycombBindings === 'function') {
                 toggleHoneycombBindings();
             }
@@ -6504,6 +6042,9 @@ if (!empty(\$_GET['click_id'])) {
         } else {
             toggleFacebookIntegration();
             toggleGoogleAdsIntegration();
+            if (typeof toggleTsIntegrationEmpty === 'function') {
+                toggleTsIntegrationEmpty();
+            }
             if (typeof toggleHoneycombBindings === 'function') {
                 toggleHoneycombBindings();
             }
@@ -6710,7 +6251,11 @@ if (!empty(\$_GET['click_id'])) {
 <?php
 $fbPickerJsPath = __DIR__ . '/../public/assets/js/facebook-campaign-picker.js';
 $fbPickerJs = ASSETS_BASE_URL . '/assets/js/facebook-campaign-picker.js?v=' . (file_exists($fbPickerJsPath) ? filemtime($fbPickerJsPath) : '1');
+$ringbaJsPath = __DIR__ . '/../public/assets/js/campaign-ringba.js';
+$ringbaJs = ASSETS_BASE_URL . '/assets/js/campaign-ringba.js?v=' . (file_exists($ringbaJsPath) ? filemtime($ringbaJsPath) : '1');
 ?>
+<script>window.APP_BASE_URL = <?= json_encode(rtrim(APP_BASE_URL, '/'), JSON_THROW_ON_ERROR) ?>;</script>
+<script src="<?= htmlspecialchars($ringbaJs) ?>"></script>
 <script src="<?= htmlspecialchars($fbPickerJs) ?>"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
@@ -6718,6 +6263,9 @@ document.addEventListener('DOMContentLoaded', function () {
         window.FacebookCampaignPicker.init({
             selectedCampaignId: <?= json_encode($editCampaign ? ($editCampaign['facebook_marketing_campaign_id'] ?? null) : null) ?>,
         });
+    }
+    if (typeof toggleRingbaLpCodes === 'function') {
+        toggleRingbaLpCodes();
     }
 });
 </script>

@@ -154,13 +154,36 @@ foreach ($trafficSources as $ts) {
 
 $tokenCount = max(3, count($_POST['custom_token_name'] ?? []));
 
+$inactiveRedirectCampaignOptions = $campaign->getActiveOptionsForInactiveRedirect(null);
+
 // Honeycomb / Whop Ads (wizard parity with campaign editor)
 $honeycombAddonsByProvider = [];
 $honeycombBindingsBySlug = [];
+$honeycombCampaignFieldProviders = [];
 $whopBizAccountId = '';
+$ringbaAddonEnabled = false;
+$ringbaBindingExtra = [
+    'click_param' => 'click_id',
+    'js_tag_id' => '',
+    'number_to_replace' => '',
+];
 try {
     $honeyFields = new \SimpleKuma\Honeycomb\HoneycombCampaignFields($db);
     $honeycombAddonsByProvider = $honeyFields->enabledByProviderKey();
+    $honeycombCampaignFieldProviders = $honeyFields->campaignFieldsProviders();
+    foreach ($honeycombCampaignFieldProviders as $honeyProvider) {
+        if ($honeyProvider->addonSlug() === 'ringba') {
+            $ringbaAddonEnabled = true;
+        }
+    }
+    $honeyPost = is_array($_POST['honeycomb_binding']['ringba'] ?? null) ? $_POST['honeycomb_binding']['ringba'] : [];
+    if ($honeyPost !== []) {
+        $ringbaBindingExtra = [
+            'click_param' => (string) ($honeyPost['click_param'] ?? 'click_id'),
+            'js_tag_id' => (string) ($honeyPost['js_tag_id'] ?? ''),
+            'number_to_replace' => (string) ($honeyPost['number_to_replace'] ?? ''),
+        ];
+    }
     if (isset($honeycombAddonsByProvider['whop'])) {
         $whopCredStore = new \SimpleKuma\Honeycomb\CredentialStore($db);
         foreach ($whopCredStore->listByAddon('whop-ads') as $whopMeta) {

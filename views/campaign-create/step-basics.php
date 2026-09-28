@@ -66,3 +66,15 @@
            style="width:100%;padding:9px 12px;border:2px solid #ddd;border-radius:4px;font-size:13px;">
     <div style="font-size:12px;color:#666;margin-top:4px;">Organize and filter your campaigns by tags.</div>
 </div>
+
+<?php
+$inactiveRedirectMode = cc_input('inactive_redirect_mode', 'off');
+$inactiveRedirectCampaignId = cc_input('inactive_redirect_campaign_id') !== ''
+    ? (int) cc_input('inactive_redirect_campaign_id')
+    : null;
+$inactiveRedirectUrl = cc_input('inactive_redirect_url');
+$inactiveRedirectExcludeId = null;
+$inactiveRedirectCampaignOptions = $inactiveRedirectCampaignOptions ?? [];
+$inactiveRedirectCompact = true;
+include __DIR__ . '/../partials/campaign-inactive-redirect-fields.php';
+?>

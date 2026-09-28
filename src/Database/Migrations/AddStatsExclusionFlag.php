@@ -253,16 +253,19 @@ final class AddStatsExclusionFlag
     }
 
     /**
-     * DELETE+rebuild clicks_stats_by_token_daily for one UTC summary_date from raw clicks.
+     * DELETE+rebuild clicks_stats_by_token_daily and clicks_stats_by_token_hourly
+     * for one UTC summary_date from raw clicks.
      * Skips the DELETE when clicks + clicks_archive are empty for that date so purged
-     * history in the token table is left intact.
+     * history in the token tables is left intact.
      */
     public static function rebuildTokenSummaryDate(
         mysqli $db,
         string $summaryDate,
         bool $hasArchive
     ): ?string {
-        if (!self::tableExists($db, 'clicks_stats_by_token_daily')) {
+        $hasDaily = self::tableExists($db, 'clicks_stats_by_token_daily');
+        $hasHourly = self::tableExists($db, 'clicks_stats_by_token_hourly');
+        if (!$hasDaily && !$hasHourly) {
             return null;
         }
 
@@ -275,21 +278,40 @@ final class AddStatsExclusionFlag
         }
 
         $db->begin_transaction();
-        $delete = $db->prepare(
-            'DELETE FROM clicks_stats_by_token_daily WHERE summary_date = ?'
-        );
-        if ($delete === false) {
-            $db->rollback();
-            return "Could not prepare token summary rebuild for {$summaryDate}: {$db->error}";
-        }
-        $delete->bind_param('s', $summaryDate);
-        if (!$delete->execute()) {
-            $error = $delete->error;
+        if ($hasDaily) {
+            $delete = $db->prepare(
+                'DELETE FROM clicks_stats_by_token_daily WHERE summary_date = ?'
+            );
+            if ($delete === false) {
+                $db->rollback();
+                return "Could not prepare token summary rebuild for {$summaryDate}: {$db->error}";
+            }
+            $delete->bind_param('s', $summaryDate);
+            if (!$delete->execute()) {
+                $error = $delete->error;
+                $delete->close();
+                $db->rollback();
+                return "Could not clear token summaries for {$summaryDate}: {$error}";
+            }
             $delete->close();
-            $db->rollback();
-            return "Could not clear token summaries for {$summaryDate}: {$error}";
         }
-        $delete->close();
+        if ($hasHourly) {
+            $deleteH = $db->prepare(
+                'DELETE FROM clicks_stats_by_token_hourly WHERE summary_date = ?'
+            );
+            if ($deleteH === false) {
+                $db->rollback();
+                return "Could not prepare token hourly rebuild for {$summaryDate}: {$db->error}";
+            }
+            $deleteH->bind_param('s', $summaryDate);
+            if (!$deleteH->execute()) {
+                $error = $deleteH->error;
+                $deleteH->close();
+                $db->rollback();
+                return "Could not clear token hourly summaries for {$summaryDate}: {$error}";
+            }
+            $deleteH->close();
+        }
 
         $archiveUnion = $hasArchive
             ? ' UNION ALL
@@ -300,6 +322,7 @@ final class AddStatsExclusionFlag
         $exclusions = StatsViewExclusions::andClickWhereSql($db, 'cl');
         $sql = "
             SELECT cl.campaign_id, cl.traffic_source_id, cl.click_id, DATE(cl.ts) summary_date,
+                   HOUR(cl.ts) summary_hour,
                    cl.ip, cl.ua, cl.lp_click, cl.cost, cl.extra_json,
                    COALESCE(conv.conversion_count, 0) conversion_count,
                    COALESCE(conv.revenue_sum, 0) revenue_sum
@@ -350,6 +373,7 @@ final class AddStatsExclusionFlag
             $cost = $row['cost'] !== null ? (float)$row['cost'] : null;
             $ua = $row['ua'] !== null ? (string)$row['ua'] : null;
             $ip = $row['ip'] !== null ? (string)$row['ip'] : null;
+            $summaryHour = isset($row['summary_hour']) ? (int)$row['summary_hour'] : null;
 
             $updater->upsertTokenAggregatesForClick(
                 $campaignId,
@@ -362,7 +386,9 @@ final class AddStatsExclusionFlag
                 0.0,
                 $ua,
                 $ip,
-                true
+                true,
+                0,
+                $summaryHour
             );
             $conversionCount = (int)$row['conversion_count'];
             if ($conversionCount > 0) {
@@ -377,7 +403,9 @@ final class AddStatsExclusionFlag
                     (float)$row['revenue_sum'],
                     $ua,
                     $ip,
-                    true
+                    true,
+                    0,
+                    $summaryHour
                 );
             }
         }

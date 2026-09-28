@@ -433,6 +433,56 @@ body.auth-page .login-header .retro-text {
     color: var(--color-gray-600) !important;
 }
 
+[data-theme-base="dark"] .campaigns-page .campaign-form-section {
+    background: var(--bg-secondary, #1e1e1e);
+    border-color: #3a3a3a;
+    box-shadow: none;
+}
+
+[data-theme-base="dark"] .campaigns-page .campaign-form-section__header {
+    background: #252525;
+    border-bottom-color: #3a3a3a;
+}
+
+[data-theme-base="dark"] .campaigns-page .campaign-form-section__title {
+    color: #c5d4b0;
+}
+
+[data-theme-base="dark"] .campaigns-page .campaign-form-section__subtitle,
+[data-theme-base="dark"] .campaigns-page .campaign-form-hint,
+[data-theme-base="dark"] .campaigns-page .campaign-form-empty {
+    color: var(--color-gray-600, #a0a0a0);
+}
+
+[data-theme-base="dark"] .campaigns-page .campaign-form-label,
+[data-theme-base="dark"] .campaigns-page .campaign-form-check-title {
+    color: var(--text-primary, #e5e5e5);
+}
+
+[data-theme-base="dark"] .campaigns-page .campaign-form-panel,
+[data-theme-base="dark"] .campaigns-page .campaign-form-info,
+[data-theme-base="dark"] .campaigns-page .campaign-form-checklist {
+    background: #252525;
+    border-color: #3a3a3a;
+    color: var(--text-primary, #e5e5e5);
+}
+
+[data-theme-base="dark"] .campaigns-page .campaign-form-check-item:hover {
+    background: #2a2a2a;
+}
+
+[data-theme-base="dark"] .campaigns-page .campaign-form-empty--dashed {
+    background: #1a1a1a;
+}
+
+[data-theme-base="dark"] .campaigns-page .campaign-form-meta-heading {
+    color: #a8b89a;
+}
+
+[data-theme-base="dark"] .campaigns-page .campaign-form-meta-campaign {
+    border-top-color: #3a3a3a;
+}
+
 [data-theme-base="dark"] .campaigns-page [style*="background: #fafafa"],
 [data-theme-base="dark"] .campaigns-page [style*="background:#fafafa"] {
     background: var(--color-gray-100) !important;

@@ -78,6 +78,10 @@ class CampaignFormParser
             'custom_tokens' => self::parseCustomTokens($post),
             'redirect_rules' => self::parseRedirectRules($post),
         ];
+        $data = array_merge($data, InactiveRedirectParser::fromInput($post));
+        if (!$isCreate && $origCampaign && !empty($origCampaign['id'])) {
+            $data['_editing_campaign_id'] = (int) $origCampaign['id'];
+        }
 
         $errors = $campaign->validate($data);
 
@@ -193,6 +197,10 @@ class CampaignFormParser
             'custom_tokens' => $customTokens,
             'redirect_rules' => $redirectRules,
         ];
+        $data = array_merge($data, InactiveRedirectParser::fromInput($input));
+        if (!$isCreate && $origCampaign && !empty($origCampaign['id'])) {
+            $data['_editing_campaign_id'] = (int) $origCampaign['id'];
+        }
 
         $errors = $campaign->validate($data);
 

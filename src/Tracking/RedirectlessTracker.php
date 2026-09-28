@@ -647,7 +647,10 @@ class RedirectlessTracker
                     0,
                     0.0,
                     $ua,
-                    $ip
+                    $ip,
+                    false,
+                    0,
+                    (int) gmdate('G')
                 );
             }
         } catch (\Throwable $e) {

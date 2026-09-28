@@ -16,7 +16,7 @@ final class HoneycombCampaignFields
     }
 
     /**
-     * Enabled traffic_source addons keyed by provider_key.
+     * Enabled traffic_source addons that provide campaign_fields, keyed by provider_key.
      *
      * @return array<string, array{slug: string, name: string, provider_key: string, provides: list<string>}>
      */
@@ -36,12 +36,66 @@ final class HoneycombCampaignFields
             if (!is_array($provides)) {
                 $provides = [];
             }
+            $provides = array_values(array_filter($provides, 'is_string'));
+            if (!in_array('campaign_fields', $provides, true)) {
+                continue;
+            }
             $out[$key] = [
                 'slug' => (string) $row['slug'],
                 'name' => (string) ($row['name'] ?? $row['slug']),
                 'provider_key' => $key,
-                'provides' => array_values(array_filter($provides, 'is_string')),
+                'provides' => $provides,
             ];
+        }
+        return $out;
+    }
+
+    /**
+     * Campaign editor field providers: kernel-registered first, then generic fallback
+     * for any enabled campaign_fields addon that did not register its own provider.
+     *
+     * @return list<CampaignFieldsProvider>
+     */
+    public function campaignFieldsProviders(): array
+    {
+        $bySlug = [];
+        try {
+            foreach ((new AddonLoader($this->db))->kernel()->campaignFieldsProviders() as $provider) {
+                $bySlug[$provider->addonSlug()] = $provider;
+            }
+        } catch (\Throwable $e) {
+            // Kernel boot failed — still try generic panels from manifests.
+        }
+
+        foreach ($this->enabledByProviderKey() as $meta) {
+            $slug = (string) $meta['slug'];
+            if (!isset($bySlug[$slug])) {
+                $bySlug[$slug] = GenericBindingCampaignFields::fromAddonMeta($meta);
+            }
+        }
+
+        $list = array_values($bySlug);
+        usort(
+            $list,
+            static fn(CampaignFieldsProvider $a, CampaignFieldsProvider $b): int => $a->priority() <=> $b->priority()
+        );
+        return $list;
+    }
+
+    /**
+     * Providers keyed by traffic_sources.provider_key for show/hide panels.
+     *
+     * @return array<string, CampaignFieldsProvider>
+     */
+    public function campaignFieldsProvidersByProviderKey(): array
+    {
+        $out = [];
+        foreach ($this->campaignFieldsProviders() as $provider) {
+            $key = trim($provider->providerKey());
+            if ($key === '') {
+                continue;
+            }
+            $out[$key] = $provider;
         }
         return $out;
     }
@@ -242,11 +296,22 @@ final class HoneycombCampaignFields
         }
         $store = new BindingStore($this->db);
         $creds = new CredentialStore($this->db);
+        $providersBySlug = [];
+        foreach ($this->campaignFieldsProviders() as $provider) {
+            $providersBySlug[$provider->addonSlug()] = $provider;
+        }
         foreach ($block as $slug => $fields) {
             if (!is_string($slug) || !is_array($fields)) {
                 continue;
             }
             if (preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $slug) !== 1) {
+                continue;
+            }
+            if (isset($providersBySlug[$slug])) {
+                $fields = $providersBySlug[$slug]->normalizeBindingFields($fields);
+            }
+            if (!empty($fields['_clear'])) {
+                $store->delete($campaignId, $slug);
                 continue;
             }
             $account = trim((string) ($fields['remote_account_id'] ?? ''));
@@ -255,6 +320,14 @@ final class HoneycombCampaignFields
             $exportOn = !empty($fields['conversion_export']);
             $eventName = trim((string) ($fields['event_name'] ?? ''));
             $extra = [];
+            if (isset($fields['extra']) && is_array($fields['extra'])) {
+                foreach ($fields['extra'] as $ek => $ev) {
+                    if (!is_string($ek) || $ek === '') {
+                        continue;
+                    }
+                    $extra[$ek] = $ev;
+                }
+            }
             if ($credId > 0) {
                 $extra['credential_id'] = $credId;
             } else {

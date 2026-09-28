@@ -231,19 +231,60 @@
         }
         const multiConvCb = form.querySelector('[name="allow_multiple_conversions"]');
         const multiConv = multiConvCb && multiConvCb.checked ? 'Yes' : 'No';
+        const edgeCb = form.querySelector('[name="edge_enabled"]');
+        const edgeOn = edgeCb && edgeCb.checked ? 'Yes' : 'No';
         const tagsInput = form.querySelector('[name="tags"]');
         const tagsVal = tagsInput && tagsInput.value.trim() ? tagsInput.value.trim() : '—';
+        const inactiveModeSel = form.querySelector('[name="inactive_redirect_mode"]');
+        let inactiveRedirectLabel = 'Off';
+        if (inactiveModeSel) {
+            const mode = inactiveModeSel.value;
+            if (mode === 'campaign') {
+                const campSel = form.querySelector('[name="inactive_redirect_campaign_id"]');
+                inactiveRedirectLabel = campSel && campSel.value
+                    ? ('Campaign: ' + campSel.selectedOptions[0].text.trim())
+                    : 'Another campaign (not selected)';
+            } else if (mode === 'url') {
+                const urlInput = form.querySelector('[name="inactive_redirect_url"]');
+                inactiveRedirectLabel = urlInput && urlInput.value.trim()
+                    ? ('URL: ' + urlInput.value.trim())
+                    : 'Custom URL (empty)';
+            }
+        }
+        const capiSel = form.querySelector('[name="facebook_capi_integration_id"]');
+        const capiLabel = (capiSel && capiSel.value && capiSel.selectedOptions[0])
+            ? capiSel.selectedOptions[0].text.trim()
+            : '—';
+        let honeycombSummary = '—';
+        const honeyWrap = document.getElementById('honeycomb_binding_fields');
+        if (honeyWrap) {
+            const enabled = [];
+            honeyWrap.querySelectorAll('.honeycomb-binding-panel').forEach(function (panel) {
+                if (panel.style.display === 'none') return;
+                const slug = panel.getAttribute('data-addon-slug') || '';
+                const cb = panel.querySelector('input[type="checkbox"][name*="[enabled]"]');
+                if (cb && cb.checked) {
+                    const title = (panel.querySelector('strong') || {}).textContent || slug || 'Addon';
+                    enabled.push(String(title).replace(/\s*\(Honeycomb\)\s*$/i, '').trim() || slug);
+                }
+            });
+            if (enabled.length) honeycombSummary = enabled.join(', ');
+        }
         let html =
             '<dt>Campaign name</dt><dd>' + escapeHtml(name) + '</dd>' +
             '<dt>Tags</dt><dd>' + escapeHtml(tagsVal) + '</dd>' +
             '<dt>Status</dt><dd>' + escapeHtml(status) + '</dd>' +
+            '<dt>When paused/archived</dt><dd>' + escapeHtml(inactiveRedirectLabel) + '</dd>' +
             '<dt>Referrer privacy</dt><dd>' + escapeHtml(referrerMode) + '</dd>' +
             '<dt>Traffic source</dt><dd>' + escapeHtml(ts) + '</dd>' +
+            '<dt>Meta CAPI</dt><dd>' + escapeHtml(capiLabel) + '</dd>' +
             '<dt>Facebook ad account</dt><dd>' + escapeHtml(fbAcct) + '</dd>' +
             '<dt>Meta campaign</dt><dd>' + escapeHtml(fbCamp) + '</dd>' +
+            '<dt>Honeycomb</dt><dd>' + escapeHtml(honeycombSummary) + '</dd>' +
             '<dt>Flow type</dt><dd>' + escapeHtml(flow) + '</dd>' +
             '<dt>Enabled offers</dt><dd>' + offers + '</dd>' +
-            '<dt>Multiple conversions / click</dt><dd>' + multiConv + '</dd>';
+            '<dt>Multiple conversions / click</dt><dd>' + multiConv + '</dd>' +
+            '<dt>Edge redirect</dt><dd>' + edgeOn + '</dd>';
         if (isWhopTrafficSourceSelected()) {
             html += '<dt>Whop ad destination</dt><dd>' + escapeHtml(lpUrl) + '</dd>';
         }
@@ -340,17 +381,26 @@
 
     window.toggleHoneycombBindings = function () {
         const wrap = document.getElementById('honeycomb_binding_fields');
+        const section = document.getElementById('campaign-form-section-honeycomb');
         const ts = document.getElementById('traffic_source_id');
         if (!wrap || !ts) return;
         const opt = ts.options[ts.selectedIndex];
         const providerKey = opt ? (opt.getAttribute('data-provider-key') || '') : '';
         let any = false;
         wrap.querySelectorAll('.honeycomb-binding-panel').forEach(function (panel) {
-            const match = providerKey !== '' && panel.getAttribute('data-provider-key') === providerKey;
+            const always = panel.getAttribute('data-always-visible') === '1'
+                || panel.getAttribute('data-provider-key') === '*';
+            const match = always || (providerKey !== '' && panel.getAttribute('data-provider-key') === providerKey);
             panel.style.display = match ? 'block' : 'none';
             if (match) any = true;
         });
         wrap.style.display = any ? 'block' : 'none';
+        if (section) {
+            section.style.display = any ? '' : 'none';
+        }
+        if (typeof window.toggleRingbaLpCodes === 'function') {
+            window.toggleRingbaLpCodes();
+        }
     };
 
     window.syncWhopWizardUi = function () {

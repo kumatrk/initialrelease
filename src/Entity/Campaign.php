@@ -217,6 +217,7 @@ class Campaign
             $this->saveTags((int)$newId, $data);
             $this->saveMinPostbackPayout((int)$newId, $data);
             $this->persistAllowMultipleConversions((int)$newId, $data);
+            $this->persistInactiveRedirect((int)$newId, $data);
             $this->persistEdgeFlags((int)$newId, $data);
             \SimpleKuma\Edge\EdgeCampaignSync::hookAfterSave($this->db, (int)$newId);
         }
@@ -755,6 +756,7 @@ class Campaign
             $this->saveTags($id, $data);
             $this->saveMinPostbackPayout($id, $data);
             $this->persistAllowMultipleConversions($id, $data);
+            $this->persistInactiveRedirect($id, $data);
             $this->persistEdgeFlags($id, $data);
             \SimpleKuma\Edge\EdgeCampaignSync::hookAfterSave($this->db, $id);
         }
@@ -845,6 +847,92 @@ class Campaign
     }
 
     /**
+     * Persist inactive redirect settings after main INSERT/UPDATE (migration 095).
+     *
+     * @param array<string, mixed> $data
+     */
+    private function persistInactiveRedirect(int $campaignId, array $data): void
+    {
+        if (!$this->campaignsTableHasInactiveRedirect()) {
+            return;
+        }
+        if (!array_key_exists('inactive_redirect_mode', $data)) {
+            return;
+        }
+
+        $parsed = \SimpleKuma\Campaign\InactiveRedirectParser::fromInput($data);
+        $mode = $parsed['inactive_redirect_mode'];
+        $targetId = $parsed['inactive_redirect_campaign_id'];
+        $url = $parsed['inactive_redirect_url'];
+
+        if ($mode === \SimpleKuma\Campaign\InactiveRedirectParser::MODE_CAMPAIGN && $targetId !== null) {
+            $check = $this->db->prepare("SELECT id, status FROM campaigns WHERE id = ? LIMIT 1");
+            if ($check) {
+                $check->bind_param('i', $targetId);
+                $check->execute();
+                $row = $check->get_result()->fetch_assoc();
+                $check->close();
+                if (!$row || ($row['status'] ?? '') !== 'active' || (int) $row['id'] === $campaignId) {
+                    $mode = \SimpleKuma\Campaign\InactiveRedirectParser::MODE_OFF;
+                    $targetId = null;
+                    $url = null;
+                }
+            }
+        }
+
+        // Nullable INT/URL: prepared bind (PHP 8.1+ sends SQL NULL for null vars)
+        $stmt = $this->db->prepare(
+            'UPDATE campaigns SET inactive_redirect_mode = ?, inactive_redirect_campaign_id = ?, inactive_redirect_url = ? WHERE id = ?'
+        );
+        if (!$stmt) {
+            return;
+        }
+        $targetBind = $targetId;
+        $urlBind = $url;
+        $stmt->bind_param('sisi', $mode, $targetBind, $urlBind, $campaignId);
+        $stmt->execute();
+        $stmt->close();
+    }
+
+    private function campaignsTableHasInactiveRedirect(): bool
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+        $result = $this->db->query("SHOW COLUMNS FROM campaigns LIKE 'inactive_redirect_mode'");
+        $cached = $result && $result->num_rows > 0;
+        return $cached;
+    }
+
+    /**
+     * Active campaigns for inactive-redirect picker (id + name + status).
+     *
+     * @return list<array{id: int, name: string, status: string}>
+     */
+    public function getActiveOptionsForInactiveRedirect(?int $excludeId = null): array
+    {
+        $sql = "SELECT id, name, status FROM campaigns WHERE status = 'active'";
+        if ($excludeId !== null && $excludeId > 0) {
+            $sql .= ' AND id != ' . (int) $excludeId;
+        }
+        $sql .= ' ORDER BY name ASC';
+        $result = $this->db->query($sql);
+        if (!$result) {
+            return [];
+        }
+        $rows = [];
+        while ($row = $result->fetch_assoc()) {
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'name' => (string) $row['name'],
+                'status' => (string) $row['status'],
+            ];
+        }
+        return $rows;
+    }
+
+    /**
      * Persist edge_enabled after main INSERT/UPDATE (column from migration 083).
      *
      * @param array<string, mixed> $data
@@ -892,6 +980,34 @@ class Campaign
             $errors['flow_type'] = 'Flow type is required';
         } elseif (!in_array($data['flow_type'], ['DTO', 'LP', 'Split'], true)) {
             $errors['flow_type'] = 'Invalid flow type';
+        }
+
+        $editingId = isset($data['_editing_campaign_id']) ? (int) $data['_editing_campaign_id'] : null;
+        $inactiveErrors = \SimpleKuma\Campaign\InactiveRedirectParser::validateFields(
+            \SimpleKuma\Campaign\InactiveRedirectParser::fromInput($data),
+            $editingId > 0 ? $editingId : null
+        );
+        foreach ($inactiveErrors as $field => $message) {
+            $errors[$field] = $message;
+        }
+        if (
+            empty($inactiveErrors)
+            && ($data['inactive_redirect_mode'] ?? 'off') === \SimpleKuma\Campaign\InactiveRedirectParser::MODE_CAMPAIGN
+            && !empty($data['inactive_redirect_campaign_id'])
+        ) {
+            $targetId = (int) $data['inactive_redirect_campaign_id'];
+            $chk = $this->db->prepare("SELECT id, status FROM campaigns WHERE id = ? LIMIT 1");
+            if ($chk) {
+                $chk->bind_param('i', $targetId);
+                $chk->execute();
+                $target = $chk->get_result()->fetch_assoc();
+                $chk->close();
+                if (!$target) {
+                    $errors['inactive_redirect_campaign_id'] = 'Target campaign was not found.';
+                } elseif (($target['status'] ?? '') !== 'active') {
+                    $errors['inactive_redirect_campaign_id'] = 'Target campaign must be active.';
+                }
+            }
         }
 
         // Validate rotation has at least one destination

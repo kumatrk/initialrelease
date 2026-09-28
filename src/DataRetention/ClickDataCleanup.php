@@ -15,7 +15,8 @@ if (!class_exists(SettingsManager::class)) {
 /**
  * Age-based purge of raw click rows (hot + archive) and their conversions.
  *
- * Intentionally does NOT touch clicks_daily_summary or clicks_stats_by_token_daily.
+ * Intentionally does NOT touch clicks_daily_summary, clicks_stats_by_token_daily,
+ * or clicks_stats_by_token_hourly.
  * Hermes campaign KPI / chart / offer / LP / token reports stay on the pre-agg fast path
  * after raw data is removed. Geo/device/visitor-log drill-downs for purged days will be empty.
  */
@@ -41,7 +42,7 @@ class ClickDataCleanup
 
         $cutoffDate = date('Y-m-d H:i:s', strtotime("-{$retentionDays} days"));
         echo "Purging raw clicks/conversions older than {$retentionDays} days (before {$cutoffDate})...\n";
-        echo "Keeping clicks_daily_summary / clicks_stats_by_token_daily for historical KPI reports.\n";
+        echo "Keeping clicks_daily_summary / clicks_stats_by_token_daily / clicks_stats_by_token_hourly for historical KPI reports.\n";
 
         $hasArchive = false;
         $check = $db->query("SHOW TABLES LIKE 'clicks_archive'");

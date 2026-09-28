@@ -62,51 +62,81 @@ use SimpleKuma\Release\TrafficSourceReleaseHelper;
     </label>
 </div>
 
+<div style="margin-bottom: 20px; padding: 14px; background: #eef6fb; border: 1px solid #b3d4e8; border-radius: 6px;">
+    <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+        <input type="checkbox" name="edge_enabled" value="1" id="wizard_edge_enabled"
+               <?= cc_checked(!empty(cc_input('edge_enabled'))) ?>
+               style="margin-top: 3px;">
+        <span>
+            <span style="display: block; font-weight: 600; margin-bottom: 4px;">Edge redirect (Cloudflare Worker)</span>
+            <span style="display: block; font-size: 12px; color: #666; line-height: 1.45;">
+                Serve redirects from Cloudflare’s edge for lower latency. Requires Edge Redirect under
+                <a href="?page=settings&amp;tab=edge-redirect" target="_blank" style="color:#0d47a1;">Settings</a>.
+                Phase 1 supports standard 302 only (not referrer privacy modes). You can fine-tune sync status after create.
+            </span>
+        </span>
+    </label>
+</div>
+
 <div id="facebook_integration_field" style="margin-bottom: 20px; display: none;">
-    <label style="display: block; font-weight: 600; margin-bottom: 8px;">Facebook CAPI Integration (Optional)</label>
-    <select name="facebook_capi_integration_id" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:4px;">
-        <option value="">No Facebook Integration</option>
-        <?php foreach ($facebookIntegrations as $fbIntegration): ?>
-            <option value="<?= $fbIntegration['id'] ?>" <?= cc_selected(cc_input('facebook_capi_integration_id'), $fbIntegration['id']) ?>>
-                <?= htmlspecialchars($fbIntegration['name']) ?>
-            </option>
-        <?php endforeach; ?>
-    </select>
-
-    <div style="margin-top: 16px;">
-        <label style="display: block; font-weight: 600; margin-bottom: 8px;">Facebook Ad Account (Optional)</label>
-        <select name="facebook_marketing_ad_account_id" id="facebook_marketing_ad_account_id" style="width:100%;padding:10px;border:2px solid #ddd;border-radius:4px;">
-            <option value="">No Facebook Ad Account</option>
-            <?php foreach ($allFacebookAdAccounts as $adAccount): ?>
-                <option value="<?= $adAccount['id'] ?>" <?= cc_selected(cc_input('facebook_marketing_ad_account_id'), $adAccount['id']) ?>>
-                    <?= htmlspecialchars($adAccount['ad_account_name']) ?>
-                </option>
-            <?php endforeach; ?>
-        </select>
-
-        <div id="facebook_meta_campaign_field" style="margin-top: 16px;">
-            <div style="background: #f5f8f2; border: 1px solid #c5d4b8; border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; font-size: 13px; color: #444; line-height: 1.45;">
-                <strong style="color: #3d5a26;">Meta campaign for cost tracking</strong><br>
-                Choose the Facebook/Meta campaign whose ad spend you want Kuma to pull into reports.
-                Pick your ad account above first, click <strong>Refresh Meta campaigns</strong>, then select the matching campaign.
-                Optional — leave blank to infer costs from clicks only (slower, less accurate on large ad accounts).
+    <div class="campaign-form-grid campaign-form-grid--2 campaign-form-meta-peers">
+        <div class="campaign-form-meta-col">
+            <div class="campaign-form-meta-heading">Conversion reporting</div>
+            <label class="campaign-form-label" for="facebook_capi_integration_id">Meta Conversions API (CAPI)</label>
+            <select name="facebook_capi_integration_id" id="facebook_capi_integration_id" class="campaign-form-input">
+                <option value="">No CAPI integration</option>
+                <?php foreach ($facebookIntegrations as $fbIntegration): ?>
+                    <option value="<?= $fbIntegration['id'] ?>" <?= cc_selected(cc_input('facebook_capi_integration_id'), $fbIntegration['id']) ?>>
+                        <?= htmlspecialchars($fbIntegration['name']) ?> (<?= htmlspecialchars((string) ($fbIntegration['pixel_id'] ?? '')) ?>)
+                    </option>
+                <?php endforeach; ?>
+            </select>
+            <div class="campaign-form-hint">
+                Optional. Sends conversions to Meta.
+                <a href="?page=settings&tab=integrations" target="_blank" class="campaign-form-link">Manage integrations</a>
             </div>
-            <label style="display: block; font-weight: 600; margin-bottom: 8px;">Meta Campaign (optional)</label>
-            <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px;">
-                <button type="button" id="fb_refresh_meta_campaigns_btn" class="btn btn-secondary" style="padding: 8px 14px;">
-                    Refresh Meta campaigns
-                </button>
-                <span id="fb_meta_campaign_status" style="font-size: 12px; color: #666;"></span>
+        </div>
+
+        <div class="campaign-form-meta-col">
+            <div class="campaign-form-meta-heading">Cost tracking</div>
+            <label class="campaign-form-label" for="facebook_marketing_ad_account_id">Ad account</label>
+            <select name="facebook_marketing_ad_account_id" id="facebook_marketing_ad_account_id" class="campaign-form-input">
+                <option value="">No ad account</option>
+                <?php foreach ($allFacebookAdAccounts as $adAccount): ?>
+                    <option value="<?= $adAccount['id'] ?>" <?= cc_selected(cc_input('facebook_marketing_ad_account_id'), $adAccount['id']) ?>>
+                        <?= htmlspecialchars($adAccount['ad_account_name']) ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+            <div class="campaign-form-hint">
+                Which Meta ad account to pull spend from.
+                <a href="?page=settings&tab=api-costs" target="_blank" class="campaign-form-link">Manage integrations</a>
             </div>
+        </div>
+    </div>
+
+    <div id="facebook_meta_campaign_field" class="campaign-form-meta-campaign">
+        <div class="campaign-form-info">
+            <strong>Meta campaign for cost tracking</strong><br>
+            Pick the Meta campaign whose ad spend should land in reports.
+            Choose an ad account above, click <strong>Refresh</strong>, then select the matching campaign.
+            Optional — leave blank to infer costs from clicks only (slower, less accurate on large ad accounts).
+        </div>
+        <label class="campaign-form-label" for="facebook_marketing_campaign_id">Meta campaign (optional)</label>
+        <div class="campaign-form-meta-campaign-row">
             <select name="facebook_marketing_campaign_id" id="facebook_marketing_campaign_id"
-                    style="width:100%;padding:10px;border:2px solid #ddd;border-radius:4px;" disabled>
+                    class="campaign-form-input" disabled>
                 <option value="">Select ad account first</option>
             </select>
-            <p style="font-size: 12px; color: #666; margin-top: 6px;">
-                Only <strong>ACTIVE</strong> campaigns are listed. Sync pulls the latest from Meta for the selected ad account.
-                <a href="?page=settings&tab=api-costs" target="_blank" style="color: #3d5a26;">Manage ad accounts</a>
-            </p>
+            <button type="button" id="fb_refresh_meta_campaigns_btn" class="btn btn-secondary campaign-form-meta-refresh">
+                Refresh
+            </button>
         </div>
+        <span id="fb_meta_campaign_status" class="campaign-form-hint"></span>
+        <p class="campaign-form-hint">
+            Only <strong>ACTIVE</strong> campaigns are listed.
+            <a href="?page=settings&tab=api-costs" target="_blank" class="campaign-form-link">Manage ad accounts</a>
+        </p>
     </div>
 </div>
 
@@ -129,76 +159,18 @@ use SimpleKuma\Release\TrafficSourceReleaseHelper;
     </p>
 </div>
 
-<?php if ($honeycombAddonsByProvider !== []): ?>
-<div id="honeycomb_binding_fields" style="margin-bottom: 20px; display: none;">
-    <?php foreach ($honeycombAddonsByProvider as $providerKey => $addonMeta):
-        $slug = (string) $addonMeta['slug'];
-        $binding = $honeycombBindingsBySlug[$slug] ?? null;
-        $bindingExtra = is_array($binding['extra'] ?? null) ? $binding['extra'] : [];
-        $provides = is_array($addonMeta['provides'] ?? null) ? $addonMeta['provides'] : [];
-        $hasConversionExport = in_array('conversion_export', $provides, true);
-        $hasCostSync = in_array('cost_sync', $provides, true);
-        $exportOn = !empty($bindingExtra['conversion_export']);
-        if ($hasConversionExport && !isset($_POST['honeycomb_binding'][$slug]['conversion_export']) && empty($binding)) {
-            $exportOn = true;
-        }
-        $eventName = (string) ($bindingExtra['event_name'] ?? 'lead');
-        if (!empty($_POST['honeycomb_binding'][$slug]['event_name'])) {
-            $eventName = (string) $_POST['honeycomb_binding'][$slug]['event_name'];
-        }
-        if (isset($_POST['honeycomb_binding'][$slug]['conversion_export'])) {
-            $exportOn = !empty($_POST['honeycomb_binding'][$slug]['conversion_export']);
-        }
-        $remoteAccount = (string) ($_POST['honeycomb_binding'][$slug]['remote_account_id'] ?? $binding['remote_account_id'] ?? '');
-        $remoteCampaign = (string) ($_POST['honeycomb_binding'][$slug]['remote_campaign_id'] ?? $binding['remote_campaign_id'] ?? '');
-    ?>
-        <div class="honeycomb-binding-panel" data-provider-key="<?= htmlspecialchars($providerKey) ?>" style="display:none;margin-bottom:16px;padding:14px;background:#f5f8f2;border:1px solid #c5d4b8;border-radius:6px;">
-            <strong style="color:#3d5a26;"><?= htmlspecialchars((string) $addonMeta['name']) ?> (Honeycomb)</strong>
-            <?php if ($hasConversionExport): ?>
-            <p style="font-size:12px;color:#666;margin:8px 0 12px;line-height:1.45;">
-                Send conversions to this network’s Events API when this campaign converts.
-                Credentials are under <a href="?page=honeycomb" style="color:#3d5a26;">Honeycomb</a>.
-            </p>
-            <label style="display:flex;align-items:center;gap:10px;margin-bottom:12px;cursor:pointer;">
-                <input type="hidden" name="honeycomb_binding[<?= htmlspecialchars($slug) ?>][conversion_export]" value="0">
-                <input type="checkbox"
-                       name="honeycomb_binding[<?= htmlspecialchars($slug) ?>][conversion_export]"
-                       value="1"
-                       <?= $exportOn ? 'checked' : '' ?>
-                       style="width:18px;height:18px;">
-                <span style="font-weight:600;color:#333;">Send conversions to <?= htmlspecialchars((string) $addonMeta['name']) ?></span>
-            </label>
-            <label style="display:block;font-weight:600;margin-bottom:6px;">Event name</label>
-            <select name="honeycomb_binding[<?= htmlspecialchars($slug) ?>][event_name]"
-                    style="width:100%;padding:10px;border:2px solid #ddd;border-radius:4px;margin-bottom:12px;">
-                <?php foreach (['lead', 'schedule', 'contact', 'complete_registration', 'submit_application'] as $ev): ?>
-                    <option value="<?= $ev ?>" <?= $eventName === $ev ? 'selected' : '' ?>><?= $ev ?></option>
-                <?php endforeach; ?>
-            </select>
-            <?php endif; ?>
-            <?php if ($hasCostSync): ?>
-            <p style="font-size:12px;color:#666;margin:<?= $hasConversionExport ? '12px' : '8px' ?> 0 12px;line-height:1.45;">
-                Link this Kuma campaign to the remote account + campaign IDs so Honeycomb can sync ad spend hourly.
-                Credentials are managed under <a href="?page=honeycomb" style="color:#3d5a26;">Honeycomb</a>.
-            </p>
-            <label style="display:block;font-weight:600;margin-bottom:6px;">Remote account ID</label>
-            <input type="text" name="honeycomb_binding[<?= htmlspecialchars($slug) ?>][remote_account_id]"
-                   value="<?= htmlspecialchars($remoteAccount) ?>"
-                   placeholder="e.g. biz_… or advertiser id"
-                   style="width:100%;padding:10px;border:2px solid #ddd;border-radius:4px;margin-bottom:12px;">
-            <label style="display:block;font-weight:600;margin-bottom:6px;">Remote campaign ID</label>
-            <input type="text" name="honeycomb_binding[<?= htmlspecialchars($slug) ?>][remote_campaign_id]"
-                   value="<?= htmlspecialchars($remoteCampaign) ?>"
-                   placeholder="Ad campaign id from the network"
-                   style="width:100%;padding:10px;border:2px solid #ddd;border-radius:4px;">
-            <?php elseif ($hasConversionExport): ?>
-            <input type="hidden" name="honeycomb_binding[<?= htmlspecialchars($slug) ?>][remote_account_id]" value="">
-            <input type="hidden" name="honeycomb_binding[<?= htmlspecialchars($slug) ?>][remote_campaign_id]" value="">
-            <?php endif; ?>
-        </div>
-    <?php endforeach; ?>
-</div>
+<?php if ($honeycombCampaignFieldProviders !== []): ?>
+<?php
+$honeycombPreferExportOnCreate = true;
+$honeycombFieldPost = is_array($_POST['honeycomb_binding'] ?? null) ? $_POST['honeycomb_binding'] : [];
+include __DIR__ . '/../partials/campaign-form-honeycomb-fields.php';
+?>
 <?php endif; ?>
+
+<?php
+$ringbaLpCodesCompact = true;
+include __DIR__ . '/../partials/campaign-ringba-lp-codes.php';
+?>
 
 <div id="traffic_source_postbacks_section" style="display: none;"></div>
 

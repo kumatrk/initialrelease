@@ -2330,7 +2330,6 @@ $settingsTabs = [
     ['slug' => 'geoip', 'label' => 'Geolocation'],
     ['slug' => 'edge-redirect', 'label' => 'Edge Redirect'],
     ['slug' => 'updates', 'label' => 'Updates'],
-    ['slug' => 'honeycomb', 'label' => 'Honeycomb', 'href' => '?page=honeycomb'],
     ['slug' => 'about', 'label' => 'About Kuma'],
 ];
 $settingsTabs = array_values(array_filter(

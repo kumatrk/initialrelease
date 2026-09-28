@@ -155,6 +155,24 @@
         margin: 0 12px 12px;
     }
 
+    .stats-v2-insights-hero {
+        padding: 16px;
+        gap: 12px;
+    }
+
+    .stats-v2-insights-title {
+        font-size: 18px;
+    }
+
+    .stats-v2-insight-card-head {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .stats-v2-insight-metric-toggle {
+        align-self: flex-start;
+    }
+
     .stats-v2-efficiency-grid {
         grid-template-columns: repeat(2, 1fr);
         gap: 8px;

@@ -140,6 +140,10 @@ $statsJsVer = file_exists($statsJsPath) ? (string)filemtime($statsJsPath) : '1';
     </div>
 
     <div class="stats-v2-panel stats-v2-panel-overview active" data-panel="overview">
+        <div class="card stats-v2-efficiency-wrap">
+            <h3>Efficiency metrics</h3>
+            <div class="stats-v2-efficiency-grid" id="stats-v2-overview-efficiency"></div>
+        </div>
         <div class="card stats-v2-chart-wrap">
             <div class="stats-v2-chart-header">
                 <h3>Performance Trend</h3>
@@ -157,10 +161,6 @@ $statsJsVer = file_exists($statsJsPath) ? (string)filemtime($statsJsPath) : '1';
             <div class="stats-v2-chart-body" id="stats-v2-overview-chart-area">
                 <canvas id="stats-v2-overview-chart"></canvas>
             </div>
-        </div>
-        <div class="card stats-v2-efficiency-wrap">
-            <h3>Efficiency metrics</h3>
-            <div class="stats-v2-efficiency-grid" id="stats-v2-overview-efficiency"></div>
         </div>
     </div>
 
@@ -244,24 +244,81 @@ $statsJsVer = file_exists($statsJsPath) ? (string)filemtime($statsJsPath) : '1';
     </div>
 
     <div class="stats-v2-panel stats-v2-panel-chart" data-panel="chart">
-        <div class="card stats-v2-chart-wrap">
-            <div class="stats-v2-chart-toolbar">
-                <select id="stats-v2-chart-granularity">
-                    <option value="auto">Auto</option>
-                    <option value="hour">Hour</option>
-                    <option value="day">Day</option>
-                </select>
-                <div class="stats-v2-chart-metrics">
-                    <label><input type="checkbox" class="chart-metric" value="visitors" checked> Visitors</label>
-                    <label><input type="checkbox" class="chart-metric" value="clicks" checked> Clicks</label>
-                    <label><input type="checkbox" class="chart-metric" value="conversions" checked> Conversions</label>
-                    <label><input type="checkbox" class="chart-metric" value="cost" checked> Cost</label>
-                    <label><input type="checkbox" class="chart-metric" value="revenue" checked> Revenue</label>
+        <div class="stats-v2-insights" id="stats-v2-insights">
+            <div class="stats-v2-insights-hero">
+                <div class="stats-v2-insights-hero-copy">
+                    <p class="stats-v2-insights-kicker">Chart insights</p>
+                    <h2 class="stats-v2-insights-title">When does this campaign win?</h2>
+                    <p class="stats-v2-insights-sub">Hour and day-of-week angles load only when you open this tab — Overview stays fast.</p>
+                </div>
+                <div class="stats-v2-insights-pills" id="stats-v2-insights-highlights" aria-live="polite">
+                    <div class="stats-v2-insight-pill stats-v2-insight-pill--muted">Open tab to load insights…</div>
                 </div>
             </div>
-            <div class="stats-v2-chart-body stats-v2-chart-body--main">
-                <canvas id="stats-v2-chart"></canvas>
+
+            <div class="stats-v2-insights-grid">
+                <article class="card stats-v2-insight-card">
+                    <header class="stats-v2-insight-card-head">
+                        <div>
+                            <h3>By hour</h3>
+                            <p class="stats-v2-insight-card-sub">Profit by hour of day across the selected range</p>
+                        </div>
+                        <div class="stats-v2-insight-metric-toggle" data-insight="hour" role="group" aria-label="Hour chart metric">
+                            <button type="button" class="stats-v2-insight-metric is-active" data-metric="profit">Profit</button>
+                            <button type="button" class="stats-v2-insight-metric" data-metric="visitors">Visitors</button>
+                            <button type="button" class="stats-v2-insight-metric" data-metric="conversions">Conv.</button>
+                        </div>
+                    </header>
+                    <div class="stats-v2-insight-chart-body">
+                        <canvas id="stats-v2-insight-hour"></canvas>
+                    </div>
+                </article>
+
+                <article class="card stats-v2-insight-card">
+                    <header class="stats-v2-insight-card-head">
+                        <div>
+                            <h3>By day of week</h3>
+                            <p class="stats-v2-insight-card-sub">Monday–Sunday performance across the selected range</p>
+                        </div>
+                        <div class="stats-v2-insight-metric-toggle" data-insight="day_of_week" role="group" aria-label="Day chart metric">
+                            <button type="button" class="stats-v2-insight-metric is-active" data-metric="profit">Profit</button>
+                            <button type="button" class="stats-v2-insight-metric" data-metric="visitors">Visitors</button>
+                            <button type="button" class="stats-v2-insight-metric" data-metric="conversions">Conv.</button>
+                        </div>
+                    </header>
+                    <div class="stats-v2-insight-chart-body">
+                        <canvas id="stats-v2-insight-dow"></canvas>
+                    </div>
+                </article>
             </div>
+
+            <article class="card stats-v2-insight-card stats-v2-insight-card--wide">
+                <header class="stats-v2-insight-card-head">
+                    <div>
+                        <h3>Timeline</h3>
+                        <p class="stats-v2-insight-card-sub">Same trend series as Overview — enlarge it here with metric toggles</p>
+                    </div>
+                    <div class="stats-v2-chart-toolbar stats-v2-chart-toolbar--inline">
+                        <select id="stats-v2-chart-granularity" aria-label="Timeline granularity">
+                            <option value="auto">Auto</option>
+                            <option value="hour">Hour</option>
+                            <option value="day">Day</option>
+                        </select>
+                        <div class="stats-v2-chart-metrics">
+                            <label><input type="checkbox" class="chart-metric" value="visitors" checked> Visitors</label>
+                            <label><input type="checkbox" class="chart-metric" value="clicks" checked> Clicks</label>
+                            <label><input type="checkbox" class="chart-metric" value="conversions" checked> Conversions</label>
+                            <label><input type="checkbox" class="chart-metric" value="cost" checked> Cost</label>
+                            <label><input type="checkbox" class="chart-metric" value="revenue" checked> Revenue</label>
+                        </div>
+                    </div>
+                </header>
+                <div class="stats-v2-chart-body stats-v2-chart-body--main">
+                    <canvas id="stats-v2-chart"></canvas>
+                </div>
+            </article>
+
+            <div class="stats-v2-insights-status hidden" id="stats-v2-insights-status" role="status"></div>
         </div>
     </div>
     <?php endif; ?>

@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace SimpleKuma\Tracking;
 
 use mysqli;
+use SimpleKuma\Campaign\InactiveRedirectParser;
 use SimpleKuma\Settings\SettingsManager;
 use SimpleKuma\Stats\CampaignStatsExpressions;
 use SimpleKuma\Stats\StatsExclusionFlag;
+use SimpleKuma\Utils\Formatter;
 
 /**
  * Redirector
@@ -54,9 +56,15 @@ class Redirector
         // Log successful lookup for debugging
         $this->debugLog("Redirector: Campaign found - ID: {$campaign['id']}, Name: {$campaign['name']}, Key: " . ($campaign['campaign_key'] ?? 'N/A') . ", Slug ID: " . ($campaign['slug_id'] ?? 'N/A'));
 
-        if ($campaign['status'] !== 'active') {
-            http_response_code(403);
-            die('Campaign is not active');
+        if (($campaign['status'] ?? '') !== 'active') {
+            if ($this->tryInactiveRedirect($campaign, $params)) {
+                return;
+            }
+            http_response_code(404);
+            if (!headers_sent()) {
+                header('Content-Type: text/plain; charset=utf-8');
+            }
+            die('Campaign not found');
         }
 
         // Detect traffic source from Tf parameter or use campaign default
@@ -197,11 +205,12 @@ class Redirector
     {
         // First check campaign_slugs table for multi-slug support
         // This handles URLs like /km/myslug where myslug is a custom slug
+        // Include paused/archived so inactive redirect can run (active still preferred path).
         $stmt = $this->db->prepare(
             "SELECT c.*, cs.id as slug_id, cs.slug, cs.slug_label
              FROM campaigns c
              INNER JOIN campaign_slugs cs ON c.id = cs.campaign_id
-             WHERE cs.slug = ? AND c.status = 'active'
+             WHERE cs.slug = ?
              LIMIT 1"
         );
         $stmt->bind_param('s', $key);
@@ -213,7 +222,7 @@ class Redirector
         // This handles URLs like /km/dnVlJoT7 where dnVlJoT7 is the campaign_key
         if (!$campaign) {
             $stmt = $this->db->prepare(
-                "SELECT * FROM campaigns WHERE campaign_key = ? AND status = 'active'"
+                "SELECT * FROM campaigns WHERE campaign_key = ?"
             );
             $stmt->bind_param('s', $key);
             $stmt->execute();
@@ -232,6 +241,120 @@ class Redirector
         }
 
         return $campaign ?: null;
+    }
+
+    /**
+     * When paused/archived, optionally 302 to another campaign (tracked) or a custom URL.
+     * Does not store a click on the inactive campaign.
+     *
+     * @param array<string, mixed> $campaign
+     * @param array<string, mixed> $params
+     */
+    private function tryInactiveRedirect(array $campaign, array $params): bool
+    {
+        $status = (string) ($campaign['status'] ?? '');
+        if ($status !== 'paused' && $status !== 'archived') {
+            return false;
+        }
+
+        $mode = strtolower(trim((string) ($campaign['inactive_redirect_mode'] ?? InactiveRedirectParser::MODE_OFF)));
+        if ($mode === '' || $mode === InactiveRedirectParser::MODE_OFF) {
+            return false;
+        }
+
+        if ($mode === InactiveRedirectParser::MODE_URL) {
+            $url = trim((string) ($campaign['inactive_redirect_url'] ?? ''));
+            if ($url === '' || !InactiveRedirectParser::isAllowedHttpUrl($url)) {
+                return false;
+            }
+            $this->debugLog('Redirector: Inactive URL redirect for campaign ' . ($campaign['id'] ?? '?'));
+            $this->redirect($url, null);
+            return true;
+        }
+
+        if ($mode !== InactiveRedirectParser::MODE_CAMPAIGN) {
+            return false;
+        }
+
+        $targetId = (int) ($campaign['inactive_redirect_campaign_id'] ?? 0);
+        $sourceId = (int) ($campaign['id'] ?? 0);
+        if ($targetId <= 0 || $targetId === $sourceId) {
+            return false;
+        }
+
+        $target = $this->getCampaignRowById($targetId);
+        if (!$target || ($target['status'] ?? '') !== 'active') {
+            $this->debugLog('Redirector: Inactive campaign redirect target missing or not active: ' . $targetId);
+            return false;
+        }
+
+        $key = trim((string) ($target['campaign_key'] ?? ''));
+        if ($key === '') {
+            return false;
+        }
+
+        $baseDomain = Formatter::getCampaignBaseUrl($target);
+        $destUrl = ClickPath::url($baseDomain, $key);
+        $forwardParams = $this->buildInactiveForwardQuery($params);
+        if ($forwardParams !== []) {
+            $destUrl = ClickPath::appendParams($destUrl, $forwardParams);
+        }
+
+        $this->debugLog('Redirector: Inactive campaign redirect ' . $sourceId . ' → ' . $targetId);
+        $this->redirect($destUrl, null);
+        return true;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function getCampaignRowById(int $id): ?array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT c.*, td.domain as tracking_domain
+             FROM campaigns c
+             LEFT JOIN tracking_domains td ON c.tracking_domain_id = td.id
+             WHERE c.id = ?
+             LIMIT 1"
+        );
+        if (!$stmt) {
+            return null;
+        }
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        return $row ?: null;
+    }
+
+    /**
+     * Forward inbound query tokens to the target campaign link (skip path key).
+     *
+     * @param array<string, mixed> $params
+     * @return list<string>
+     */
+    private function buildInactiveForwardQuery(array $params): array
+    {
+        $skip = [
+            ClickPath::keyQueryParam(),
+            'k',
+            'campaign_key',
+            'campaign_id',
+        ];
+        $out = [];
+        foreach ($params as $name => $value) {
+            $name = (string) $name;
+            if ($name === '' || in_array(strtolower($name), $skip, true)) {
+                continue;
+            }
+            if (is_array($value)) {
+                continue;
+            }
+            $out[] = rawurlencode($name) . '=' . rawurlencode((string) $value);
+        }
+
+        return $out;
     }
 
     /**
@@ -1344,7 +1467,10 @@ class Redirector
                     0,
                     0.0,
                     $ua,
-                    $ip
+                    $ip,
+                    false,
+                    0,
+                    (int) gmdate('G')
                 );
 
                 // Optional Meta PageView (non-blocking; failures never affect redirect)

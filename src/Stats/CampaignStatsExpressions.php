@@ -12,7 +12,7 @@ use SimpleKuma\Tracking\ConversionOptInClassifier;
 class CampaignStatsExpressions
 {
     /** @var list<string> */
-    public const FIXED_GROUP_BY = ['date', 'country', 'browser', 'os', 'isp', 'landing', 'offer'];
+    public const FIXED_GROUP_BY = ['date', 'hour', 'week', 'day_of_week', 'country', 'browser', 'os', 'isp', 'landing', 'offer'];
 
     /** @var array<string, string> built-in click columns for group_by */
     public const BUILTIN_COLUMN_MAP = [
@@ -417,6 +417,36 @@ class CampaignStatsExpressions
             ];
         }
 
+        if ($groupBy === 'hour') {
+            $offset = self::sanitizeTimezoneOffset($timezoneOffset ?? '+00:00');
+
+            return [
+                'expr' => "HOUR(CONVERT_TZ(cl.ts, '+00:00', '{$offset}'))",
+                'label_expr' => null,
+            ];
+        }
+
+        if ($groupBy === 'week') {
+            $offset = self::sanitizeTimezoneOffset($timezoneOffset ?? '+00:00');
+            $dayExpr = "DATE(CONVERT_TZ(cl.ts, '+00:00', '{$offset}'))";
+
+            return [
+                'expr' => "DATE_SUB({$dayExpr}, INTERVAL WEEKDAY({$dayExpr}) DAY)",
+                'label_expr' => null,
+            ];
+        }
+
+        if ($groupBy === 'day_of_week') {
+            $offset = self::sanitizeTimezoneOffset($timezoneOffset ?? '+00:00');
+            $dayExpr = "DATE(CONVERT_TZ(cl.ts, '+00:00', '{$offset}'))";
+
+            return [
+                // MySQL WEEKDAY: Monday=0 … Sunday=6
+                'expr' => "WEEKDAY({$dayExpr})",
+                'label_expr' => null,
+            ];
+        }
+
         if ($groupBy === 'landing') {
             return [
                 'expr' => "COALESCE(NULLIF(CAST(cl.landing_page_id AS CHAR), ''), 'N/A')",
@@ -692,6 +722,133 @@ class CampaignStatsExpressions
             ]);
             $empty['group_key'] = $key;
             $empty['name'] = $key;
+            $filled[] = $empty;
+        }
+
+        return $filled;
+    }
+
+    /**
+     * Human label for hour 0–23 (matches chart hourly axis).
+     */
+    public static function formatHourLabel(int $hour): string
+    {
+        if ($hour < 0 || $hour > 23) {
+            return (string) $hour;
+        }
+        if ($hour === 0) {
+            return '12 AM';
+        }
+        if ($hour < 12) {
+            return $hour . ' AM';
+        }
+        if ($hour === 12) {
+            return '12 PM';
+        }
+
+        return ($hour - 12) . ' PM';
+    }
+
+    /**
+     * Zero-fill hours 0–23 for breakdown Hour dimension.
+     *
+     * @param list<array<string, mixed>> $rows
+     * @return list<array<string, mixed>>
+     */
+    public static function fillHourRangeRows(array $rows): array
+    {
+        $byHour = [];
+        foreach ($rows as $row) {
+            $key = (string)($row['group'] ?? $row['group_key'] ?? '');
+            if ($key !== '' && ctype_digit($key)) {
+                $byHour[(int)$key] = $row;
+            }
+        }
+
+        $filled = [];
+        for ($h = 0; $h < 24; $h++) {
+            if (isset($byHour[$h])) {
+                $row = $byHour[$h];
+                $label = self::formatHourLabel($h);
+                $row['group_label'] = $label;
+                $row['name'] = $label;
+                $row['group'] = (string)$h;
+                $row['group_key'] = (string)$h;
+                $filled[] = $row;
+                continue;
+            }
+
+            $label = self::formatHourLabel($h);
+            $empty = self::formatMetricsRow((string)$h, $label, [
+                'clicks' => 0,
+                'lp_clicks' => 0,
+                'conversions' => 0,
+                'cost' => 0.0,
+                'revenue' => 0.0,
+            ]);
+            $empty['group_key'] = (string)$h;
+            $empty['name'] = $label;
+            $filled[] = $empty;
+        }
+
+        return $filled;
+    }
+
+    /**
+     * Human label for WEEKDAY() 0–6 (Monday … Sunday).
+     */
+    public static function formatDayOfWeekLabel(int $weekday): string
+    {
+        return match ($weekday) {
+            0 => 'Monday',
+            1 => 'Tuesday',
+            2 => 'Wednesday',
+            3 => 'Thursday',
+            4 => 'Friday',
+            5 => 'Saturday',
+            6 => 'Sunday',
+            default => (string) $weekday,
+        };
+    }
+
+    /**
+     * Zero-fill Monday…Sunday for breakdown Day of week dimension.
+     *
+     * @param list<array<string, mixed>> $rows
+     * @return list<array<string, mixed>>
+     */
+    public static function fillDayOfWeekRows(array $rows): array
+    {
+        $byDow = [];
+        foreach ($rows as $row) {
+            $key = (string)($row['group'] ?? $row['group_key'] ?? '');
+            if ($key !== '' && ctype_digit($key)) {
+                $byDow[(int)$key] = $row;
+            }
+        }
+
+        $filled = [];
+        for ($d = 0; $d <= 6; $d++) {
+            $label = self::formatDayOfWeekLabel($d);
+            if (isset($byDow[$d])) {
+                $row = $byDow[$d];
+                $row['group_label'] = $label;
+                $row['name'] = $label;
+                $row['group'] = (string)$d;
+                $row['group_key'] = (string)$d;
+                $filled[] = $row;
+                continue;
+            }
+
+            $empty = self::formatMetricsRow((string)$d, $label, [
+                'clicks' => 0,
+                'lp_clicks' => 0,
+                'conversions' => 0,
+                'cost' => 0.0,
+                'revenue' => 0.0,
+            ]);
+            $empty['group_key'] = (string)$d;
+            $empty['name'] = $label;
             $filled[] = $empty;
         }
 

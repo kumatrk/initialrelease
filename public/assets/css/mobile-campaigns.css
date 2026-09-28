@@ -205,16 +205,41 @@
        ============================================ */
     
     /* Status, Group, Referrer privacy - stack vertically on mobile */
-    .campaign-settings-row {
+    .campaign-settings-row,
+    .campaign-form-grid--name-cpc,
+    .campaign-form-grid--2,
+    .campaign-form-grid--tracking,
+    .campaign-form-grid--auto {
         display: flex !important;
         flex-direction: column !important;
         gap: 16px !important;
     }
     
-    .campaign-settings-row > div {
+    .campaign-settings-row > div,
+    .campaign-form-grid--name-cpc > div,
+    .campaign-form-grid--2 > div,
+    .campaign-form-grid--tracking > div,
+    .campaign-form-grid--auto > div {
         width: 100% !important;
         max-width: 100% !important;
         flex: 1 1 100% !important;
+    }
+
+    .campaign-form-section__body {
+        padding: 14px !important;
+    }
+
+    .campaign-form-input--narrow {
+        max-width: 100% !important;
+    }
+
+    .campaign-form-meta-campaign-row {
+        flex-direction: column !important;
+        align-items: stretch !important;
+    }
+
+    .campaign-form-meta-refresh {
+        width: 100%;
     }
     
     /* Fallback for any grid layouts in forms */

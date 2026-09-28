@@ -13,7 +13,7 @@ use SimpleKuma\Database\ClicksTableResolver;
 final class CampaignStatsQueryFilters
 {
     /** @var list<string> */
-    private const EXCLUDED_FILTER_KEYS = ['offer', 'landing', 'date'];
+    private const EXCLUDED_FILTER_KEYS = ['offer', 'landing', 'date', 'hour', 'week', 'day_of_week'];
 
     public function __construct(
         public ?int $trafficSourceId = null,

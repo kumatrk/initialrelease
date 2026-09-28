@@ -249,7 +249,7 @@ class CampaignStatsBreakdownService
 
     private function canUseTokenAggregate(string $groupBy): bool
     {
-        if (in_array($groupBy, ['date', 'country', 'browser', 'os', 'landing', 'offer'], true)) {
+        if (in_array($groupBy, ['date', 'hour', 'week', 'day_of_week', 'country', 'browser', 'os', 'landing', 'offer'], true)) {
             return false;
         }
 

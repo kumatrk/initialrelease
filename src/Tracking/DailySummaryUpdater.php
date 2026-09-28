@@ -7,9 +7,10 @@ use SimpleKuma\Stats\StatsHiddenIpService;
 use SimpleKuma\Stats\StatsExclusionFlag;
 
 /**
- * On-write updates to clicks_daily_summary and clicks_stats_by_token_daily (plan: stats pre-aggregation).
+ * On-write updates to clicks_daily_summary, clicks_stats_by_token_daily,
+ * and clicks_stats_by_token_hourly (plan: stats pre-aggregation).
  * Called after each click insert and after each conversion insert so aggregates stay current.
- * No cron: token table is updated only on-write (click + conversion).
+ * No cron: token tables are updated only on-write (click + conversion).
  */
 class DailySummaryUpdater
 {
@@ -24,6 +25,8 @@ class DailySummaryUpdater
     private ?bool $summaryTableExists = null;
 
     private ?bool $tokenSummaryTableExists = null;
+
+    private ?bool $tokenHourlyTableExists = null;
 
     public function __construct(\mysqli $db)
     {
@@ -90,6 +93,32 @@ class DailySummaryUpdater
     }
 
     /**
+     * Check if clicks_stats_by_token_hourly table exists.
+     */
+    public function tokenHourlyTableExists(): bool
+    {
+        if ($this->tokenHourlyTableExists !== null) {
+            return $this->tokenHourlyTableExists;
+        }
+        $result = $this->db->query(
+            "SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clicks_stats_by_token_hourly' LIMIT 1"
+        );
+        return $this->tokenHourlyTableExists = $result && $result->num_rows > 0;
+    }
+
+    /**
+     * Normalize UTC hour 0–23; null/out-of-range skips hourly upsert.
+     */
+    public static function normalizeSummaryHour(?int $summaryHour): ?int
+    {
+        if ($summaryHour === null || $summaryHour < 0 || $summaryHour > 23) {
+            return null;
+        }
+
+        return $summaryHour;
+    }
+
+    /**
      * Extract (param, value) token pairs from extra_data array (traffic_source_tokens + custom_tokens).
      * Accepts array to avoid re-parsing JSON on redirect path.
      */
@@ -141,13 +170,31 @@ class DailySummaryUpdater
     }
 
     /**
-     * On-write: UPSERT clicks_stats_by_token_daily for one click (or conversion-only update).
-     * Single multi-row INSERT per call. Pass extraData as array when available to avoid JSON decode.
+     * mysqli bind types for one clicks_stats_by_token_hourly INSERT row.
+     * Same as daily with hour (INT) after summary_date.
+     */
+    public static function tokenHourlyUpsertBindTypes(bool $hasBotClicks, bool $hasOptins): string
+    {
+        // campaign_id, summary_date, hour, token_param, token_value, traffic_source_id, ...
+        if ($hasBotClicks && $hasOptins) {
+            return 'isissiiidiidi';
+        }
+        if ($hasOptins) {
+            return 'isissiiidiid';
+        }
+
+        return 'isissiiidid';
+    }
+
+    /**
+     * On-write: UPSERT clicks_stats_by_token_daily (and hourly when $summaryHour is 0–23).
+     * Single multi-row INSERT per table per call. Pass extraData as array when available to avoid JSON decode.
      *
      * @param array|null $extraDataAsArray extra_json as array (e.g. $extraData), or null to skip
      * @param int $conversionsDelta 1 for conversion event, 0 for click-only or opt-in
      * @param float $revenueDelta revenue for conversion event, 0 for click-only or opt-in
      * @param int $optinsDelta 1 for opt-in event, 0 otherwise
+     * @param int|null $summaryHour UTC hour 0–23 from the click ts; null skips hourly write
      */
     public function upsertTokenAggregatesForClick(
         int $campaignId,
@@ -161,7 +208,8 @@ class DailySummaryUpdater
         ?string $ua = null,
         ?string $ip = null,
         bool $forceInclude = false,
-        int $optinsDelta = 0
+        int $optinsDelta = 0,
+        ?int $summaryHour = null
     ): void {
         if (!$this->tokenTableExists() || $extraDataAsArray === null) {
             return;
@@ -181,69 +229,35 @@ class DailySummaryUpdater
         $botInc = ($conversionsDelta === 0 && $optinsDelta === 0 && $isBot) ? 1 : 0;
         $hasOptins = $this->tokenTableHasOptinsColumn();
         $hasBotClicks = $this->tokenTableHasBotClicksColumn();
+        $hour = self::normalizeSummaryHour($summaryHour);
 
         // Negative conversion/optin deltas must UPDATE only — INSERT of -1 into UNSIGNED fails
         if ($conversionsDelta < 0 || $optinsDelta < 0) {
-            foreach ($tokens as $t) {
-                if ($hasOptins) {
-                    $stmt = $this->db->prepare("
-                        UPDATE clicks_stats_by_token_daily
-                        SET conversions = GREATEST(0, CAST(conversions AS SIGNED) + ?),
-                            optins = GREATEST(0, CAST(optins AS SIGNED) + ?),
-                            revenue = GREATEST(0, revenue + ?),
-                            updated_at = NOW()
-                        WHERE campaign_id = ?
-                          AND summary_date = ?
-                          AND token_param = ?
-                          AND token_value = ?
-                          AND (traffic_source_id <=> ?)
-                    ");
-                    if (!$stmt) {
-                        continue;
-                    }
-                    $param = $t['param'];
-                    $value = $t['value'];
-                    $stmt->bind_param(
-                        'iidisssi',
-                        $conversionsDelta,
-                        $optinsDelta,
-                        $revenueDelta,
-                        $campaignId,
-                        $summaryDate,
-                        $param,
-                        $value,
-                        $trafficSourceId
-                    );
-                } else {
-                    $stmt = $this->db->prepare("
-                        UPDATE clicks_stats_by_token_daily
-                        SET conversions = GREATEST(0, CAST(conversions AS SIGNED) + ?),
-                            revenue = GREATEST(0, revenue + ?),
-                            updated_at = NOW()
-                        WHERE campaign_id = ?
-                          AND summary_date = ?
-                          AND token_param = ?
-                          AND token_value = ?
-                          AND (traffic_source_id <=> ?)
-                    ");
-                    if (!$stmt) {
-                        continue;
-                    }
-                    $param = $t['param'];
-                    $value = $t['value'];
-                    $stmt->bind_param(
-                        'idisssi',
-                        $conversionsDelta,
-                        $revenueDelta,
-                        $campaignId,
-                        $summaryDate,
-                        $param,
-                        $value,
-                        $trafficSourceId
-                    );
-                }
-                $stmt->execute();
-                $stmt->close();
+            $this->applyNegativeTokenDeltas(
+                'clicks_stats_by_token_daily',
+                $tokens,
+                $campaignId,
+                $trafficSourceId,
+                $summaryDate,
+                null,
+                $conversionsDelta,
+                $optinsDelta,
+                $revenueDelta,
+                $hasOptins
+            );
+            if ($hour !== null && $this->tokenHourlyTableExists()) {
+                $this->applyNegativeTokenDeltas(
+                    'clicks_stats_by_token_hourly',
+                    $tokens,
+                    $campaignId,
+                    $trafficSourceId,
+                    $summaryDate,
+                    $hour,
+                    $conversionsDelta,
+                    $optinsDelta,
+                    $revenueDelta,
+                    $hasOptins
+                );
             }
             return;
         }
@@ -253,6 +267,7 @@ class DailySummaryUpdater
             $rows[] = [
                 'campaign_id' => $campaignId,
                 'summary_date' => $summaryDate,
+                'hour' => $hour,
                 'token_param' => $t['param'],
                 'token_value' => $t['value'],
                 'traffic_source_id' => $trafficSourceId,
@@ -266,11 +281,184 @@ class DailySummaryUpdater
             ];
         }
 
+        $this->insertTokenAggregateRows('clicks_stats_by_token_daily', $rows, false, $hasOptins, $hasBotClicks);
+        if ($hour !== null && $this->tokenHourlyTableExists()) {
+            $this->insertTokenAggregateRows('clicks_stats_by_token_hourly', $rows, true, $hasOptins, $hasBotClicks);
+        }
+    }
+
+    /**
+     * @param list<array{param: string, value: string}> $tokens
+     */
+    private function applyNegativeTokenDeltas(
+        string $table,
+        array $tokens,
+        int $campaignId,
+        ?int $trafficSourceId,
+        string $summaryDate,
+        ?int $hour,
+        int $conversionsDelta,
+        int $optinsDelta,
+        float $revenueDelta,
+        bool $hasOptins
+    ): void {
+        $hourClause = $hour !== null ? ' AND hour = ?' : '';
+        foreach ($tokens as $t) {
+            if ($hasOptins) {
+                $stmt = $this->db->prepare("
+                    UPDATE {$table}
+                    SET conversions = GREATEST(0, CAST(conversions AS SIGNED) + ?),
+                        optins = GREATEST(0, CAST(optins AS SIGNED) + ?),
+                        revenue = GREATEST(0, revenue + ?),
+                        updated_at = NOW()
+                    WHERE campaign_id = ?
+                      AND summary_date = ?
+                      AND token_param = ?
+                      AND token_value = ?
+                      AND (traffic_source_id <=> ?)
+                      {$hourClause}
+                ");
+                if (!$stmt) {
+                    continue;
+                }
+                $param = $t['param'];
+                $value = $t['value'];
+                if ($hour !== null) {
+                    $stmt->bind_param(
+                        'iidisssii',
+                        $conversionsDelta,
+                        $optinsDelta,
+                        $revenueDelta,
+                        $campaignId,
+                        $summaryDate,
+                        $param,
+                        $value,
+                        $trafficSourceId,
+                        $hour
+                    );
+                } else {
+                    $stmt->bind_param(
+                        'iidisssi',
+                        $conversionsDelta,
+                        $optinsDelta,
+                        $revenueDelta,
+                        $campaignId,
+                        $summaryDate,
+                        $param,
+                        $value,
+                        $trafficSourceId
+                    );
+                }
+            } else {
+                $stmt = $this->db->prepare("
+                    UPDATE {$table}
+                    SET conversions = GREATEST(0, CAST(conversions AS SIGNED) + ?),
+                        revenue = GREATEST(0, revenue + ?),
+                        updated_at = NOW()
+                    WHERE campaign_id = ?
+                      AND summary_date = ?
+                      AND token_param = ?
+                      AND token_value = ?
+                      AND (traffic_source_id <=> ?)
+                      {$hourClause}
+                ");
+                if (!$stmt) {
+                    continue;
+                }
+                $param = $t['param'];
+                $value = $t['value'];
+                if ($hour !== null) {
+                    $stmt->bind_param(
+                        'idisssii',
+                        $conversionsDelta,
+                        $revenueDelta,
+                        $campaignId,
+                        $summaryDate,
+                        $param,
+                        $value,
+                        $trafficSourceId,
+                        $hour
+                    );
+                } else {
+                    $stmt->bind_param(
+                        'idisssi',
+                        $conversionsDelta,
+                        $revenueDelta,
+                        $campaignId,
+                        $summaryDate,
+                        $param,
+                        $value,
+                        $trafficSourceId
+                    );
+                }
+            }
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rows
+     */
+    private function insertTokenAggregateRows(
+        string $table,
+        array $rows,
+        bool $withHour,
+        bool $hasOptins,
+        bool $hasBotClicks
+    ): void {
         $values = [];
         $types = '';
         $params = [];
         foreach ($rows as $u) {
-            if ($hasBotClicks && $hasOptins) {
+            if ($withHour) {
+                if ($hasBotClicks && $hasOptins) {
+                    $values[] = '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+                    $types .= self::tokenHourlyUpsertBindTypes(true, true);
+                    $params[] = $u['campaign_id'];
+                    $params[] = $u['summary_date'];
+                    $params[] = $u['hour'];
+                    $params[] = $u['token_param'];
+                    $params[] = $u['token_value'];
+                    $params[] = $u['traffic_source_id'];
+                    $params[] = $u['visitors'];
+                    $params[] = $u['lp_clicks'];
+                    $params[] = $u['cost'];
+                    $params[] = $u['conversions'];
+                    $params[] = $u['optins'];
+                    $params[] = $u['revenue'];
+                    $params[] = $u['bot_clicks'];
+                } elseif ($hasOptins) {
+                    $values[] = '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+                    $types .= self::tokenHourlyUpsertBindTypes(false, true);
+                    $params[] = $u['campaign_id'];
+                    $params[] = $u['summary_date'];
+                    $params[] = $u['hour'];
+                    $params[] = $u['token_param'];
+                    $params[] = $u['token_value'];
+                    $params[] = $u['traffic_source_id'];
+                    $params[] = $u['visitors'];
+                    $params[] = $u['lp_clicks'];
+                    $params[] = $u['cost'];
+                    $params[] = $u['conversions'];
+                    $params[] = $u['optins'];
+                    $params[] = $u['revenue'];
+                } else {
+                    $values[] = '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+                    $types .= self::tokenHourlyUpsertBindTypes(false, false);
+                    $params[] = $u['campaign_id'];
+                    $params[] = $u['summary_date'];
+                    $params[] = $u['hour'];
+                    $params[] = $u['token_param'];
+                    $params[] = $u['token_value'];
+                    $params[] = $u['traffic_source_id'];
+                    $params[] = $u['visitors'];
+                    $params[] = $u['lp_clicks'];
+                    $params[] = $u['cost'];
+                    $params[] = $u['conversions'];
+                    $params[] = $u['revenue'];
+                }
+            } elseif ($hasBotClicks && $hasOptins) {
                 $values[] = '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
                 $types .= self::tokenUpsertBindTypes(true, true);
                 $params[] = $u['campaign_id'];
@@ -315,11 +503,38 @@ class DailySummaryUpdater
             }
         }
 
-        if ($hasBotClicks && $hasOptins) {
-            $sql = 'INSERT INTO clicks_stats_by_token_daily (campaign_id, summary_date, token_param, token_value, traffic_source_id, visitors, lp_clicks, cost, conversions, optins, revenue, bot_clicks)
-                VALUES ' . implode(', ', $values) . '
-                ON DUPLICATE KEY UPDATE
-                    visitors = GREATEST(0, CAST(visitors AS SIGNED) + VALUES(visitors)),
+        if ($withHour) {
+            if ($hasBotClicks && $hasOptins) {
+                $cols = 'campaign_id, summary_date, hour, token_param, token_value, traffic_source_id, visitors, lp_clicks, cost, conversions, optins, revenue, bot_clicks';
+                $dup = 'visitors = GREATEST(0, CAST(visitors AS SIGNED) + VALUES(visitors)),
+                    lp_clicks = GREATEST(0, CAST(lp_clicks AS SIGNED) + VALUES(lp_clicks)),
+                    cost = GREATEST(0, cost + VALUES(cost)),
+                    conversions = GREATEST(0, CAST(conversions AS SIGNED) + VALUES(conversions)),
+                    optins = GREATEST(0, CAST(optins AS SIGNED) + VALUES(optins)),
+                    revenue = GREATEST(0, revenue + VALUES(revenue)),
+                    bot_clicks = GREATEST(0, CAST(bot_clicks AS SIGNED) + VALUES(bot_clicks)),
+                    updated_at = NOW()';
+            } elseif ($hasOptins) {
+                $cols = 'campaign_id, summary_date, hour, token_param, token_value, traffic_source_id, visitors, lp_clicks, cost, conversions, optins, revenue';
+                $dup = 'visitors = GREATEST(0, CAST(visitors AS SIGNED) + VALUES(visitors)),
+                    lp_clicks = GREATEST(0, CAST(lp_clicks AS SIGNED) + VALUES(lp_clicks)),
+                    cost = GREATEST(0, cost + VALUES(cost)),
+                    conversions = GREATEST(0, CAST(conversions AS SIGNED) + VALUES(conversions)),
+                    optins = GREATEST(0, CAST(optins AS SIGNED) + VALUES(optins)),
+                    revenue = GREATEST(0, revenue + VALUES(revenue)),
+                    updated_at = NOW()';
+            } else {
+                $cols = 'campaign_id, summary_date, hour, token_param, token_value, traffic_source_id, visitors, lp_clicks, cost, conversions, revenue';
+                $dup = 'visitors = GREATEST(0, CAST(visitors AS SIGNED) + VALUES(visitors)),
+                    lp_clicks = GREATEST(0, CAST(lp_clicks AS SIGNED) + VALUES(lp_clicks)),
+                    cost = GREATEST(0, cost + VALUES(cost)),
+                    conversions = GREATEST(0, CAST(conversions AS SIGNED) + VALUES(conversions)),
+                    revenue = GREATEST(0, revenue + VALUES(revenue)),
+                    updated_at = NOW()';
+            }
+        } elseif ($hasBotClicks && $hasOptins) {
+            $cols = 'campaign_id, summary_date, token_param, token_value, traffic_source_id, visitors, lp_clicks, cost, conversions, optins, revenue, bot_clicks';
+            $dup = 'visitors = GREATEST(0, CAST(visitors AS SIGNED) + VALUES(visitors)),
                     lp_clicks = GREATEST(0, CAST(lp_clicks AS SIGNED) + VALUES(lp_clicks)),
                     cost = GREATEST(0, cost + VALUES(cost)),
                     conversions = GREATEST(0, CAST(conversions AS SIGNED) + VALUES(conversions)),
@@ -328,10 +543,8 @@ class DailySummaryUpdater
                     bot_clicks = GREATEST(0, CAST(bot_clicks AS SIGNED) + VALUES(bot_clicks)),
                     updated_at = NOW()';
         } elseif ($hasOptins) {
-            $sql = 'INSERT INTO clicks_stats_by_token_daily (campaign_id, summary_date, token_param, token_value, traffic_source_id, visitors, lp_clicks, cost, conversions, optins, revenue)
-                VALUES ' . implode(', ', $values) . '
-                ON DUPLICATE KEY UPDATE
-                    visitors = GREATEST(0, CAST(visitors AS SIGNED) + VALUES(visitors)),
+            $cols = 'campaign_id, summary_date, token_param, token_value, traffic_source_id, visitors, lp_clicks, cost, conversions, optins, revenue';
+            $dup = 'visitors = GREATEST(0, CAST(visitors AS SIGNED) + VALUES(visitors)),
                     lp_clicks = GREATEST(0, CAST(lp_clicks AS SIGNED) + VALUES(lp_clicks)),
                     cost = GREATEST(0, cost + VALUES(cost)),
                     conversions = GREATEST(0, CAST(conversions AS SIGNED) + VALUES(conversions)),
@@ -339,24 +552,26 @@ class DailySummaryUpdater
                     revenue = GREATEST(0, revenue + VALUES(revenue)),
                     updated_at = NOW()';
         } else {
-            $sql = 'INSERT INTO clicks_stats_by_token_daily (campaign_id, summary_date, token_param, token_value, traffic_source_id, visitors, lp_clicks, cost, conversions, revenue)
-                VALUES ' . implode(', ', $values) . '
-                ON DUPLICATE KEY UPDATE
-                    visitors = GREATEST(0, CAST(visitors AS SIGNED) + VALUES(visitors)),
+            $cols = 'campaign_id, summary_date, token_param, token_value, traffic_source_id, visitors, lp_clicks, cost, conversions, revenue';
+            $dup = 'visitors = GREATEST(0, CAST(visitors AS SIGNED) + VALUES(visitors)),
                     lp_clicks = GREATEST(0, CAST(lp_clicks AS SIGNED) + VALUES(lp_clicks)),
                     cost = GREATEST(0, cost + VALUES(cost)),
                     conversions = GREATEST(0, CAST(conversions AS SIGNED) + VALUES(conversions)),
                     revenue = GREATEST(0, revenue + VALUES(revenue)),
                     updated_at = NOW()';
         }
+
+        $sql = "INSERT INTO {$table} ({$cols})
+                VALUES " . implode(', ', $values) . "
+                ON DUPLICATE KEY UPDATE {$dup}";
         $stmt = $this->db->prepare($sql);
         if (!$stmt) {
-            error_log('DailySummaryUpdater::upsertTokenAggregatesForClick prepare failed: ' . $this->db->error);
+            error_log("DailySummaryUpdater::insertTokenAggregateRows prepare failed ({$table}): " . $this->db->error);
             return;
         }
         $stmt->bind_param($types, ...$params);
         if (!$stmt->execute()) {
-            error_log('DailySummaryUpdater::upsertTokenAggregatesForClick execute failed: ' . $stmt->error);
+            error_log("DailySummaryUpdater::insertTokenAggregateRows execute failed ({$table}): " . $stmt->error);
         }
         $stmt->close();
     }
@@ -697,7 +912,7 @@ class DailySummaryUpdater
         $flagSelect = $hasPersistedFlag ? ', exclude_from_stats' : '';
         $stmt = $this->db->prepare("
             SELECT campaign_id, traffic_source_id, landing_page_id, DATE(ts) as summary_date,
-                   extra_json, cost, ua, ip{$flagSelect}
+                   HOUR(ts) as summary_hour, extra_json, cost, ua, ip{$flagSelect}
             FROM clicks
             WHERE click_id = ?
             LIMIT 1
@@ -715,6 +930,7 @@ class DailySummaryUpdater
             'traffic_source_id' => $row['traffic_source_id'] !== null ? (int) $row['traffic_source_id'] : null,
             'landing_page_id' => $row['landing_page_id'] !== null ? (int) $row['landing_page_id'] : null,
             'summary_date' => $row['summary_date'],
+            'summary_hour' => isset($row['summary_hour']) ? (int) $row['summary_hour'] : null,
             'extra_data' => !empty($row['extra_json']) ? json_decode($row['extra_json'], true) : null,
             'cost' => isset($row['cost']) && $row['cost'] !== null ? (float) $row['cost'] : 0.0,
             'ua' => $row['ua'] !== null ? (string) $row['ua'] : null,
@@ -770,7 +986,7 @@ class DailySummaryUpdater
             $flagSelect = $tableHasFlag ? ', exclude_from_stats' : '';
             $stmt = $this->db->prepare("
                 SELECT campaign_id, traffic_source_id, offer_id, landing_page_id,
-                       DATE(ts) as summary_date, lp_click, cost, extra_json, ua, ip
+                       DATE(ts) as summary_date, HOUR(ts) as summary_hour, lp_click, cost, extra_json, ua, ip
                        {$flagSelect}
                 FROM `{$clickTable}`
                 WHERE click_id = ?
@@ -862,7 +1078,8 @@ class DailySummaryUpdater
                     $ua,
                     $ip,
                     true,
-                    0
+                    0,
+                    isset($row['summary_hour']) ? (int)$row['summary_hour'] : null
                 );
             }
         }
@@ -966,7 +1183,8 @@ class DailySummaryUpdater
                 $ua,
                 $ip,
                 $hasPersistedFlag,
-                $optinsDelta
+                $optinsDelta,
+                isset($row['summary_hour']) ? (int)$row['summary_hour'] : null
             );
         }
     }
@@ -1048,7 +1266,8 @@ class DailySummaryUpdater
                 $row['ip'] ?? null,
                 !empty($row['_stats_flag_present'])
                     && (int)($row['exclude_from_stats'] ?? 1) === 0,
-                $optinsDelta
+                $optinsDelta,
+                isset($row['summary_hour']) ? (int)$row['summary_hour'] : null
             );
         }
     }
@@ -1215,7 +1434,8 @@ class DailySummaryUpdater
                 $summaryDate,
                 $extraData,
                 $lpClick,
-                $cost
+                $cost,
+                isset($row['summary_hour']) ? (int)$row['summary_hour'] : null
             );
         }
     }
@@ -1318,7 +1538,9 @@ class DailySummaryUpdater
                 0.0,
                 $ua,
                 $ip,
-                !empty($row['_stats_flag_present'])
+                !empty($row['_stats_flag_present']),
+                0,
+                isset($row['summary_hour']) ? (int)$row['summary_hour'] : null
             );
         }
     }
@@ -1336,7 +1558,7 @@ class DailySummaryUpdater
             $flagSelect = $hasPersistedFlag ? ', exclude_from_stats' : '';
             $stmt = $this->db->prepare("
                 SELECT campaign_id, traffic_source_id, offer_id, landing_page_id,
-                       DATE(ts) as summary_date, extra_json, ua, ip{$flagSelect}{$selectExtra}
+                       DATE(ts) as summary_date, HOUR(ts) as summary_hour, extra_json, ua, ip{$flagSelect}{$selectExtra}
                 FROM `{$clickTable}`
                 WHERE click_id = ?
                 LIMIT 1
@@ -1358,7 +1580,7 @@ class DailySummaryUpdater
     }
 
     /**
-     * Decrement token-level visitors/lp_clicks/cost for a deleted click.
+     * Decrement token-level visitors/lp_clicks/cost for a deleted click (daily + hourly).
      */
     private function decrementTokenVisitorsForClick(
         int $campaignId,
@@ -1366,7 +1588,8 @@ class DailySummaryUpdater
         string $summaryDate,
         array $extraData,
         int $lpClick,
-        float $cost
+        float $cost,
+        ?int $summaryHour = null
     ): void {
         $tokens = $this->extractTokensFromExtraData($extraData);
         if ($tokens === []) {
@@ -1376,11 +1599,56 @@ class DailySummaryUpdater
         $isBot = self::isBotClick($extraData, null);
         $botInc = $isBot ? 1 : 0;
         $hasBotClicks = $this->tokenTableHasBotClicksColumn();
+        $hour = self::normalizeSummaryHour($summaryHour);
 
+        $this->decrementTokenVisitorRows(
+            'clicks_stats_by_token_daily',
+            $tokens,
+            $campaignId,
+            $trafficSourceId,
+            $summaryDate,
+            null,
+            $lpInc,
+            $cost,
+            $botInc,
+            $hasBotClicks
+        );
+        if ($hour !== null && $this->tokenHourlyTableExists()) {
+            $this->decrementTokenVisitorRows(
+                'clicks_stats_by_token_hourly',
+                $tokens,
+                $campaignId,
+                $trafficSourceId,
+                $summaryDate,
+                $hour,
+                $lpInc,
+                $cost,
+                $botInc,
+                $hasBotClicks
+            );
+        }
+    }
+
+    /**
+     * @param list<array{param: string, value: string}> $tokens
+     */
+    private function decrementTokenVisitorRows(
+        string $table,
+        array $tokens,
+        int $campaignId,
+        ?int $trafficSourceId,
+        string $summaryDate,
+        ?int $hour,
+        int $lpInc,
+        float $cost,
+        int $botInc,
+        bool $hasBotClicks
+    ): void {
+        $hourClause = $hour !== null ? ' AND hour = ?' : '';
         foreach ($tokens as $t) {
             if ($hasBotClicks) {
                 $stmt = $this->db->prepare("
-                    UPDATE clicks_stats_by_token_daily
+                    UPDATE {$table}
                     SET visitors = GREATEST(0, CAST(visitors AS SIGNED) - 1),
                         lp_clicks = GREATEST(0, CAST(lp_clicks AS SIGNED) - ?),
                         cost = GREATEST(0, cost - ?),
@@ -1391,16 +1659,21 @@ class DailySummaryUpdater
                       AND token_param = ?
                       AND token_value = ?
                       AND (traffic_source_id <=> ?)
+                      {$hourClause}
                 ");
                 if (!$stmt) {
                     continue;
                 }
                 $param = $t['param'];
                 $value = $t['value'];
-                $stmt->bind_param('idiisssi', $lpInc, $cost, $botInc, $campaignId, $summaryDate, $param, $value, $trafficSourceId);
+                if ($hour !== null) {
+                    $stmt->bind_param('idiisssii', $lpInc, $cost, $botInc, $campaignId, $summaryDate, $param, $value, $trafficSourceId, $hour);
+                } else {
+                    $stmt->bind_param('idiisssi', $lpInc, $cost, $botInc, $campaignId, $summaryDate, $param, $value, $trafficSourceId);
+                }
             } else {
                 $stmt = $this->db->prepare("
-                    UPDATE clicks_stats_by_token_daily
+                    UPDATE {$table}
                     SET visitors = GREATEST(0, CAST(visitors AS SIGNED) - 1),
                         lp_clicks = GREATEST(0, CAST(lp_clicks AS SIGNED) - ?),
                         cost = GREATEST(0, cost - ?),
@@ -1410,13 +1683,18 @@ class DailySummaryUpdater
                       AND token_param = ?
                       AND token_value = ?
                       AND (traffic_source_id <=> ?)
+                      {$hourClause}
                 ");
                 if (!$stmt) {
                     continue;
                 }
                 $param = $t['param'];
                 $value = $t['value'];
-                $stmt->bind_param('idisssi', $lpInc, $cost, $campaignId, $summaryDate, $param, $value, $trafficSourceId);
+                if ($hour !== null) {
+                    $stmt->bind_param('idisssii', $lpInc, $cost, $campaignId, $summaryDate, $param, $value, $trafficSourceId, $hour);
+                } else {
+                    $stmt->bind_param('idisssi', $lpInc, $cost, $campaignId, $summaryDate, $param, $value, $trafficSourceId);
+                }
             }
             $stmt->execute();
             $stmt->close();

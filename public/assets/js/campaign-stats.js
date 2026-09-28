@@ -107,6 +107,12 @@
         exportRows: [],
         chartOverview: null,
         chartMain: null,
+        chartInsightHour: null,
+        chartInsightDow: null,
+        insightsData: null,
+        insightsDirty: true,
+        insightsLoading: false,
+        insightMetrics: { hour: 'profit', day_of_week: 'profit' },
         chartCollapsed: !!prefs.chartCollapsed,
         comparePeriod: false,
         density: localStorage.getItem('stats_v2_density') || 'comfortable',
@@ -749,8 +755,17 @@
                 { value: 'landing,offer', label: 'Landing → Offer' },
                 { value: 'offer,landing', label: 'Offer → Landing' },
                 { value: 'date', label: 'By date' },
+                { value: 'hour', label: 'By hour' },
+                { value: 'week', label: 'By week' },
+                { value: 'day_of_week', label: 'By day of week' },
                 { value: 'offer,date', label: 'Offer → Date' },
+                { value: 'offer,hour', label: 'Offer → Hour' },
+                { value: 'offer,week', label: 'Offer → Week' },
+                { value: 'offer,day_of_week', label: 'Offer → Day of week' },
                 { value: 'landing,date', label: 'Landing → Date' },
+                { value: 'landing,hour', label: 'Landing → Hour' },
+                { value: 'ad_name,hour', label: 'Ad → Hour' },
+                { value: 'hour,ad_name', label: 'Hour → Ad' },
             ],
         },
         {
@@ -1228,6 +1243,189 @@
         });
     }
 
+    function destroyInsightCharts() {
+        ['chartInsightHour', 'chartInsightDow', 'chartMain'].forEach((key) => {
+            if (state[key]) {
+                try {
+                    state[key].destroy();
+                } catch (e) {
+                    /* ignore */
+                }
+                state[key] = null;
+            }
+        });
+    }
+
+    function formatInsightMoney(n) {
+        const v = Number(n) || 0;
+        const sign = v > 0 ? '+' : '';
+        return sign + fmtMoney(v);
+    }
+
+    function renderInsightHighlights(highlights) {
+        const root = document.getElementById('stats-v2-insights-highlights');
+        if (!root) return;
+        const items = [
+            { key: 'best_hour', title: 'Best hour', win: true },
+            { key: 'worst_hour', title: 'Worst hour', win: false },
+            { key: 'best_day', title: 'Best day', win: true },
+            { key: 'worst_day', title: 'Worst day', win: false },
+        ];
+        root.innerHTML = items.map((item) => {
+            const h = highlights?.[item.key];
+            if (!h || !h.label) {
+                return `<div class="stats-v2-insight-pill stats-v2-insight-pill--muted">${item.title}: —</div>`;
+            }
+            const cls = item.win ? 'stats-v2-insight-pill--win' : 'stats-v2-insight-pill--lose';
+            const metaCls = (Number(h.profit) >= 0) ? 'profit-positive' : 'profit-negative';
+            return `<div class="stats-v2-insight-pill ${cls}">
+                <span class="stats-v2-insight-pill-label">${item.title}</span>
+                <span class="stats-v2-insight-pill-value">${escapeHtml(String(h.label))}</span>
+                <span class="stats-v2-insight-pill-meta ${metaCls}">${formatInsightMoney(h.profit)}</span>
+            </div>`;
+        }).join('');
+    }
+
+    function insightBarColors(values, metric) {
+        if (metric !== 'profit') {
+            return values.map(() => 'rgba(76, 175, 80, 0.75)');
+        }
+        return values.map((v) => (Number(v) >= 0
+            ? 'rgba(46, 125, 50, 0.82)'
+            : 'rgba(198, 40, 40, 0.75)'));
+    }
+
+    function buildInsightBarChart(canvasId, storeKey, series, metric) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas || !window.Chart || !series) return null;
+        const { gridColor, tickColor } = chartThemeColors();
+        const values = series[metric] || series.visitors || [];
+        const labels = series.labels || [];
+        if (state[storeKey]) {
+            try { state[storeKey].destroy(); } catch (e) { /* ignore */ }
+        }
+        const isMoney = metric === 'profit' || metric === 'cost' || metric === 'revenue';
+        state[storeKey] = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: metric.charAt(0).toUpperCase() + metric.slice(1),
+                    data: values,
+                    backgroundColor: insightBarColors(values, metric),
+                    borderRadius: 6,
+                    maxBarThickness: 28,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 450, easing: 'easeOutQuart' },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => {
+                                const v = ctx.parsed.y;
+                                return isMoney ? fmtMoney(v) : Number(v).toLocaleString();
+                            },
+                        },
+                    },
+                },
+                scales: {
+                    x: {
+                        ticks: { color: tickColor, maxRotation: 45, minRotation: 0, autoSkip: true, maxTicksLimit: 12 },
+                        grid: { display: false },
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            color: tickColor,
+                            callback: (v) => (isMoney ? fmtMoney(v) : v),
+                        },
+                        grid: { color: gridColor },
+                    },
+                },
+            },
+        });
+        return state[storeKey];
+    }
+
+    function renderInsightMetricCharts() {
+        if (!state.insightsData) return;
+        buildInsightBarChart(
+            'stats-v2-insight-hour',
+            'chartInsightHour',
+            state.insightsData.hour,
+            state.insightMetrics.hour || 'profit'
+        );
+        buildInsightBarChart(
+            'stats-v2-insight-dow',
+            'chartInsightDow',
+            state.insightsData.day_of_week,
+            state.insightMetrics.day_of_week || 'profit'
+        );
+    }
+
+    async function loadChartInsights(force) {
+        const root = document.getElementById('stats-v2-insights');
+        const status = document.getElementById('stats-v2-insights-status');
+        if (!state.campaignId) return;
+        if (state.insightsLoading) return;
+        if (!force && state.insightsData && !state.insightsDirty) {
+            resizeChart('chartInsightHour');
+            resizeChart('chartInsightDow');
+            if (!state.chartMain) {
+                await loadChart('stats-v2-chart', 'chartMain');
+            } else {
+                resizeChart('chartMain');
+            }
+            return;
+        }
+
+        state.insightsLoading = true;
+        root?.classList.add('is-loading');
+        if (status) {
+            status.classList.remove('hidden', 'is-error');
+            status.textContent = 'Loading insights…';
+        }
+
+        try {
+            const data = await fetchJson({ ...baseParams(), action: 'chart_insights' });
+            state.insightsData = data;
+            state.insightsDirty = false;
+            renderInsightHighlights(data.highlights || {});
+            renderInsightMetricCharts();
+            await loadChart('stats-v2-chart', 'chartMain');
+            if (status) {
+                status.textContent = '';
+                status.classList.add('hidden');
+            }
+        } catch (err) {
+            if (!isAbortError(err)) {
+                console.error('[Campaign Stats] chart insights', err);
+                if (status) {
+                    status.classList.remove('hidden');
+                    status.classList.add('is-error');
+                    status.textContent = err.message || 'Couldn’t load chart insights';
+                }
+            }
+        } finally {
+            state.insightsLoading = false;
+            root?.classList.remove('is-loading');
+        }
+    }
+
+    function invalidateChartInsights() {
+        state.insightsDirty = true;
+        state.insightsData = null;
+        destroyInsightCharts();
+        const pills = document.getElementById('stats-v2-insights-highlights');
+        if (pills) {
+            pills.innerHTML = '<div class="stats-v2-insight-pill stats-v2-insight-pill--muted">Refresh insights when you open Chart…</div>';
+        }
+    }
+
     async function loadChart(canvasId, storeKey) {
         const granularity = document.getElementById('stats-v2-chart-granularity')?.value || 'auto';
         const chartData = await fetchJson({ ...baseParams(), action: 'chart', granularity });
@@ -1235,7 +1433,6 @@
             ? '.overview-chart-metric:checked'
             : '.stats-v2-panel-chart .chart-metric:checked';
         const selected = Array.from(document.querySelectorAll(metricSelector)).map((el) => el.value);
-        // Dedupe in case duplicate controls are present in the DOM
         const uniqueSelected = [...new Set(selected)];
         if (state[storeKey]) {
             state[storeKey].destroy();
@@ -1686,11 +1883,7 @@
         document.querySelectorAll('.stats-v2-tab').forEach((el) => el.classList.toggle('active', el.dataset.tab === tab));
         document.querySelectorAll('.stats-v2-panel').forEach((el) => el.classList.toggle('active', el.dataset.panel === tab));
         if (tab === 'chart') {
-            if (!state.chartMain) {
-                loadChart('stats-v2-chart', 'chartMain');
-            } else {
-                resizeChart('chartMain');
-            }
+            loadChartInsights(false);
         }
     }
 
@@ -1717,6 +1910,7 @@
             if (gen !== refreshGeneration) {
                 return;
             }
+            invalidateChartInsights();
             // Chart is best-effort: KPI summary already succeeded; don't blank the page on chart bind/SQL issues.
             if (!state.chartCollapsed) {
                 try {
@@ -1732,7 +1926,7 @@
             }
             if (state.tab === 'chart') {
                 try {
-                    await loadChart('stats-v2-chart', 'chartMain');
+                    await loadChartInsights(true);
                 } catch (chartErr) {
                     if (!isAbortError(chartErr) && gen === refreshGeneration) {
                         showStatsError(chartErr.message || 'Couldn’t load chart');
@@ -2007,6 +2201,24 @@
     });
     document.getElementById('stats-v2-chart-granularity')?.addEventListener('change', () => loadChart('stats-v2-chart', 'chartMain'));
 
+    document.querySelectorAll('.stats-v2-insight-metric-toggle').forEach((group) => {
+        group.addEventListener('click', (ev) => {
+            const btn = ev.target.closest('.stats-v2-insight-metric');
+            if (!btn) return;
+            const insight = group.getAttribute('data-insight');
+            const metric = btn.getAttribute('data-metric');
+            if (!insight || !metric) return;
+            group.querySelectorAll('.stats-v2-insight-metric').forEach((b) => b.classList.toggle('is-active', b === btn));
+            state.insightMetrics[insight] = metric;
+            if (!state.insightsData) return;
+            if (insight === 'hour') {
+                buildInsightBarChart('stats-v2-insight-hour', 'chartInsightHour', state.insightsData.hour, metric);
+            } else if (insight === 'day_of_week') {
+                buildInsightBarChart('stats-v2-insight-dow', 'chartInsightDow', state.insightsData.day_of_week, metric);
+            }
+        });
+    });
+
     if (state.chartCollapsed) {
         document.getElementById('stats-v2-overview-chart-area')?.classList.add('collapsed');
         document.getElementById('stats-v2-toggle-chart').textContent = 'Expand';
@@ -2018,6 +2230,9 @@
         }
         if (state.chartMain) {
             loadChart('stats-v2-chart', 'chartMain');
+        }
+        if (state.insightsData) {
+            renderInsightMetricCharts();
         }
     });
 

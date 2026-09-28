@@ -7,7 +7,8 @@ namespace SimpleKuma\Stats;
 use mysqli;
 
 /**
- * Fast-path reads from clicks_daily_summary and clicks_stats_by_token_daily (Phase 2b).
+ * Fast-path reads from clicks_daily_summary, clicks_stats_by_token_daily,
+ * and clicks_stats_by_token_hourly (Phase 2b + token-hourly).
  */
 final class CampaignStatsPreAggregateReader
 {
@@ -39,6 +40,21 @@ final class CampaignStatsPreAggregateReader
         $result = $this->db->query(
             "SELECT 1 FROM information_schema.TABLES
              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clicks_stats_by_token_daily' LIMIT 1"
+        );
+        $cache = $result !== false && $result->num_rows > 0;
+
+        return $cache;
+    }
+
+    public function tokenHourlyTableExists(): bool
+    {
+        static $cache = null;
+        if ($cache !== null) {
+            return $cache;
+        }
+        $result = $this->db->query(
+            "SELECT 1 FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clicks_stats_by_token_hourly' LIMIT 1"
         );
         $cache = $result !== false && $result->num_rows > 0;
 
@@ -122,9 +138,8 @@ final class CampaignStatsPreAggregateReader
     }
 
     /**
-     * Pre-agg breakdowns for date/offer/landing (daily summary) and token dims (token daily).
-     * Allows offer/landing parent drill-downs on daily summary (manual-cost path).
-     * Token dims and geo/device stay raw when a parent path is present (token table has no offer/LP).
+     * Pre-agg breakdowns for date/week/offer/landing (daily summary), token dims (token daily),
+     * and hour↔token nests (token hourly). Unfiltered Hour L0 stays on lean cover in V2.
      *
      * @param list<array{dimension: string, value: string}> $parentPath
      */
@@ -137,6 +152,11 @@ final class CampaignStatsPreAggregateReader
             return false;
         }
 
+        $tokenHourlyNest = $this->isTokenHourlyNest($groupBy, $parentPath);
+        if ($tokenHourlyNest) {
+            return $this->tokenHourlyTableExists() && !$filters->hasTokenFilter();
+        }
+
         foreach ($parentPath as $parent) {
             $dim = (string)($parent['dimension'] ?? '');
             if (!in_array($dim, ['offer', 'landing', 'traffic_source'], true)) {
@@ -147,9 +167,13 @@ final class CampaignStatsPreAggregateReader
         if (in_array($groupBy, ['offer', 'landing'], true)) {
             return $this->dailySummaryTableExists();
         }
-        if ($groupBy === 'date') {
-            // Date buckets are UTC summary_date — only safe with no parent and UTC-aligned callers.
+        if ($groupBy === 'date' || $groupBy === 'week' || $groupBy === 'day_of_week') {
+            // UTC summary_date / week / weekday — only safe with no parent and UTC-aligned callers.
             return $parentPath === [] && $this->dailySummaryTableExists();
+        }
+        if ($groupBy === 'hour') {
+            // Unfiltered hour uses lean cover; offer/landing×hour fall through to raw.
+            return false;
         }
         // Built-in geo/device columns are not in daily summary — keep raw path
         if (isset(CampaignStatsExpressions::BUILTIN_COLUMN_MAP[$groupBy])) {
@@ -164,6 +188,41 @@ final class CampaignStatsPreAggregateReader
         }
 
         return $this->tokenDailyTableExists();
+    }
+
+    /**
+     * @param list<array{dimension: string, value: string}> $parentPath
+     */
+    private function isTokenHourlyNest(string $groupBy, array $parentPath): bool
+    {
+        if (count($parentPath) !== 1) {
+            return false;
+        }
+        $parentDim = (string)($parentPath[0]['dimension'] ?? '');
+
+        if ($groupBy === 'hour' && $this->isTokenDimensionKey($parentDim)) {
+            return true;
+        }
+        if ($parentDim === 'hour' && $this->isTokenDimensionKey($groupBy)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function isTokenDimensionKey(string $dim): bool
+    {
+        if ($dim === '' || in_array($dim, ['offer', 'landing', 'date', 'hour', 'week', 'day_of_week', 'traffic_source'], true)) {
+            return false;
+        }
+        if (isset(CampaignStatsExpressions::BUILTIN_COLUMN_MAP[$dim])) {
+            return false;
+        }
+        if (in_array($dim, CampaignStatsExpressions::FIXED_GROUP_BY, true)) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -233,7 +292,18 @@ final class CampaignStatsPreAggregateReader
             return null;
         }
 
-        if (in_array($groupBy, ['date', 'offer', 'landing'], true)) {
+        if ($this->isTokenHourlyNest($groupBy, $parentPath)) {
+            return $this->queryTokenHourlyNestBreakdown(
+                $campaignId,
+                $groupBy,
+                $dateFrom,
+                $dateTo,
+                $parentPath,
+                $filters
+            );
+        }
+
+        if (in_array($groupBy, ['date', 'week', 'day_of_week', 'offer', 'landing'], true)) {
             return $this->queryDailySummaryBreakdown($campaignId, $groupBy, $dateFrom, $dateTo, $filters, $parentPath);
         }
 
@@ -397,6 +467,40 @@ final class CampaignStatsPreAggregateReader
                 WHERE {$where}
                 GROUP BY s.summary_date
             ";
+        } elseif ($groupBy === 'week') {
+            $weekExpr = 'DATE_SUB(s.summary_date, INTERVAL WEEKDAY(s.summary_date) DAY)';
+            $sql = "
+                SELECT {$weekExpr} AS group_key,
+                       NULL AS group_label,
+                       SUM(s.clicks) AS clicks,
+                       SUM(s.lp_clicks) AS lp_clicks,
+                       SUM(s.direct_clicks) AS direct_clicks,
+                       SUM(s.conversions) AS conversions,
+                       {$optinsSel}
+                       {$botClicksSel}
+                       SUM(s.cost) AS cost,
+                       SUM(s.revenue) AS revenue
+                FROM clicks_daily_summary s
+                WHERE {$where}
+                GROUP BY {$weekExpr}
+            ";
+        } elseif ($groupBy === 'day_of_week') {
+            $dowExpr = 'WEEKDAY(s.summary_date)';
+            $sql = "
+                SELECT CAST({$dowExpr} AS CHAR) AS group_key,
+                       NULL AS group_label,
+                       SUM(s.clicks) AS clicks,
+                       SUM(s.lp_clicks) AS lp_clicks,
+                       SUM(s.direct_clicks) AS direct_clicks,
+                       SUM(s.conversions) AS conversions,
+                       {$optinsSel}
+                       {$botClicksSel}
+                       SUM(s.cost) AS cost,
+                       SUM(s.revenue) AS revenue
+                FROM clicks_daily_summary s
+                WHERE {$where}
+                GROUP BY {$dowExpr}
+            ";
         } elseif ($groupBy === 'offer') {
             $sql = "
                 SELECT COALESCE(CAST(s.offer_id AS CHAR), 'N/A') AS group_key,
@@ -444,9 +548,14 @@ final class CampaignStatsPreAggregateReader
 
         $rows = [];
         while ($row = $result->fetch_assoc()) {
+            $key = (string)($row['group_key'] ?? 'N/A');
+            $label = $row['group_label'] ?? null;
+            if ($groupBy === 'day_of_week' && ctype_digit($key)) {
+                $label = CampaignStatsExpressions::formatDayOfWeekLabel((int)$key);
+            }
             $formatted = CampaignStatsExpressions::formatMetricsRow(
-                (string)($row['group_key'] ?? 'N/A'),
-                $row['group_label'] ?? null,
+                $key,
+                $label,
                 $row
             );
             $formatted['group_key'] = $formatted['group'];
@@ -588,6 +697,103 @@ final class CampaignStatsPreAggregateReader
             );
             $formatted['group_key'] = $formatted['group'];
             $formatted['name'] = $formatted['group'];
+            $rows[] = $formatted;
+        }
+        $stmt->close();
+
+        return $rows;
+    }
+
+    /**
+     * Token → Hour or Hour → Token from clicks_stats_by_token_hourly.
+     *
+     * @param list<array{dimension: string, value: string}> $parentPath
+     * @return list<array<string, mixed>>
+     */
+    private function queryTokenHourlyNestBreakdown(
+        int $campaignId,
+        string $groupBy,
+        string $dateFrom,
+        string $dateTo,
+        array $parentPath,
+        CampaignStatsQueryFilters $filters
+    ): array {
+        $parent = $parentPath[0];
+        $parentDim = (string)($parent['dimension'] ?? '');
+        $parentValue = (string)($parent['value'] ?? '');
+        $optinsSel = $this->tokenDailyHasOptins() ? 'SUM(optins) AS optins,' : '0 AS optins,';
+        $botClicksSel = $this->tokenDailyHasBotClicks() ? 'SUM(bot_clicks) AS bot_clicks,' : '0 AS bot_clicks,';
+
+        $types = 'iss';
+        $params = [$campaignId, $dateFrom, $dateTo];
+        $where = 'campaign_id = ? AND summary_date >= ? AND summary_date <= ?';
+
+        if ($filters->trafficSourceId !== null) {
+            $where .= ' AND traffic_source_id = ?';
+            $types .= 'i';
+            $params[] = $filters->trafficSourceId;
+        }
+
+        if ($groupBy === 'hour') {
+            $tokenParam = CampaignStatsExpressions::unwrapDimensionKey($parentDim);
+            $where .= ' AND token_param = ? AND token_value = ?';
+            $types .= 'ss';
+            $params[] = $tokenParam;
+            $params[] = $parentValue;
+            $sql = "
+                SELECT CAST(hour AS CHAR) AS group_key,
+                       SUM(visitors) AS clicks,
+                       SUM(lp_clicks) AS lp_clicks,
+                       SUM(conversions) AS conversions,
+                       {$optinsSel}
+                       {$botClicksSel}
+                       SUM(cost) AS cost,
+                       SUM(revenue) AS revenue
+                FROM clicks_stats_by_token_hourly
+                WHERE {$where}
+                GROUP BY hour
+            ";
+        } else {
+            $tokenParam = CampaignStatsExpressions::unwrapDimensionKey($groupBy);
+            $hour = (int)$parentValue;
+            $where .= ' AND token_param = ? AND hour = ?';
+            $types .= 'si';
+            $params[] = $tokenParam;
+            $params[] = $hour;
+            $sql = "
+                SELECT token_value AS group_key,
+                       SUM(visitors) AS clicks,
+                       SUM(lp_clicks) AS lp_clicks,
+                       SUM(conversions) AS conversions,
+                       {$optinsSel}
+                       {$botClicksSel}
+                       SUM(cost) AS cost,
+                       SUM(revenue) AS revenue
+                FROM clicks_stats_by_token_hourly
+                WHERE {$where}
+                GROUP BY token_value
+            ";
+        }
+
+        $stmt = $this->db->prepare($sql);
+        if ($stmt === false) {
+            return [];
+        }
+
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $result = $stmt->get_result();
+
+        $rows = [];
+        while ($row = $result->fetch_assoc()) {
+            $key = (string)($row['group_key'] ?? 'N/A');
+            $label = null;
+            if ($groupBy === 'hour' && ctype_digit($key)) {
+                $label = CampaignStatsExpressions::formatHourLabel((int)$key);
+            }
+            $formatted = CampaignStatsExpressions::formatMetricsRow($key, $label, $row);
+            $formatted['group_key'] = $formatted['group'];
+            $formatted['name'] = $formatted['group_label'] ?? $formatted['group'];
             $rows[] = $formatted;
         }
         $stmt->close();

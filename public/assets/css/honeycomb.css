@@ -81,6 +81,30 @@
     color: #721c24;
 }
 
+.honeycomb-flash--update {
+    background: #fff3e0;
+    color: #e65100;
+    border: 1px solid #ffcc80;
+}
+
+.honeycomb-ver-arrow {
+    margin: 0 4px;
+    color: var(--text-muted, #666);
+    font-weight: 600;
+}
+
+.honeycomb-catalog-ver--new {
+    color: #e65100;
+    font-weight: 700;
+}
+
+.honeycomb-pill--update {
+    background: #fff3e0;
+    color: #e65100;
+    border: 1px solid #ffcc80;
+    margin-left: 6px;
+}
+
 .honeycomb-repos {
     margin: 16px 0;
 }
@@ -605,6 +629,22 @@
 [data-theme-base="dark"] .honeycomb-flash--err {
     background: var(--color-error-bg, #4a1f1f);
     color: #f5c2c0;
+}
+
+[data-theme-base="dark"] .honeycomb-flash--update {
+    background: #3d2a12;
+    color: #ffcc80;
+    border-color: #8d6e3f;
+}
+
+[data-theme-base="dark"] .honeycomb-catalog-ver--new {
+    color: #ffb74d;
+}
+
+[data-theme-base="dark"] .honeycomb-pill--update {
+    background: #3d2a12;
+    color: #ffcc80;
+    border-color: #8d6e3f;
 }
 
 [data-theme-base="dark"] .honeycomb-catalog-toolbar {
