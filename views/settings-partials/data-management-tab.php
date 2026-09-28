@@ -41,7 +41,7 @@ $addConvMode = (!empty($_POST['bulk_conversions'])) ? 'bulk' : 'single';
 $clicksOnList = !($dataSection === 'clicks' && $dataPanel !== '');
 $convsOnList = !($dataSection === 'conversions' && $dataPanel !== '');
 ?>
-<link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/settings-data-management.css?v=3">
+<link rel="stylesheet" href="<?= htmlspecialchars(sk_css_href('assets/css/settings-data-management.css')) ?>">
 
 <div class="card dm-wrap" data-dm-initial-section="<?= htmlspecialchars($dataSection) ?>" data-dm-initial-panel="<?= htmlspecialchars($dataPanel) ?>">
     <div class="card-header">

@@ -24,15 +24,11 @@ $dateTo = $_GET['date_to'] ?? $today;
 $apiBase = APP_BASE_URL . '/api-campaign-stats.php';
 $savedViewsApi = APP_BASE_URL . '/api-campaign-stats-saved-views.php';
 
-$statsCssPath = __DIR__ . '/../public/assets/css/campaign-stats.css';
-$statsMobileCssPath = __DIR__ . '/../public/assets/css/mobile-campaign-stats.css';
 $statsJsPath = __DIR__ . '/../public/assets/js/campaign-stats.js';
-$statsCssVer = file_exists($statsCssPath) ? (string)filemtime($statsCssPath) : '1';
-$statsMobileCssVer = file_exists($statsMobileCssPath) ? (string)filemtime($statsMobileCssPath) : '1';
 $statsJsVer = file_exists($statsJsPath) ? (string)filemtime($statsJsPath) : '1';
 ?>
-<link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/campaign-stats.css?v=<?= htmlspecialchars($statsCssVer) ?>">
-<link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/mobile-campaign-stats.css?v=<?= htmlspecialchars($statsMobileCssVer) ?>">
+<link rel="stylesheet" href="<?= htmlspecialchars(sk_css_href('assets/css/campaign-stats.css')) ?>">
+<link rel="stylesheet" href="<?= htmlspecialchars(sk_css_href('assets/css/mobile-campaign-stats.css')) ?>">
 
 <div class="stats-v2-page" id="stats-v2-app"
      data-api-base="<?= htmlspecialchars($apiBase) ?>"

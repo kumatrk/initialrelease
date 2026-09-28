@@ -22,7 +22,7 @@ if (!$db->connect_error) {
 $defaultHost = parse_url(BASE_URL, PHP_URL_HOST) ?: 'Current Domain';
 ?>
 
-<link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/postback-urls.css">
+<link rel="stylesheet" href="<?= htmlspecialchars(sk_css_href('assets/css/postback-urls.css')) ?>">
 
 <div class="postbacks-page">
     <div class="page-header">

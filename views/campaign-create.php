@@ -114,13 +114,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_campaign'])) {
 
 require __DIR__ . '/campaign-create/_data.php';
 
-$wizardCssPath = __DIR__ . '/../public/assets/css/campaign-create-wizard.css';
 $wizardJsPath = __DIR__ . '/../public/assets/js/campaign-create-wizard.js';
-$extraCss = ASSETS_BASE_URL . '/assets/css/campaign-create-wizard.css?v=' . (file_exists($wizardCssPath) ? filemtime($wizardCssPath) : '1');
 $extraJs = ASSETS_BASE_URL . '/assets/js/campaign-create-wizard.js?v=' . (file_exists($wizardJsPath) ? filemtime($wizardJsPath) : '1');
 ?>
 
-<link rel="stylesheet" href="<?= htmlspecialchars($extraCss) ?>">
+<link rel="stylesheet" href="<?= htmlspecialchars(sk_css_href('assets/css/campaign-create-wizard.css')) ?>">
 
 <div class="page-header">
     <h1 class="page-title">Create Campaign</h1>

@@ -78,7 +78,7 @@ $addonName = (string) ($installedMeta['name'] ?? $slug);
 $addonVersion = (string) ($installedMeta['version'] ?? '');
 $backUrl = APP_BASE_URL . '/index.php?page=honeycomb';
 ?>
-<link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/honeycomb.css?v=4">
+<link rel="stylesheet" href="<?= htmlspecialchars(sk_css_href('assets/css/honeycomb.css')) ?>">
 
 <div class="honeycomb-page">
     <div class="honeycomb-options-nav">

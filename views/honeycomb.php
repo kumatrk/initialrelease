@@ -42,12 +42,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $action = (string) ($_POST['action'] ?? '');
         if ($action === 'refresh_catalog') {
-            $catalog->fetch(true);
+            $refreshed = $catalog->fetch(true);
             $updateChecker->checkForUpdates(true);
-            header('Location: ' . APP_BASE_URL . '/index.php?page=honeycomb&success=catalog_refreshed');
-            exit;
-        }
-        if ($action === 'install_addon' || $action === 'update_addon') {
+            if (!empty($refreshed['ok'])) {
+                header('Location: ' . APP_BASE_URL . '/index.php?page=honeycomb&success=catalog_refreshed');
+                exit;
+            }
+            $errors['general'] = 'Could not refresh catalog: '
+                . (string) ($refreshed['error'] ?? 'Unknown error');
+        } elseif ($action === 'install_addon' || $action === 'update_addon') {
             $slug = trim((string) ($_POST['slug'] ?? ''));
             $result = $catalog->fetch(false);
             $entry = null;
@@ -156,7 +159,7 @@ $lastCheck = $lastCheckRaw !== '' ? json_decode($lastCheckRaw, true) : null;
 $schemaReady = $store->tableExists();
 $hourlyReady = (new HourlyCostStore($db))->tableExists();
 ?>
-<link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/honeycomb.css?v=6">
+<link rel="stylesheet" href="<?= htmlspecialchars(sk_css_href('assets/css/honeycomb.css')) ?>">
 
 <div class="honeycomb-page">
     <header class="honeycomb-hero">

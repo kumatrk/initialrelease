@@ -54,7 +54,8 @@ final class CatalogClient
 
         try {
             $response = $this->http->get($url);
-            $decoded = json_decode($response['body'], true);
+            $body = $this->normalizeJsonBody((string) ($response['body'] ?? ''));
+            $decoded = json_decode($body, true);
             if (!is_array($decoded)) {
                 throw new \RuntimeException('Catalog is not valid JSON.');
             }
@@ -185,6 +186,21 @@ final class CatalogClient
             'sha256' => $sha256,
             'compatible' => $compatible,
         ];
+    }
+
+    /**
+     * Strip UTF-8 BOM / leading junk that some editors and CDNs leave on catalog.json.
+     */
+    private function normalizeJsonBody(string $body): string
+    {
+        if (str_starts_with($body, "\xEF\xBB\xBF")) {
+            $body = substr($body, 3);
+        }
+        // UTF-8 BOM decoded as the Unicode replacement / ZWNBSP when already as text
+        if (str_starts_with($body, "\u{FEFF}")) {
+            $body = substr($body, strlen("\u{FEFF}"));
+        }
+        return ltrim($body);
     }
 
     /**

@@ -1,3 +1,12 @@
+# Simple Kuma Tracker Version 1.1.5.27
+
+## Changes in 1.1.5.27
+
+### Hotfix: campaign editor layout (cached CSS)
+- Sectioned campaign edit/create form styles moved to dedicated `campaign-form.css` and linked from the global layout
+- All layout CSS and page-specific stylesheets now use `filemtime` cache-busting (`sk_css_href`) so CDN/browser caches cannot keep a pre-refactor `main.css` after update
+- Packager requires `campaign-form.css`, form partials, and cache-bust wiring so this cannot ship unstyled again
+
 # Simple Kuma Tracker Version 1.1.5.26
 
 ## Changes in 1.1.5.26

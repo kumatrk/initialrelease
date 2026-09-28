@@ -62,10 +62,8 @@ if ($fbToday === $gaToday) {
     $highestLabel = 'Google Ads today';
     $highestValue = number_format($gaToday);
 }
-$apiUsageCssPath = __DIR__ . '/../../public/assets/css/api-usage-overview.css';
-$apiUsageCssVer = file_exists($apiUsageCssPath) ? (string)filemtime($apiUsageCssPath) : '1';
 ?>
-<link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/api-usage-overview.css?v=<?= htmlspecialchars($apiUsageCssVer) ?>">
+<link rel="stylesheet" href="<?= htmlspecialchars(sk_css_href('assets/css/api-usage-overview.css')) ?>">
 
 <div class="api-usage-overview card">
     <div class="api-usage-overview__header">

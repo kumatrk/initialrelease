@@ -4477,7 +4477,7 @@ unset($camp);
 }
 </style>
 
-<link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/mobile-campaign-stats-legacy.css">
+<link rel="stylesheet" href="<?= htmlspecialchars(sk_css_href('assets/css/mobile-campaign-stats-legacy.css')) ?>">
 
 <div class="campaign-stats-page">
     <div class="page-header" style="margin-bottom: 16px;">

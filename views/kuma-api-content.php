@@ -15,7 +15,7 @@ $canManageKeys = ($permission && $permission->hasPermission(Permission::PERM_SET
     || SingleAdminMode::isEnabled();
 $apiTableMissing = !$apiKeyEntity->tableExists();
 ?>
-<link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/settings-api.css">
+<link rel="stylesheet" href="<?= htmlspecialchars(sk_css_href('assets/css/settings-api.css')) ?>">
 
 <div class="kuma-api-page">
 <?php if (!empty($success)): ?>

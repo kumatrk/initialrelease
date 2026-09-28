@@ -30,6 +30,22 @@ if (!defined('APP_BASE_URL')) {
     define('APP_BASE_URL', rtrim(BASE_URL, '/') . PUBLIC_WEB_PREFIX);
 }
 
+/**
+ * Cache-busted URL for a file under public/ (e.g. assets/css/main.css).
+ * Prevents CDN/browser from keeping stale CSS after deploys.
+ */
+if (!function_exists('sk_css_href')) {
+    function sk_css_href(string $relativeUnderPublic): string
+    {
+        $relativeUnderPublic = ltrim(str_replace('\\', '/', $relativeUnderPublic), '/');
+        $full = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR
+            . str_replace('/', DIRECTORY_SEPARATOR, $relativeUnderPublic);
+        $ver = is_file($full) ? (string) filemtime($full) : '1';
+        $base = defined('ASSETS_BASE_URL') ? rtrim((string) ASSETS_BASE_URL, '/') : '';
+        return $base . '/' . $relativeUnderPublic . '?v=' . rawurlencode($ver);
+    }
+}
+
 // v1.1.0+ single-tenant: all users are admins (override in config.php if needed)
 if (!defined('SINGLE_ADMIN_MODE')) {
     define('SINGLE_ADMIN_MODE', true);

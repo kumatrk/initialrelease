@@ -40,34 +40,47 @@ $dashboardChartsHidden = !empty($GLOBALS['dashboardChartsHidden']);
     </script>
     <title><?= htmlspecialchars($pageTitle ?? 'Simple KUMA') ?> - Simple KUMA</title>
     <link rel="icon" type="image/x-icon" href="<?= ASSETS_BASE_URL ?>/assets/images/favicon.ico">
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/main.css">
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/themes.css">
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/theme-switcher.css">
+    <?php
+    // Prefer shared helper (bootstrap_web_paths.php); keep local fallback for safety.
+    $skCssHref = static function (string $relativeUnderPublic): string {
+        if (function_exists('sk_css_href')) {
+            return sk_css_href($relativeUnderPublic);
+        }
+        $full = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR
+            . str_replace('/', DIRECTORY_SEPARATOR, ltrim($relativeUnderPublic, '/'));
+        $ver = is_file($full) ? (string) filemtime($full) : '1';
+        return ASSETS_BASE_URL . '/' . ltrim($relativeUnderPublic, '/') . '?v=' . rawurlencode($ver);
+    };
+    ?>
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/main.css')) ?>">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/themes.css')) ?>">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/theme-switcher.css')) ?>">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/campaign-form.css')) ?>">
     <!-- MOBILE DASHBOARD STYLES - To remove mobile styles, delete the line below and delete public/assets/css/mobile-dashboard.css -->
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/mobile-dashboard.css">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/mobile-dashboard.css')) ?>">
     <!-- MOBILE VISITORS STYLES - To remove mobile styles, delete the line below and delete public/assets/css/mobile-visitors.css -->
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/mobile-visitors.css">
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/conversion-log.css">
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/mobile-conversions.css">
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/email-optins.css?v=4">
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/campaign-list-filters.css">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/mobile-visitors.css')) ?>">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/conversion-log.css')) ?>">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/mobile-conversions.css')) ?>">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/email-optins.css')) ?>">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/campaign-list-filters.css')) ?>">
     <!-- MOBILE CAMPAIGNS STYLES - To remove mobile styles, delete the line below and delete public/assets/css/mobile-campaigns.css -->
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/mobile-campaigns.css">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/mobile-campaigns.css')) ?>">
     <!-- MOBILE TRAFFIC SOURCES STYLES - To remove mobile styles, delete the line below and delete public/assets/css/mobile-traffic-sources.css -->
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/mobile-traffic-sources.css">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/mobile-traffic-sources.css')) ?>">
     <!-- MOBILE OFFERS STYLES - To remove mobile styles, delete the line below and delete public/assets/css/mobile-offers.css -->
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/mobile-offers.css">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/mobile-offers.css')) ?>">
     <!-- MOBILE LANDING PAGES STYLES - To remove mobile styles, delete the line below and delete public/assets/css/mobile-landing-pages.css -->
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/mobile-landing-pages.css">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/mobile-landing-pages.css')) ?>">
     <!-- MOBILE NETWORKS STYLES - To remove mobile styles, delete the line below and delete public/assets/css/mobile-networks.css -->
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/mobile-networks.css">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/mobile-networks.css')) ?>">
     <!-- MOBILE POSTBACKS STYLES - To remove mobile styles, delete the line below and delete public/assets/css/mobile-postbacks.css -->
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/mobile-postbacks.css">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/mobile-postbacks.css')) ?>">
     <!-- MOBILE BILLING STYLES - To remove mobile styles, delete the line below and delete public/assets/css/mobile-billing.css -->
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/mobile-billing.css">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/mobile-billing.css')) ?>">
     <!-- MOBILE SETTINGS STYLES - To remove mobile styles, delete the line below and delete public/assets/css/mobile-settings.css -->
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/mobile-settings.css">
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/settings-layout.css?v=2">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/mobile-settings.css')) ?>">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/settings-layout.css')) ?>">
 </head>
 <body>
     <div class="app-wrapper">

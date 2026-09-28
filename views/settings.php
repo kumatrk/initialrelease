@@ -6221,7 +6221,7 @@ php composer.phar install --no-dev --optimize-autoloader</pre>
         ? ($edgeStatus['last_health_ok'] ? 'OK' : 'Issue')
         : 'Not checked';
     ?>
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/settings-edge-redirect.css?v=2">
+    <link rel="stylesheet" href="<?= htmlspecialchars(sk_css_href('assets/css/settings-edge-redirect.css')) ?>">
 
     <div class="card settings-edge-redirect">
         <h2>Edge Redirect Engine</h2>
@@ -6397,7 +6397,7 @@ php composer.phar install --no-dev --optimize-autoloader</pre>
     </div>
 
 <?php elseif ($activeTab === 'about'): ?>
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/settings-about.css?v=6">
+    <link rel="stylesheet" href="<?= htmlspecialchars(sk_css_href('assets/css/settings-about.css')) ?>">
 
     <div class="settings-about">
         <header class="about-intro">

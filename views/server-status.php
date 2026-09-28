@@ -108,7 +108,7 @@ foreach ($tableSizes as $row) {
     $totalClickBytes += (int) $row['bytes'];
 }
 ?>
-<link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/server-status.css?v=2">
+<link rel="stylesheet" href="<?= htmlspecialchars(sk_css_href('assets/css/server-status.css')) ?>">
 
 <div class="server-status-page">
     <div class="page-header">
