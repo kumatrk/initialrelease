@@ -70,6 +70,44 @@ $success = '';
 $errors = [];
 $retentionRunLog = '';
 
+/**
+ * Build proxy config for Facebook Marketing validate/fetch from form fields.
+ * When password is blank on edit, reuse encrypted (or decrypted) password from the saved row.
+ */
+function buildFmProxyConfigFromForm(
+    bool $useProxy,
+    string $proxyHost,
+    ?int $proxyPort,
+    string $proxyType,
+    string $proxyUser,
+    string $proxyPass,
+    ?array $existingIntegration = null
+): array {
+    if (!$useProxy) {
+        return [];
+    }
+
+    $config = [
+        'use_proxy' => true,
+        'proxy_host' => $proxyHost,
+        'proxy_port' => $proxyPort,
+        'proxy_type' => $proxyType !== '' ? $proxyType : 'HTTP',
+        'proxy_user' => $proxyUser !== '' ? $proxyUser : null,
+    ];
+
+    if ($proxyPass !== '') {
+        $config['proxy_pass'] = $proxyPass;
+    } elseif (is_array($existingIntegration)) {
+        if (!empty($existingIntegration['proxy_pass_encrypted'])) {
+            $config['proxy_pass_encrypted'] = $existingIntegration['proxy_pass_encrypted'];
+        } elseif (!empty($existingIntegration['proxy_pass'])) {
+            $config['proxy_pass'] = $existingIntegration['proxy_pass'];
+        }
+    }
+
+    return $config;
+}
+
 // Helper function to fetch and sync Facebook ad accounts for an integration
 function fetchAndSyncFacebookAdAccounts($db, $integrationId, $accessToken, $proxyConfig = null) {
     require_once __DIR__ . '/../src/Entity/FacebookMarketingAdAccount.php';
@@ -78,25 +116,35 @@ function fetchAndSyncFacebookAdAccounts($db, $integrationId, $accessToken, $prox
     $adAccountEntity = new \SimpleKuma\Entity\FacebookMarketingAdAccount($db);
     
     // Fetch ad accounts from Facebook API
-    // Include timezone_name field to auto-detect ad account timezone
-    $adAccountsUrl = "https://graph.facebook.com/v24.0/me/adaccounts?access_token=" . urlencode($accessToken) . "&fields=id,name,account_id,currency,business,timezone_name&limit=100";
+    // timezone_name: auto-detect ad account timezone for cost sync
+    // Do NOT request `business` — that field requires business_management permission;
+    // ads_read + ads_management is enough for cost tracking (business_* stay null).
+    $adAccountsUrl = "https://graph.facebook.com/v24.0/me/adaccounts?access_token=" . urlencode($accessToken) . "&fields=id,name,account_id,currency,timezone_name&limit=100";
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $adAccountsUrl);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
     
-    // Apply proxy if configured
+    // Apply proxy if configured (expects ProxyHandler::getProxyConfig shape)
     if ($proxyConfig && !empty($proxyConfig['use_proxy'])) {
         \SimpleKuma\Http\ProxyHandler::configureCurl($ch, $proxyConfig);
     }
     
     $adAccountsResponse = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    $curlErrno = curl_errno($ch);
     curl_close($ch);
+
+    if ($curlError !== '') {
+        $msg = 'Unable to reach Facebook API: ' . $curlError;
+        error_log('fetchAndSyncFacebookAdAccounts: ' . $msg . ' (errno=' . $curlErrno . ', integration_id=' . (int) $integrationId . ')');
+        return ['success' => false, 'error' => $msg];
+    }
     
     if ($httpCode === 200) {
-        $adAccountsData = json_decode($adAccountsResponse, true);
+        $adAccountsData = json_decode(is_string($adAccountsResponse) ? $adAccountsResponse : '', true);
         if (isset($adAccountsData['data']) && is_array($adAccountsData['data'])) {
             $accounts = [];
             foreach ($adAccountsData['data'] as $account) {
@@ -136,9 +184,26 @@ function fetchAndSyncFacebookAdAccounts($db, $integrationId, $accessToken, $prox
                 return ['success' => false, 'error' => 'Failed to sync ad accounts to database'];
             }
         }
+
+        $msg = 'Failed to fetch ad accounts from Facebook API: unexpected response';
+        error_log('fetchAndSyncFacebookAdAccounts: ' . $msg . ' (http=200, integration_id=' . (int) $integrationId . ')');
+        return ['success' => false, 'error' => $msg];
     }
-    
-    return ['success' => false, 'error' => 'Failed to fetch ad accounts from Facebook API'];
+
+    $responseData = json_decode(is_string($adAccountsResponse) ? $adAccountsResponse : '', true);
+    if (isset($responseData['error']['message'])) {
+        $fbMsg = (string) $responseData['error']['message'];
+        $fbCode = $responseData['error']['code'] ?? null;
+        $msg = 'Facebook API error'
+            . ($fbCode !== null && $fbCode !== '' ? " ({$fbCode})" : '')
+            . ': ' . $fbMsg;
+        error_log('fetchAndSyncFacebookAdAccounts: ' . $msg . ' (http=' . $httpCode . ', integration_id=' . (int) $integrationId . ')');
+        return ['success' => false, 'error' => $msg];
+    }
+
+    $msg = 'Failed to fetch ad accounts from Facebook API (HTTP ' . $httpCode . ')';
+    error_log('fetchAndSyncFacebookAdAccounts: ' . $msg . ' (integration_id=' . (int) $integrationId . ')');
+    return ['success' => false, 'error' => $msg];
 }
 
 // Handle AJAX request to fetch and save Facebook ad accounts
@@ -187,17 +252,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'fetch_fb_ad_accounts') {
         exit;
     }
     
-    $proxyConfig = null;
-    if (!empty($integration['use_proxy'])) {
-        $proxyConfig = [
-            'use_proxy' => true,
-            'proxy_host' => $integration['proxy_host'],
-            'proxy_port' => $integration['proxy_port'],
-            'proxy_type' => $integration['proxy_type'],
-            'proxy_user' => $integration['proxy_user'],
-            'proxy_pass' => !empty($integration['proxy_pass']) ? $integration['proxy_pass'] : null
-        ];
-    }
+    require_once __DIR__ . '/../src/Http/ProxyHandler.php';
+    $proxyConfig = \SimpleKuma\Http\ProxyHandler::getProxyConfig($integration);
     
     // Fetch and sync ad accounts (saves all to database)
     $result = fetchAndSyncFacebookAdAccounts($db, $integrationId, $accessToken, $proxyConfig);
@@ -221,6 +277,92 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'fetch_fb_ad_accounts') {
         echo json_encode(['success' => true, 'accounts' => $accounts, 'count' => count($accounts)]);
     } else {
         echo json_encode(['success' => false, 'error' => $result['error'] ?? 'Failed to fetch and save ad accounts']);
+    }
+    exit;
+}
+
+// AJAX: test Facebook Marketing proxy reaches Graph (same egress path as cost sync)
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'test_fm_proxy') {
+    header('Content-Type: application/json');
+
+    $canEditAjax = ($permission && $permission->hasPermission(Permission::PERM_SETTINGS_EDIT))
+        || (Auth::allowsLegacyNoRolesFallback() && empty($_SESSION['role_ids'] ?? []));
+    if (!$canEditAjax) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Forbidden']);
+        exit;
+    }
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+        http_response_code(405);
+        echo json_encode(['success' => false, 'error' => 'POST required']);
+        exit;
+    }
+    if (!Csrf::validate()) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'error' => 'Invalid CSRF token']);
+        exit;
+    }
+
+    require_once __DIR__ . '/../src/Http/ProxyHandler.php';
+
+    $integrationId = !empty($_POST['integration_id']) ? (int) $_POST['integration_id'] : 0;
+    $existing = $integrationId > 0 ? $facebookMarketing->getById($integrationId, true) : null;
+
+    $proxyHost = trim((string) ($_POST['proxy_host'] ?? ''));
+    $proxyPort = !empty($_POST['proxy_port']) ? (int) $_POST['proxy_port'] : null;
+    $proxyType = trim((string) ($_POST['proxy_type'] ?? 'HTTP'));
+    $proxyUser = trim((string) ($_POST['proxy_user'] ?? ''));
+    $proxyPass = trim((string) ($_POST['proxy_pass'] ?? ''));
+
+    if ($proxyHost === '' || $proxyPort === null || $proxyPort < 1) {
+        echo json_encode(['success' => false, 'error' => 'Proxy host and port are required']);
+        exit;
+    }
+
+    $fieldErrors = $facebookMarketing->validate([
+        'name' => 'proxy-connectivity-test',
+        'access_token' => 'EAA' . str_repeat('x', 40),
+        'status' => 'active',
+        'use_proxy' => true,
+        'proxy_host' => $proxyHost,
+        'proxy_port' => $proxyPort,
+        'proxy_type' => $proxyType !== '' ? $proxyType : 'HTTP',
+        'proxy_user' => $proxyUser,
+        'proxy_pass' => $proxyPass,
+    ], false);
+    // Only surface proxy-related messages (ignore placeholder name/token noise)
+    $fieldErrors = array_values(array_filter($fieldErrors, static function ($msg) {
+        return stripos((string) $msg, 'proxy') !== false;
+    }));
+    if (!empty($fieldErrors)) {
+        echo json_encode(['success' => false, 'error' => $fieldErrors[0]]);
+        exit;
+    }
+
+    $proxyConfig = buildFmProxyConfigFromForm(
+        true,
+        $proxyHost,
+        $proxyPort,
+        $proxyType !== '' ? $proxyType : 'HTTP',
+        $proxyUser,
+        $proxyPass,
+        is_array($existing) ? $existing : null
+    );
+
+    $test = \SimpleKuma\Http\ProxyHandler::testConnection($proxyConfig);
+    if (!empty($test['success'])) {
+        $ms = isset($test['response_time']) ? round((float) $test['response_time'] * 1000) : null;
+        echo json_encode([
+            'success' => true,
+            'message' => 'Proxy reached graph.facebook.com'
+                . ($ms !== null ? " ({$ms} ms)" : '')
+                . (isset($test['http_code']) ? ', HTTP ' . $test['http_code'] : ''),
+        ]);
+    } else {
+        echo json_encode([
+            'success' => false,
+            'error' => $test['error'] ?? 'Proxy test failed',
+        ]);
     }
     exit;
 }
@@ -1799,9 +1941,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $proxyType = trim($_POST['fm_proxy_type'] ?? 'HTTP');
         $proxyUser = trim($_POST['fm_proxy_user'] ?? '');
         $proxyPass = trim($_POST['fm_proxy_pass'] ?? '');
+
+        $proxyConfigForValidate = buildFmProxyConfigFromForm(
+            $useProxy,
+            $proxyHost,
+            $proxyPort,
+            $proxyType,
+            $proxyUser,
+            $proxyPass,
+            null
+        );
         
-        // Optional: Validate access token
-        $tokenValidationErrors = $facebookMarketing->validateAccessToken($accessToken);
+        // Validate token on the same path cost sync will use (direct or via proxy)
+        $tokenValidationErrors = $facebookMarketing->validateAccessToken(
+            $accessToken,
+            $proxyConfigForValidate ?: null
+        );
         
         $validationErrors = $facebookMarketing->validate([
             'name' => $name,
@@ -1839,17 +1994,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             if ($integrationId) {
                 // Always fetch and sync ad accounts after successful creation
-                $proxyConfig = null;
-                if ($useProxy) {
-                    $proxyConfig = [
-                        'use_proxy' => true,
-                        'proxy_host' => $proxyHost,
-                        'proxy_port' => $proxyPort,
-                        'proxy_type' => $proxyType,
-                        'proxy_user' => $proxyUser,
-                        'proxy_pass' => $proxyPass
-                    ];
-                }
+                // Reload so proxy uses encrypted password key ProxyHandler expects
+                require_once __DIR__ . '/../src/Http/ProxyHandler.php';
+                $freshIntegration = $facebookMarketing->getById($integrationId, true);
+                $proxyConfig = is_array($freshIntegration)
+                    ? \SimpleKuma\Http\ProxyHandler::getProxyConfig($freshIntegration)
+                    : [];
                 $fetchResult = fetchAndSyncFacebookAdAccounts($db, $integrationId, $accessToken, $proxyConfig);
                 
                 $redirectUrl = '?page=settings&tab=api-costs&success=fm_integration_created';
@@ -1879,10 +2029,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($id <= 0) {
             $errors['general'] = 'Invalid integration ID';
         } else {
-            // Optional: Validate access token only when a new one is submitted
-            $tokenValidationErrors = $accessToken !== ''
-                ? $facebookMarketing->validateAccessToken($accessToken)
-                : [];
+            $existingForProxy = $facebookMarketing->getById($id, true);
+            $proxyConfigForValidate = buildFmProxyConfigFromForm(
+                $useProxy,
+                $proxyHost,
+                $proxyPort,
+                $proxyType,
+                $proxyUser,
+                $proxyPass,
+                is_array($existingForProxy) ? $existingForProxy : null
+            );
+
+            // Blank form token = keep existing; always re-check when proxy is on
+            // so save cannot succeed while proxied cost sync would fail.
+            $tokenForValidate = $accessToken;
+            if ($tokenForValidate === '' && is_array($existingForProxy)) {
+                $tokenForValidate = trim((string) ($existingForProxy['access_token'] ?? ''));
+            }
+            $tokenValidationErrors = [];
+            if ($accessToken !== '' || $useProxy) {
+                if ($tokenForValidate === '') {
+                    $tokenValidationErrors[] = 'Access token required';
+                } else {
+                    $tokenValidationErrors = $facebookMarketing->validateAccessToken(
+                        $tokenForValidate,
+                        $proxyConfigForValidate ?: null
+                    );
+                }
+            }
             
             $validationErrors = $facebookMarketing->validate([
                 'id' => $id,
@@ -1925,21 +2099,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 if ($facebookMarketing->update($id, $updateData)) {
                     // Fetch and sync ad accounts after successful update
-                    $proxyConfig = null;
-                    if ($useProxy) {
-                        $proxyConfig = [
-                            'use_proxy' => true,
-                            'proxy_host' => $proxyHost,
-                            'proxy_port' => $proxyPort,
-                            'proxy_type' => $proxyType,
-                            'proxy_user' => $proxyUser,
-                            'proxy_pass' => $proxyPass
-                        ];
-                    }
+                    // Reload so proxy uses encrypted password key ProxyHandler expects
+                    require_once __DIR__ . '/../src/Http/ProxyHandler.php';
+                    $fresh = $facebookMarketing->getById($id, true);
+                    $proxyConfig = is_array($fresh)
+                        ? \SimpleKuma\Http\ProxyHandler::getProxyConfig($fresh)
+                        : [];
                     // Blank form token = keep existing; resolve before Graph sync
                     $tokenForSync = $accessToken;
                     if ($tokenForSync === '') {
-                        $fresh = $facebookMarketing->getById($id, true);
                         $tokenForSync = is_array($fresh) ? trim((string) ($fresh['access_token'] ?? '')) : '';
                     }
                     if ($tokenForSync !== '') {
@@ -4486,7 +4654,7 @@ $settingsTabs = array_values(array_filter(
                                    placeholder="<?= !empty(($editingFacebookMarketingIntegration ?? [])['access_token_set']) ? 'Leave blank to keep existing token' : 'EAAxxxxxxxxxxxxxxxx' ?>"
                                    <?= empty(($editingFacebookMarketingIntegration ?? [])['access_token_set']) ? 'required' : '' ?>
                                    style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px; font-family: monospace;">
-                            <div style="font-size: 12px; color: #666; margin-top: 4px;">Facebook Marketing API access token from Business Settings<?= !empty(($editingFacebookMarketingIntegration ?? [])['access_token_set']) ? ' (leave blank to keep current)' : '' ?></div>
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">Facebook Marketing API access token from Business Settings (needs <code>ads_read</code> + <code>ads_management</code>)<?= !empty(($editingFacebookMarketingIntegration ?? [])['access_token_set']) ? ' — leave blank to keep current' : '' ?></div>
                         </div>
 
                         <div style="margin-bottom: 20px;">
@@ -4639,6 +4807,20 @@ $settingsTabs = array_values(array_filter(
                                     <div style="font-size: 12px; color: #666; margin-top: 4px;">
                                         <?= $editingFacebookMarketingIntegration ? 'Leave blank to keep current password. Enter new password to update.' : 'Proxy authentication password (will be encrypted)' ?>
                                     </div>
+                                </div>
+
+                                <div style="margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+                                    <button type="button"
+                                            id="fm_test_proxy_btn"
+                                            class="btn btn-secondary"
+                                            onclick="testFacebookMarketingProxy()"
+                                            style="font-size: 13px;">
+                                        🔌 Test Proxy → Facebook Graph
+                                    </button>
+                                    <span id="fm_proxy_test_status" style="font-size: 13px; color: #666;"></span>
+                                </div>
+                                <div style="font-size: 12px; color: #666;">
+                                    Checks that this proxy can reach <code>graph.facebook.com</code> (same host cost sync uses). Saving also validates the access token through the proxy when enabled.
                                 </div>
                             </div>
                         </div>
@@ -4838,6 +5020,82 @@ $settingsTabs = array_values(array_filter(
                             select.required = false;
                             manualInput.required = true;
                             helpText.textContent = 'Enter the Facebook Ad Account ID manually (e.g., act_123456789012345)';
+                        });
+                }
+
+                // Test that the configured proxy can reach Facebook Graph
+                function testFacebookMarketingProxy() {
+                    const statusEl = document.getElementById('fm_proxy_test_status');
+                    const btn = document.getElementById('fm_test_proxy_btn');
+                    const useProxy = document.getElementById('fm_use_proxy');
+                    if (!useProxy || !useProxy.checked) {
+                        if (statusEl) {
+                            statusEl.style.color = '#d32f2f';
+                            statusEl.textContent = 'Enable “Use Proxy” first.';
+                        }
+                        return;
+                    }
+
+                    const host = (document.getElementById('fm_proxy_host') || {}).value || '';
+                    const port = (document.getElementById('fm_proxy_port') || {}).value || '';
+                    if (!host.trim() || !port.trim()) {
+                        if (statusEl) {
+                            statusEl.style.color = '#d32f2f';
+                            statusEl.textContent = 'Enter proxy host and port first.';
+                        }
+                        return;
+                    }
+
+                    if (btn) {
+                        btn.disabled = true;
+                        btn.textContent = 'Testing…';
+                    }
+                    if (statusEl) {
+                        statusEl.style.color = '#666';
+                        statusEl.textContent = 'Contacting graph.facebook.com via proxy…';
+                    }
+
+                    const formData = new FormData();
+                    formData.append('proxy_host', host.trim());
+                    formData.append('proxy_port', port.trim());
+                    formData.append('proxy_type', ((document.getElementById('fm_proxy_type') || {}).value || 'HTTP'));
+                    formData.append('proxy_user', ((document.getElementById('fm_proxy_user') || {}).value || '').trim());
+                    formData.append('proxy_pass', ((document.getElementById('fm_proxy_pass') || {}).value || ''));
+                    <?php if ($editingFacebookMarketingIntegration): ?>
+                    formData.append('integration_id', String(<?= (int) $editingFacebookMarketingIntegration['id'] ?>));
+                    <?php endif; ?>
+                    formData.append('app_csrf', <?= json_encode(Csrf::ensureToken(), JSON_THROW_ON_ERROR) ?>);
+
+                    fetch('?page=settings&tab=api-costs&ajax=test_fm_proxy', {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'same-origin'
+                    })
+                        .then(function (response) { return response.json(); })
+                        .then(function (data) {
+                            if (btn) {
+                                btn.disabled = false;
+                                btn.textContent = '🔌 Test Proxy → Facebook Graph';
+                            }
+                            if (statusEl) {
+                                if (data.success) {
+                                    statusEl.style.color = '#155724';
+                                    statusEl.textContent = data.message || 'Proxy OK';
+                                } else {
+                                    statusEl.style.color = '#d32f2f';
+                                    statusEl.textContent = data.error || 'Proxy test failed';
+                                }
+                            }
+                        })
+                        .catch(function (err) {
+                            if (btn) {
+                                btn.disabled = false;
+                                btn.textContent = '🔌 Test Proxy → Facebook Graph';
+                            }
+                            if (statusEl) {
+                                statusEl.style.color = '#d32f2f';
+                                statusEl.textContent = 'Error: ' + (err && err.message ? err.message : 'request failed');
+                            }
                         });
                 }
                 

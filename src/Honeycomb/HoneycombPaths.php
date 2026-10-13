@@ -46,4 +46,45 @@ final class HoneycombPaths
             mkdir($addons, 0755, true);
         }
     }
+
+    /**
+     * Resolve a file under honeycomb/addons/{slug}/assets/ with path-traversal guards.
+     * $relative is relative to assets/ (e.g. campaign-tiktok.js).
+     */
+    public static function resolveAddonAsset(string $slug, string $relative): ?string
+    {
+        $relative = str_replace('\\', '/', trim($relative));
+        $relative = ltrim($relative, '/');
+        if ($relative === '' || str_contains($relative, '..')) {
+            return null;
+        }
+        if (preg_match('#^[a-zA-Z0-9._/-]+$#', $relative) !== 1) {
+            return null;
+        }
+
+        try {
+            $addonDir = self::addonDir($slug);
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
+
+        $assetsRoot = $addonDir . DIRECTORY_SEPARATOR . 'assets';
+        $assetsReal = realpath($assetsRoot);
+        if ($assetsReal === false || !is_dir($assetsReal)) {
+            return null;
+        }
+
+        $candidate = $assetsReal . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relative);
+        $fileReal = realpath($candidate);
+        if ($fileReal === false || !is_file($fileReal)) {
+            return null;
+        }
+
+        $prefix = $assetsReal . DIRECTORY_SEPARATOR;
+        if (!str_starts_with($fileReal, $prefix) && $fileReal !== $assetsReal) {
+            return null;
+        }
+
+        return $fileReal;
+    }
 }

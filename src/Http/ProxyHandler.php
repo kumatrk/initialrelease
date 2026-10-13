@@ -24,6 +24,7 @@ class ProxyHandler
      *   - proxy_type (string): 'HTTP' or 'SOCKS5'
      *   - proxy_user (string|null): Optional username
      *   - proxy_pass_encrypted (string|null): Encrypted password (will be decrypted)
+     *   - proxy_pass (string|null): Optional plaintext password (form/create before encrypt)
      * @return bool True if proxy was configured, false otherwise
      */
     public static function configureCurl($ch, array $proxyConfig): bool
@@ -78,7 +79,7 @@ class ProxyHandler
             $username = $config['proxy_user'];
             $password = '';
 
-            // Decrypt password if provided
+            // Prefer encrypted DB password; allow plaintext for form/validate-before-save
             if (!empty($config['proxy_pass_encrypted'])) {
                 try {
                     $password = ProxyPasswordEncryption::decrypt($config['proxy_pass_encrypted']);
@@ -88,6 +89,8 @@ class ProxyHandler
                     // Continue without password - may fail auth but won't crash
                     $password = '';
                 }
+            } elseif (!empty($config['proxy_pass'])) {
+                $password = (string) $config['proxy_pass'];
             }
 
             if (!empty($password)) {
@@ -147,15 +150,19 @@ class ProxyHandler
     /**
      * Test proxy connection
      * Makes a test request through the proxy to verify it works
-     * 
+     *
      * @param array $proxyConfig Proxy configuration
-     * @param string $testUrl URL to test (default: https://www.google.com)
-     * @return array ['success' => bool, 'error' => string|null, 'response_time' => float|null]
+     * @param string $testUrl URL to test (default: Facebook Graph — what cost sync needs)
+     * @param bool $headOnly Use HEAD (faster). Prefer false for Graph (GET body OK).
+     * @return array ['success' => bool, 'error' => string|null, 'response_time' => float|null, 'http_code' => int|null]
      */
-    public static function testConnection(array $proxyConfig, string $testUrl = 'https://www.google.com'): array
-    {
+    public static function testConnection(
+        array $proxyConfig,
+        string $testUrl = 'https://graph.facebook.com/v24.0/',
+        bool $headOnly = false
+    ): array {
         if (empty($proxyConfig['use_proxy'])) {
-            return ['success' => false, 'error' => 'Proxy not enabled', 'response_time' => null];
+            return ['success' => false, 'error' => 'Proxy not enabled', 'response_time' => null, 'http_code' => null];
         }
 
         $ch = curl_init();
@@ -166,43 +173,49 @@ class ProxyHandler
         curl_setopt($ch, CURLOPT_TIMEOUT, 10);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-        curl_setopt($ch, CURLOPT_NOBODY, true); // HEAD request only
+        if ($headOnly) {
+            curl_setopt($ch, CURLOPT_NOBODY, true);
+        }
 
         // Configure proxy
         $proxyConfigured = self::configureCurl($ch, $proxyConfig);
 
         if (!$proxyConfigured) {
             curl_close($ch);
-            return ['success' => false, 'error' => 'Invalid proxy configuration', 'response_time' => null];
+            return ['success' => false, 'error' => 'Invalid proxy configuration', 'response_time' => null, 'http_code' => null];
         }
 
-        $result = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_exec($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);
         $responseTime = microtime(true) - $startTime;
-        
+
         curl_close($ch);
 
         if ($curlError) {
             return [
                 'success' => false,
                 'error' => 'Proxy connection failed: ' . $curlError,
-                'response_time' => $responseTime
+                'response_time' => $responseTime,
+                'http_code' => $httpCode > 0 ? $httpCode : null,
             ];
         }
 
-        if ($httpCode >= 200 && $httpCode < 400) {
+        // Any HTTP response means the proxy reached the host (Graph may return 400 without a token)
+        if ($httpCode > 0) {
             return [
                 'success' => true,
                 'error' => null,
-                'response_time' => $responseTime
+                'response_time' => $responseTime,
+                'http_code' => $httpCode,
             ];
         }
 
         return [
             'success' => false,
-            'error' => "Unexpected HTTP code: {$httpCode}",
-            'response_time' => $responseTime
+            'error' => 'No HTTP response through proxy',
+            'response_time' => $responseTime,
+            'http_code' => null,
         ];
     }
 }

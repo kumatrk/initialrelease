@@ -306,20 +306,74 @@ class CampaignStatsExpressions
     }
 
     /**
-     * 1:1 conversions join (one row per click) so click-level SUMs (cost/FB/GA) stay accurate.
+     * Placeholders inside conversionsAggJoin() when $bindCampaignId is true (campaign_id, from, to).
      */
-    public static function conversionsAggJoin(string $clAlias = 'cl'): string
-    {
+    public const CONVERSIONS_AGG_JOIN_BINDS = 3;
+
+    /**
+     * Placeholders inside conversionsAggJoin() when $bindCampaignId is false (from, to only).
+     */
+    public const CONVERSIONS_AGG_JOIN_DATE_ONLY_BINDS = 2;
+
+    /**
+     * 1:1 conversions join (one row per click) so click-level SUMs (cost/FB/GA) stay accurate.
+     *
+     * Scoped to the campaign click window via clicks-first join — never aggregate the entire
+     * conversions table. Bind order (prefix before outer WHERE): campaign_id (i), utcFrom (s),
+     * utcTo (s). Use mergeConversionsAggJoinBinds() at call sites.
+     *
+     * When $bindCampaignId is false (admin/parity scripts), only utcFrom/utcTo are bound (ss).
+     */
+    public static function conversionsAggJoin(
+        string $clAlias = 'cl',
+        string $clicksTable = 'clicks',
+        bool $bindCampaignId = true
+    ): string {
         $optInList = ConversionOptInClassifier::sqlInList();
+        $table = ($clicksTable === 'clicks_archive') ? 'clicks_archive' : 'clicks';
+        $campaignPred = $bindCampaignId ? 'clx.campaign_id = ? AND ' : '';
 
         return "LEFT JOIN (
-            SELECT click_id,
-                   SUM(CASE WHEN event_key IS NULL OR event_key NOT IN ({$optInList}) THEN 1 ELSE 0 END) AS conversion_count,
-                   SUM(CASE WHEN event_key IN ({$optInList}) THEN 1 ELSE 0 END) AS optin_count,
-                   SUM(CASE WHEN event_key IS NULL OR event_key NOT IN ({$optInList}) THEN COALESCE(payout, value) ELSE 0 END) AS revenue_sum
-            FROM conversions
-            GROUP BY click_id
+            SELECT cv.click_id,
+                   SUM(CASE WHEN cv.event_key IS NULL OR cv.event_key NOT IN ({$optInList}) THEN 1 ELSE 0 END) AS conversion_count,
+                   SUM(CASE WHEN cv.event_key IN ({$optInList}) THEN 1 ELSE 0 END) AS optin_count,
+                   SUM(CASE WHEN cv.event_key IS NULL OR cv.event_key NOT IN ({$optInList}) THEN COALESCE(cv.payout, cv.value) ELSE 0 END) AS revenue_sum
+            FROM {$table} clx
+            INNER JOIN conversions cv ON cv.click_id = clx.click_id
+            WHERE {$campaignPred}clx.ts >= ? AND clx.ts <= ?
+            GROUP BY cv.click_id
         ) conv ON conv.click_id = {$clAlias}.click_id";
+    }
+
+    /**
+     * Prefix campaign+date binds for conversionsAggJoin() (before outer WHERE / after SELECT CASE).
+     *
+     * @param list<mixed> $params
+     * @return array{0: string, 1: list<mixed>}
+     */
+    public static function mergeConversionsAggJoinBinds(
+        int $campaignId,
+        string $utcFrom,
+        string $utcTo,
+        string $types,
+        array $params
+    ): array {
+        return ['iss' . $types, array_merge([$campaignId, $utcFrom, $utcTo], $params)];
+    }
+
+    /**
+     * Prefix date-only binds for conversionsAggJoin(..., bindCampaignId: false).
+     *
+     * @param list<mixed> $params
+     * @return array{0: string, 1: list<mixed>}
+     */
+    public static function mergeConversionsAggJoinDateOnlyBinds(
+        string $utcFrom,
+        string $utcTo,
+        string $types,
+        array $params
+    ): array {
+        return ['ss' . $types, array_merge([$utcFrom, $utcTo], $params)];
     }
 
     /**

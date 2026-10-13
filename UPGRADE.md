@@ -1,10 +1,25 @@
 # Upgrading an existing Simple Kuma install (agent runbook)
 
-Use this document when applying **v1.1.5.2** (or later production zip) over a live install **without** losing campaigns, database data, or legacy `/km/` tracking links.
+Use this document when applying **v1.1.5.28** (or later production zip) over a live install **without** losing campaigns, database data, or legacy `/km/` tracking links.
 
 Designed for operators, shell scripts, and AI agents (Hermes, Codex, etc.) with SSH or file access to the server.
 
 **Machine-readable:** `upgrade-manifest.json` in the zip root (workflow steps, preserved paths, migrations, success criteria).
+
+---
+
+## What's new in 1.1.5.28 (operators)
+
+Patch release — prefer **Settings → Updates → Update Now**. Full detail: `release-notes.md`.
+
+| Area | What to expect after upgrade |
+|------|------------------------------|
+| Facebook API Cost → Fetch Ad Accounts | Works with standard `ads_read` + `ads_management` tokens (no longer requires `business_management`). Real Graph/curl errors shown in UI if fetch fails. |
+| Facebook proxy (optional) | Save validates the token **through** the proxy when enabled. New **Test Proxy → Facebook Graph** button. Leave proxy off unless you need it. |
+| Redirect rules / geo | Non-ASCII region names (e.g. Polish) display and save correctly. Re-enter any rule value that was already saved garbled. |
+| Stats breakdowns | Token rows (Creative ID, etc.) get LP CTA clicks going forward. Browser/OS/country breakdowns should be much faster on large accounts. |
+| Honeycomb core | Generic addon HTTP/asset API included. **TikTok Cost 1.2.0 / Ringba 1.2.0 catalog publish still held** — Import those versions from the live catalog only when announced. |
+| Migrations | None new in this patch (still through **095**). One-click updater runs any pending migrations automatically. |
 
 ---
 
@@ -36,24 +51,24 @@ execution limits prevent the web updater from completing.
 
 ## For AI agents (copy this brief)
 
-**Goal:** Overlay v1.1.5.2 files onto an existing install. **Never** overwrite `config/config.php` or delete `storage/`. **Never** run `install.php` on production.
+**Goal:** Overlay v1.1.5.28 files onto an existing install. **Never** overwrite `config/config.php` or delete `storage/`. **Never** run `install.php` on production.
 
 **Inputs needed from operator:**
 1. Live install path (contains `config/config.php`)
-2. Path to `simplekuma-v1.1.5.2.zip` or extracted folder
+2. Path to `simplekuma-download.zip` / `simplekuma-v1.1.5.28.zip` or extracted folder
 3. Approval to run DB backup + upgrade
 
 **Commands (in order):**
 ```bash
 cd LIVE_INSTALL_ROOT
 cp config/config.php config/config.php.bak-$(date +%Y%m%d)
-php scripts/apply-release-upgrade.php --source=/path/to/simplekuma-v1.1.5.2.zip
-php scripts/apply-release-upgrade.php --source=/path/to/simplekuma-v1.1.5.2.zip --apply
+php scripts/apply-release-upgrade.php --source=/path/to/simplekuma-download.zip
+php scripts/apply-release-upgrade.php --source=/path/to/simplekuma-download.zip --apply
 php scripts/apply-release-upgrade.php --migrations
 php scripts/verify-production-security.php
 ```
 
-**Success criteria:** Admin loads, campaigns visible, `/km/{key}` still redirects, `version.php` shows 1.1.5.2, migration 061 applied.
+**Success criteria:** Admin loads, campaigns visible, `/km/{key}` still redirects, `version.php` shows 1.1.5.28, pending migrations through **095** applied.
 
 **Do not change** `BASE_URL` or ad URLs unless operator explicitly requests Safe Browsing remediation.
 
@@ -86,7 +101,7 @@ php scripts/verify-production-security.php
 
 - SSH or SFTP access to the server
 - Path to live install (contains `config/config.php`, `public/index.php`)
-- `simplekuma-v1.1.5.2.zip` (or extracted folder)
+- `simplekuma-download.zip` / production zip for **1.1.5.28** (or extracted folder)
 - PHP CLI on the server (`php` in PATH)
 - **Database backup** before `--migrations`
 
@@ -121,7 +136,7 @@ php scripts/apply-release-upgrade.php \
 
 (Omitting `--apply` previews files that would be copied.)
 
-Review output: file count, version `1.1.5.1` → `1.1.5.2` (or your current → target).
+Review output: file count, version (e.g. `1.1.5.27` → `1.1.5.28`, or your current → target).
 
 ### 4. Apply files
 
@@ -166,7 +181,7 @@ Manual checks:
 - [ ] Campaign list loads; tracking link modal opens (API)
 - [ ] Legacy click URL still works: `https://YOUR-TRACKING-DOMAIN/km/{campaign_key}`
 - [ ] New `go.php` exists: `https://YOUR-TRACKING-DOMAIN/go.php?k={campaign_key}` (after optional config below)
-- [ ] Sidebar / About shows **v1.1.5.2**
+- [ ] Sidebar / About shows **v1.1.5.28**
 
 ### 7. JSON output (for agents)
 
@@ -274,6 +289,7 @@ The upgrade script does not delete files; rollback is restore-from-backup.
 
 ## Version reference
 
-- **Target release:** 1.1.5.2
+- **Target release:** 1.1.5.28
 - **Upgrade tool:** `scripts/apply-release-upgrade.php` (shipped in production zip)
 - **In-app update UI:** supported at Settings → Updates; this CLI runbook remains the fallback
+- **Changelog:** `release-notes.md` (section **1.1.5.28**)

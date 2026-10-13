@@ -314,9 +314,13 @@ class FacebookMarketingIntegration
     }
 
     /**
-     * Validate access token by making a test API call to Facebook
+     * Validate access token by making a test API call to Facebook.
+     * When proxy is enabled for the integration, pass the same ProxyHandler config
+     * used by cost sync so save cannot succeed while proxied cron fails.
+     *
+     * @param array|null $proxyConfig From ProxyHandler::getProxyConfig() or form fields
      */
-    public function validateAccessToken(string $accessToken): array
+    public function validateAccessToken(string $accessToken, ?array $proxyConfig = null): array
     {
         $errors = [];
 
@@ -331,6 +335,8 @@ class FacebookMarketingIntegration
         }
         
         try {
+            require_once __DIR__ . '/../Http/ProxyHandler.php';
+
             $url = 'https://graph.facebook.com/v24.0/me/adaccounts?access_token='
                 . urlencode($accessToken)
                 . '&fields=id&limit=1';
@@ -338,8 +344,13 @@ class FacebookMarketingIntegration
             $ch = curl_init();
             curl_setopt($ch, CURLOPT_URL, $url);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+
+            $viaProxy = is_array($proxyConfig) && !empty($proxyConfig['use_proxy']);
+            if ($viaProxy) {
+                \SimpleKuma\Http\ProxyHandler::configureCurl($ch, $proxyConfig);
+            }
             
             $response = curl_exec($ch);
             $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -347,7 +358,9 @@ class FacebookMarketingIntegration
             curl_close($ch);
 
             if ($curlError) {
-                $errors[] = 'Unable to reach Facebook API: ' . $curlError;
+                $errors[] = $viaProxy
+                    ? ('Unable to reach Facebook API via proxy: ' . $curlError)
+                    : ('Unable to reach Facebook API: ' . $curlError);
                 return $errors;
             }
             

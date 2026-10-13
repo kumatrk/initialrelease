@@ -403,7 +403,7 @@ final class DashboardStatsService
                     COALESCE(SUM(conv.revenue_sum), 0) AS revenue
                 FROM " . $this->clicksTable() . " cl
                 LEFT JOIN traffic_sources ts ON cl.traffic_source_id = ts.id
-                " . CampaignStatsExpressions::conversionsAggJoin() . "
+                " . CampaignStatsExpressions::conversionsAggJoin('cl', $this->clicksTable()) . "
                 WHERE cl.campaign_id = ?
                   AND cl.ts >= ? AND cl.ts <= ?
                   AND cl.traffic_source_id IS NOT NULL
@@ -414,7 +414,16 @@ final class DashboardStatsService
                 $camp['traffic_source_stats'] = [];
                 continue;
             }
-            $stmt->bind_param('iss', $campaignId, $utcFrom, $utcTo);
+            $types = 'iss';
+            $params = [$campaignId, $utcFrom, $utcTo];
+            [$types, $params] = CampaignStatsExpressions::mergeConversionsAggJoinBinds(
+                $campaignId,
+                $utcFrom,
+                $utcTo,
+                $types,
+                $params
+            );
+            $stmt->bind_param($types, ...$params);
             $stmt->execute();
             $tsStats = $stmt->get_result()->fetch_all(MYSQLI_ASSOC) ?: [];
             $stmt->close();
@@ -529,12 +538,20 @@ final class DashboardStatsService
             $convTypes .= str_repeat('s', count($allowedStatuses));
             $convParams = array_merge($convParams, $allowedStatuses);
         }
-        $clAlias = ClicksIndexHints::clickIdCoverAlias($this->db, 'cl', 'clicks');
+        $force = '';
+        $idx = $this->db->query(
+            "SELECT 1 FROM information_schema.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clicks'
+               AND INDEX_NAME = 'idx_clicks_ts_stats_cover' LIMIT 1"
+        );
+        if ($idx && $idx->num_rows > 0) {
+            $force = ' FORCE INDEX (idx_clicks_ts_stats_cover)';
+        }
         $convSql = "
             SELECT COUNT(*) AS conversions,
                    COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
-            FROM conversions cv
-            INNER JOIN clicks {$clAlias} ON cl.click_id = cv.click_id
+            FROM clicks cl{$force}
+            INNER JOIN conversions cv ON cv.click_id = cl.click_id
             {$convStatusJoin}
             WHERE cl.ts >= ? AND cl.ts <= ?
             {$includedSql}
@@ -829,7 +846,6 @@ final class DashboardStatsService
             $params = array_merge($params, $allowedStatuses);
         }
         $includedSql = $this->includedClickSql('cl', 'clicks');
-        $clCover = ClicksIndexHints::clickIdCoverAlias($this->db, 'cl', 'clicks');
 
         $sql = "
             SELECT
@@ -867,8 +883,8 @@ final class DashboardStatsService
                     cl.campaign_id,
                     COUNT(*) AS conversions,
                     COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
-                FROM conversions cv
-                INNER JOIN clicks {$clCover} ON cl.click_id = cv.click_id
+                FROM clicks cl
+                INNER JOIN conversions cv ON cv.click_id = cl.click_id
                 WHERE cl.ts >= ? AND cl.ts <= ?
                 {$includedSql}
                 GROUP BY cl.campaign_id
@@ -1023,7 +1039,6 @@ final class DashboardStatsService
 
         $offset = CampaignStatsExpressions::mysqlTimezoneOffset($userTimezone, $dateFrom);
         $includedSql = $this->includedClickSql('cl', 'clicks');
-        $clCover = ClicksIndexHints::clickIdCoverAlias($this->db, 'cl', 'clicks');
 
         // UTC / UTC-aligned ranges: prefer ts_hour (indexed) — CONVERT_TZ over 100k fat rows is ~1.5s+.
         $useUtcHour = ($offset === '+00:00' || strtoupper($userTimezone) === 'UTC');
@@ -1056,8 +1071,8 @@ final class DashboardStatsService
                 SELECT HOUR(cl.ts_hour) AS hour,
                        COUNT(*) AS conversions,
                        COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
-                FROM conversions cv
-                INNER JOIN clicks {$clCover} ON cl.click_id = cv.click_id
+                FROM clicks cl
+                INNER JOIN conversions cv ON cv.click_id = cl.click_id
                 WHERE cl.ts >= ? AND cl.ts <= ?
                 {$includedSql}
                 GROUP BY HOUR(cl.ts_hour)
@@ -1118,8 +1133,8 @@ final class DashboardStatsService
                 SELECT {$hourExpr} AS hour,
                        COUNT(*) AS conversions,
                        COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
-                FROM conversions cv
-                INNER JOIN clicks {$clCover} ON cl.click_id = cv.click_id
+                FROM clicks cl
+                INNER JOIN conversions cv ON cv.click_id = cl.click_id
                 WHERE cl.ts >= ? AND cl.ts < ?
                 {$includedSql}
                 GROUP BY hour
@@ -1287,13 +1302,12 @@ final class DashboardStatsService
             $stmt->close();
         }
 
-        $clCover = ClicksIndexHints::clickIdCoverAlias($this->db, 'cl', 'clicks');
         $convSql = "
             SELECT {$dayExpr} AS day,
                    COUNT(*) AS conversions,
                    COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
-            FROM conversions cv
-            INNER JOIN clicks {$clCover} ON cl.click_id = cv.click_id
+            FROM clicks cl
+            INNER JOIN conversions cv ON cv.click_id = cl.click_id
             WHERE cl.ts >= ? AND cl.ts <= ?
             {$includedSql}
             GROUP BY day

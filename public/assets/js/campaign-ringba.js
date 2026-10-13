@@ -115,7 +115,18 @@
             const u = panel.getAttribute('data-ringba-api-url');
             if (u) return u;
         }
-        return (typeof global.APP_BASE_URL !== 'undefined' ? global.APP_BASE_URL : '') + '/api/honeycomb-ringba.php';
+        const root = (typeof global.APP_BASE_URL !== 'undefined' ? global.APP_BASE_URL : '');
+        return root + '/api/honeycomb-addon.php?slug=ringba';
+    }
+
+    function ringbaApiUrl(action, extraQuery) {
+        const base = ringbaApiBaseUrl();
+        const join = base.indexOf('?') >= 0 ? '&' : '?';
+        let url = base + join + 'action=' + encodeURIComponent(action);
+        if (extraQuery) {
+            url += '&' + extraQuery;
+        }
+        return url;
     }
 
     function ringbaLoadCampaigns(forceRefresh) {
@@ -132,7 +143,7 @@
         if (status) status.textContent = 'Loading campaigns from Ringba…';
         picker.innerHTML = '<option value="">Loading…</option>';
 
-        fetch(ringbaApiBaseUrl() + '?action=campaigns', { credentials: 'same-origin' })
+        fetch(ringbaApiUrl('campaigns'), { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (!data || !data.success) {
@@ -194,7 +205,7 @@
         }
         if (remoteId) remoteId.value = picker.value;
         if (remoteName) remoteName.value = name;
-        fetch(ringbaApiBaseUrl() + '?action=tags&campaign_id=' + encodeURIComponent(picker.value), { credentials: 'same-origin' })
+        fetch(ringbaApiUrl('tags', 'campaign_id=' + encodeURIComponent(picker.value)), { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (!data || !data.success || !Array.isArray(data.tags)) return;

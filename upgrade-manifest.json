@@ -2,8 +2,8 @@
   "schema": "simplekuma-upgrade-manifest",
   "schema_version": 1,
   "release": {
-    "version": "1.1.5.27",
-    "release_date": "2026-09-28",
+    "version": "1.1.5.28",
+    "release_date": "2026-10-13",
     "channel": "stable"
   },
   "purpose": "Overlay this release onto an existing install without replacing config, storage, or database data.",
@@ -127,6 +127,42 @@
     {
       "file": "database/migrations/086_clicks_click_id_cover_stats_index.sql",
       "description": "Covering index for conversion→click stats joins (click_id, exclude_from_stats, ts, campaign_id)"
+    },
+    {
+      "file": "database/migrations/087_add_campaign_allow_multiple_conversions.sql",
+      "description": "Campaign allow_multiple_conversions flag"
+    },
+    {
+      "file": "database/migrations/088_add_optins_to_stats_summaries.sql",
+      "description": "Opt-in counters on daily / token stats summaries"
+    },
+    {
+      "file": "database/migrations/089_safe_generated_columns_bot_metrics_and_tags.sql",
+      "description": "Safe generated columns for bot metrics and tags"
+    },
+    {
+      "file": "database/migrations/090_honeycomb_kernel.sql",
+      "description": "Honeycomb kernel tables"
+    },
+    {
+      "file": "database/migrations/091_add_clicks_isp_connection_language.sql",
+      "description": "ISP / connection / language columns on clicks"
+    },
+    {
+      "file": "database/migrations/092_honeycomb_runtime.sql",
+      "description": "Honeycomb runtime tables"
+    },
+    {
+      "file": "database/migrations/093_honeycomb_conversion_exports.sql",
+      "description": "Honeycomb conversion export tables"
+    },
+    {
+      "file": "database/migrations/094_clicks_stats_by_token_hourly.sql",
+      "description": "Hourly token stats pre-agg for Hour nests"
+    },
+    {
+      "file": "database/migrations/095_add_campaign_inactive_redirect.sql",
+      "description": "Paused/archived campaign redirect settings"
     }
   ],
   "agent_workflow": [
@@ -159,7 +195,7 @@
       "commands": [
         "php scripts/verify-production-security.php",
         "php scripts/verify-campaign-stats-v2.php --campaign-id=ID --from=YYYY-MM-DD --to=YYYY-MM-DD (dev/staging — scripts not in production zip)",
-        "confirm version.php shows 1.1.5.2",
+        "confirm version.php shows 1.1.5.28",
         "confirm /km/{campaign_key} still redirects",
         "confirm admin campaign-list loads"
       ]
@@ -167,19 +203,28 @@
   ],
   "success_criteria": [
     "config/config.php SHA-256 unchanged after --apply",
-    "version.php reports 1.1.5.2",
-    "migration 061 applied or already present",
+    "version.php reports 1.1.5.28",
+    "migrations through 095 applied or already present",
     "campaigns visible in admin",
-    "legacy /km/ tracking links still work"
+    "legacy /km/ tracking links still work",
+    "Facebook Marketing Fetch Ad Accounts works with ads_read + ads_management (no business_management required)"
   ],
   "key_files_added_or_changed": [
-    "public/go.php",
-    "public/api-campaign-tracking-link.php",
-    "src/Campaign/CampaignTrackingLinkPayloadService.php",
-    "src/Tracking/ClickPath.php",
-    "views/campaigns.php",
-    "public/robots.txt",
+    "version.php",
+    "release-notes.md",
     "UPGRADE.md",
-    "scripts/apply-release-upgrade.php"
+    "upgrade-manifest.json",
+    "views/settings.php",
+    "src/Http/ProxyHandler.php",
+    "src/Entity/FacebookMarketingIntegration.php",
+    "src/Facebook/FacebookInsightsClient.php",
+    "src/Database/DbTimezone.php",
+    "src/Tracking/DailySummaryUpdater.php",
+    "src/Stats/CampaignStatsExpressions.php",
+    "src/Stats/CampaignStatsV2Service.php",
+    "public/api/honeycomb-addon.php",
+    "public/api/honeycomb-asset.php",
+    "src/Honeycomb/AddonHttpHandler.php",
+    "views/partials/honeycomb-frontend-assets.php"
   ]
 }

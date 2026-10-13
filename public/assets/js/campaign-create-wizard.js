@@ -401,6 +401,9 @@
         if (typeof window.toggleRingbaLpCodes === 'function') {
             window.toggleRingbaLpCodes();
         }
+        if (typeof window.tiktokInitPickers === 'function' && providerKey === 'tiktok') {
+            window.tiktokInitPickers();
+        }
     };
 
     window.syncWhopWizardUi = function () {

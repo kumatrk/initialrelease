@@ -90,21 +90,26 @@ class TrafficSourceTemplates
             ],
             'tiktok' => [
                 'name' => 'TikTok',
+                'provider_key' => 'tiktok',
                 'cost_tracking_method' => 'manual_token',
                 'cost_param_key' => 'cost',
                 'cost_currency' => 'USD',
                 'cost_tier' => TrafficSourceCostStatus::TIER_MANUAL_URL,
-                'blurb' => 'TikTok Ads click and campaign tokens',
+                'blurb' => 'TikTok Ads click macros; spend syncs via Honeycomb TikTok Cost API',
                 'tokens' => [
                     self::tok('Target/Keyword', 'placement', '__PLACEMENT__'),
                     self::tok('Cost', 'cost', ''),
-                    self::tok('External ID', 'ttclid', '__CLICKID__'),
+                    // ttclid is auto-appended by TikTok; leave placeholder empty.
+                    self::tok('External ID', 'ttclid', ''),
                     self::tok('TS Campaign ID', 'campaign_id', '__CAMPAIGN_ID__'),
                     self::tok('TS Campaign Name', 'campaign_name', '__CAMPAIGN_NAME__'),
                     self::tok('Ad Group', 'adset', '__AID__'),
                     self::tok('Ad Group Name', 'adset_name', '__AID_NAME__'),
                     self::tok('Ad Creative ID', 'creative', '__CID__'),
                     self::tok('Ad Name', 'creative_name', '__CID_NAME__'),
+                    // Smart+ upgraded campaigns (optional)
+                    self::tok('Smart+ Ad ID', 'ad_id', '__ADID_V2__'),
+                    self::tok('Smart+ Ad Name', 'ad_name', '__ADID_V2_NAME__'),
                 ],
             ],
             'zeropark' => [
@@ -367,12 +372,12 @@ class TrafficSourceTemplates
             [
                 'title' => 'Honeycomb live API cost',
                 'description' => 'Install the matching Honeycomb addon, connect credentials, and paste remote campaign IDs on each Kuma campaign. Spend syncs on the hourly Honeycomb job.',
-                'template_keys' => ['taboola', 'whop'],
+                'template_keys' => ['taboola', 'whop', 'tiktok'],
             ],
             [
                 'title' => 'Manual cost (URL parameter)',
                 'description' => 'Tracking tokens plus cost via URL when the network sends it (e.g. ?cost=…).',
-                'template_keys' => ['tiktok', 'zeropark', 'mgid', 'rollerads', 'richads'],
+                'template_keys' => ['zeropark', 'mgid', 'rollerads', 'richads'],
             ],
             [
                 'title' => 'API integrations — cost sync coming soon',

@@ -80,6 +80,10 @@
     RewriteRule ^(.*)$ index.php [QSA,L]
 </IfModule>
 
+# Default response charset so admin HTML form fields keep UTF-8 diacritics
+# (e.g. Łódź Voivodeship in redirect rules) even when PHP omits Content-Type.
+AddDefaultCharset UTF-8
+
 # Security headers
 <IfModule mod_headers.c>
     Header set X-Content-Type-Options "nosniff"

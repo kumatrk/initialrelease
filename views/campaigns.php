@@ -2599,14 +2599,14 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                     <div>
                                         <label style="display: block; font-size: 12px; font-weight: 500; margin-bottom: 4px;">Value to Match</label>
                                         <input type="text" name="redirect_rule_value[]" 
-                                               value="<?= htmlspecialchars($rule['value'] ?? '') ?>"
+                                               value="<?= htmlspecialchars($rule['value'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
                                                style="width: 100%; padding: 8px; border: 2px solid #ddd; border-radius: 4px;"
                                                placeholder="Value">
                                     </div>
                                     <div>
                                         <label style="display: block; font-size: 12px; font-weight: 500; margin-bottom: 4px;">Redirect URL</label>
                                         <input type="url" name="redirect_rule_url[]" 
-                                               value="<?= htmlspecialchars($rule['redirect_url'] ?? '') ?>"
+                                               value="<?= htmlspecialchars($rule['redirect_url'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
                                                style="width: 100%; padding: 8px; border: 2px solid #ddd; border-radius: 4px;"
                                                placeholder="https://example.com">
                                     </div>
@@ -4289,6 +4289,9 @@ $clickId = $_GET['click_id'] ?? $kumaClickId ?? $_COOKIE['kuma_click_id'] ?? '';
             }
             if (typeof toggleRingbaLpCodes === 'function') {
                 toggleRingbaLpCodes();
+            }
+            if (typeof tiktokInitPickers === 'function' && providerKey === 'tiktok') {
+                tiktokInitPickers();
             }
         }
 
@@ -6251,11 +6254,9 @@ if (!empty(\$_GET['click_id'])) {
 <?php
 $fbPickerJsPath = __DIR__ . '/../public/assets/js/facebook-campaign-picker.js';
 $fbPickerJs = ASSETS_BASE_URL . '/assets/js/facebook-campaign-picker.js?v=' . (file_exists($fbPickerJsPath) ? filemtime($fbPickerJsPath) : '1');
-$ringbaJsPath = __DIR__ . '/../public/assets/js/campaign-ringba.js';
-$ringbaJs = ASSETS_BASE_URL . '/assets/js/campaign-ringba.js?v=' . (file_exists($ringbaJsPath) ? filemtime($ringbaJsPath) : '1');
 ?>
 <script>window.APP_BASE_URL = <?= json_encode(rtrim(APP_BASE_URL, '/'), JSON_THROW_ON_ERROR) ?>;</script>
-<script src="<?= htmlspecialchars($ringbaJs) ?>"></script>
+<?php include __DIR__ . '/partials/honeycomb-frontend-assets.php'; ?>
 <script src="<?= htmlspecialchars($fbPickerJs) ?>"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
@@ -6266,6 +6267,10 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     if (typeof toggleRingbaLpCodes === 'function') {
         toggleRingbaLpCodes();
+    }
+    // Re-init TikTok pickers after scripts load if TikTok traffic source is selected.
+    if (typeof toggleHoneycombBindings === 'function') {
+        toggleHoneycombBindings();
     }
 });
 </script>

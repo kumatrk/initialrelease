@@ -162,7 +162,7 @@ class CampaignStatsV2Service
             FROM {$clicksTable} cl
             INNER JOIN campaigns cp ON cl.campaign_id = cp.id
             LEFT JOIN traffic_sources ts ON cp.traffic_source_id = ts.id
-            " . CampaignStatsExpressions::conversionsAggJoin() . "
+            " . CampaignStatsExpressions::conversionsAggJoin('cl', $clicksTable) . "
             {$fbJoins}
             WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$filterSql}
         ";
@@ -177,6 +177,13 @@ class CampaignStatsV2Service
                 $params
             );
         }
+        [$types, $params] = CampaignStatsExpressions::mergeConversionsAggJoinBinds(
+            $campaignId,
+            $utcRange['from'],
+            $utcRange['to'],
+            $types,
+            $params
+        );
 
         $stmt = $this->db->prepare($sql);
         $stmt->bind_param($types, ...$params);
@@ -422,12 +429,19 @@ class CampaignStatsV2Service
             FROM {$clicksTable} cl
             INNER JOIN campaigns cp ON cl.campaign_id = cp.id
             LEFT JOIN traffic_sources ts ON cp.traffic_source_id = ts.id
-            " . CampaignStatsExpressions::conversionsAggJoin() . "
+            " . CampaignStatsExpressions::conversionsAggJoin('cl', $clicksTable) . "
             WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$filterSql}
         ";
 
         $types = 'iss' . $filterTypes;
         $params = array_merge([$campaignId, $utcFrom, $utcTo], $filterParams);
+        [$types, $params] = CampaignStatsExpressions::mergeConversionsAggJoinBinds(
+            $campaignId,
+            $utcFrom,
+            $utcTo,
+            $types,
+            $params
+        );
         $stmt = $this->db->prepare($sql);
         $stmt->bind_param($types, ...$params);
         $stmt->execute();
@@ -1740,7 +1754,7 @@ class CampaignStatsV2Service
             FROM {$clicksTable} cl
             INNER JOIN campaigns cp ON cl.campaign_id = cp.id
             LEFT JOIN traffic_sources ts ON cp.traffic_source_id = ts.id
-            " . CampaignStatsExpressions::conversionsAggJoin() . "
+            " . CampaignStatsExpressions::conversionsAggJoin('cl', $clicksTable) . "
             {$joinOffer}
             {$joinLp}
             {$fbJoins}
@@ -1751,6 +1765,13 @@ class CampaignStatsV2Service
         $types = 'iss' . $filterTypes . $parentTypes;
         $params = array_merge([$campaignId, $utcFrom, $utcTo], $filterParams, $parentParams);
         [$types, $params] = CampaignStatsCostSql::mergeScopedApiJoinDateBinds($utcFrom, $utcTo, $types, $params);
+        [$types, $params] = CampaignStatsExpressions::mergeConversionsAggJoinBinds(
+            $campaignId,
+            $utcFrom,
+            $utcTo,
+            $types,
+            $params
+        );
 
         $sql = "
             SELECT {$groupExpr} AS group_key
@@ -1835,13 +1856,13 @@ class CampaignStatsV2Service
         $row = $stmt->get_result()->fetch_assoc() ?: [];
         $stmt->close();
 
-        $clCover = ClicksIndexHints::clickIdCoverAlias($this->db, 'cl', 'clicks');
         $includedSql = $hasExclusionFlag ? ' AND cl.exclude_from_stats = 0' : '';
+        // Clicks-first: never drive from conversions (account-wide scan on large installs).
         $convSql = "
             SELECT COUNT(*) AS conversions,
                    COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
-            FROM conversions cv
-            INNER JOIN clicks {$clCover} ON cl.click_id = cv.click_id
+            FROM clicks cl{$force}
+            INNER JOIN conversions cv ON cv.click_id = cl.click_id
             WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$includedSql}{$filterSql}
         ";
         $conversions = 0;
@@ -2000,13 +2021,13 @@ class CampaignStatsV2Service
                 }
             }
         } else {
-            $clCover = ClicksIndexHints::clickIdCoverAlias($this->db, 'cl', 'clicks');
+            // Clicks-first: STRAIGHT_JOIN from conversions walked the entire conversions table.
             $convSql = "
                 SELECT {$groupExpr} AS group_key,
                        COUNT(*) AS conversions,
                        COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
-                FROM conversions cv
-                STRAIGHT_JOIN clicks {$clCover} ON cl.click_id = cv.click_id
+                FROM clicks cl{$force}
+                INNER JOIN conversions cv ON cv.click_id = cl.click_id
                 {$joinOffer}
                 {$joinLp}
                 WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$includedSql}{$filterSql}
@@ -2107,29 +2128,6 @@ class CampaignStatsV2Service
         }
 
         return '';
-    }
-
-    /**
-     * Conversions aggregate scoped to this campaign's click window (not the whole table).
-     */
-    private function scopedConversionsAggJoin(int $campaignId, string $utcFrom, string $utcTo): string
-    {
-        $cid = (int) $campaignId;
-        $from = $this->db->real_escape_string($utcFrom);
-        $to = $this->db->real_escape_string($utcTo);
-        $clCover = ClicksIndexHints::clickIdCoverAlias($this->db, 'clx', 'clicks');
-
-        return "LEFT JOIN (
-            SELECT cv.click_id,
-                   COUNT(*) AS conversion_count,
-                   SUM(COALESCE(cv.payout, cv.value)) AS revenue_sum
-            FROM conversions cv
-            INNER JOIN clicks {$clCover} ON clx.click_id = cv.click_id
-            WHERE clx.campaign_id = {$cid}
-              AND clx.ts >= '{$from}'
-              AND clx.ts <= '{$to}'
-            GROUP BY cv.click_id
-        ) conv ON conv.click_id = cl.click_id";
     }
 
     /**
@@ -2300,7 +2298,7 @@ class CampaignStatsV2Service
             FROM {$clicksTable} cl
             INNER JOIN campaigns cp ON cl.campaign_id = cp.id
             LEFT JOIN traffic_sources ts ON cp.traffic_source_id = ts.id
-            " . CampaignStatsExpressions::conversionsAggJoin() . "
+            " . CampaignStatsExpressions::conversionsAggJoin('cl', $clicksTable) . "
             {$fbJoins}
             WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$filterSql}
             GROUP BY hour
@@ -2316,17 +2314,20 @@ class CampaignStatsV2Service
                 $joinDates[] = $utcFrom;
                 $joinDates[] = $utcTo;
             }
-            $types .= $joinPrefix . 'iss' . $filterTypes;
+            $convPrefix = 'iss';
+            $types .= $convPrefix . $joinPrefix . 'iss' . $filterTypes;
             $params = array_merge(
                 $params,
+                [$campaignId, $utcFrom, $utcTo],
                 $joinDates,
                 [$campaignId, $utcFrom, $utcTo],
                 $filterParams
             );
         } else {
-            $types = $hourBindPrefix . 'iss' . $filterTypes;
+            $types = $hourBindPrefix . 'iss' . 'iss' . $filterTypes;
             $params = array_merge(
                 $hourBindParams,
+                [$campaignId, $utcFrom, $utcTo],
                 [$campaignId, $utcFrom, $utcTo],
                 $filterParams
             );
@@ -2458,7 +2459,15 @@ class CampaignStatsV2Service
         }
         $stmt->close();
 
-        $clCover = ClicksIndexHints::clickIdCoverAlias($this->db, 'cl', 'clicks');
+        $force = '';
+        $idx = $this->db->query(
+            "SELECT 1 FROM information_schema.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clicks'
+               AND INDEX_NAME = 'idx_clicks_ts_stats_cover' LIMIT 1"
+        );
+        if ($idx && $idx->num_rows > 0) {
+            $force = ' FORCE INDEX (idx_clicks_ts_stats_cover)';
+        }
         if ($useUtcHour) {
             $convHourExpr = 'HOUR(cl.ts)';
             $convTypes = 'iss';
@@ -2472,8 +2481,8 @@ class CampaignStatsV2Service
             SELECT {$convHourExpr} AS hour,
                    COUNT(*) AS conversions,
                    COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
-            FROM conversions cv
-            INNER JOIN clicks {$clCover} ON cl.click_id = cv.click_id
+            FROM clicks cl{$force}
+            INNER JOIN conversions cv ON cv.click_id = cl.click_id
             WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?
             {$includedSql}
             GROUP BY hour
@@ -2642,7 +2651,7 @@ class CampaignStatsV2Service
             FROM {$clicksTable} cl
             INNER JOIN campaigns cp ON cl.campaign_id = cp.id
             LEFT JOIN traffic_sources ts ON cp.traffic_source_id = ts.id
-            " . CampaignStatsExpressions::conversionsAggJoin() . "
+            " . CampaignStatsExpressions::conversionsAggJoin('cl', $clicksTable) . "
             {$fbJoins}
             WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$filterSql}
             GROUP BY day
@@ -2653,14 +2662,29 @@ class CampaignStatsV2Service
         $params = array_merge($caseBindParams, [$campaignId, $utcFrom, $utcTo], $filterParams);
         if ($needsScopedCost) {
             // Join date binds sit between SELECT CASE placeholders and WHERE binds.
+            // Order: CASE → conversionsAggJoin → scoped cost joins → WHERE.
             $joinTypes = str_repeat('s', CampaignStatsCostSql::SCOPED_JOIN_DATE_BINDS);
             $joinDates = [];
             for ($i = 0; $i < (int) (CampaignStatsCostSql::SCOPED_JOIN_DATE_BINDS / 2); $i++) {
                 $joinDates[] = $utcFrom;
                 $joinDates[] = $utcTo;
             }
-            $types = $caseBindTypes . $joinTypes . 'iss' . $filterTypes;
-            $params = array_merge($caseBindParams, $joinDates, [$campaignId, $utcFrom, $utcTo], $filterParams);
+            $types = $caseBindTypes . 'iss' . $joinTypes . 'iss' . $filterTypes;
+            $params = array_merge(
+                $caseBindParams,
+                [$campaignId, $utcFrom, $utcTo],
+                $joinDates,
+                [$campaignId, $utcFrom, $utcTo],
+                $filterParams
+            );
+        } else {
+            $types = $caseBindTypes . 'iss' . 'iss' . $filterTypes;
+            $params = array_merge(
+                $caseBindParams,
+                [$campaignId, $utcFrom, $utcTo],
+                [$campaignId, $utcFrom, $utcTo],
+                $filterParams
+            );
         }
 
         $stmt = $this->db->prepare($sql);
@@ -2805,13 +2829,21 @@ class CampaignStatsV2Service
             $stmt->close();
         }
 
-        $clCover = ClicksIndexHints::clickIdCoverAlias($this->db, 'cl', 'clicks');
+        $force = '';
+        $idx = $this->db->query(
+            "SELECT 1 FROM information_schema.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clicks'
+               AND INDEX_NAME = 'idx_clicks_ts_stats_cover' LIMIT 1"
+        );
+        if ($idx && $idx->num_rows > 0) {
+            $force = ' FORCE INDEX (idx_clicks_ts_stats_cover)';
+        }
         $convSql = "
             SELECT {$dayExpr} AS day,
                    COUNT(*) AS conversions,
                    COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
-            FROM conversions cv
-            INNER JOIN clicks {$clCover} ON cl.click_id = cv.click_id
+            FROM clicks cl{$force}
+            INNER JOIN conversions cv ON cv.click_id = cl.click_id
             WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?
             {$includedSql}
             GROUP BY day

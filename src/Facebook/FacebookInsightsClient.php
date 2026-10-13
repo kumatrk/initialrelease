@@ -450,11 +450,11 @@ class FacebookInsightsClient
                 'url' => $logUrl,
                 'params' => $logParams,
                 'http_method' => 'GET',
-                'proxy_configured' => $this->proxyConfig !== null,
+                'proxy_configured' => $this->proxyConfig !== null && !empty($this->proxyConfig['use_proxy']),
                 'proxy_config' => $this->proxyConfig ? [
-                    'host' => $this->proxyConfig['host'] ?? 'N/A',
-                    'port' => $this->proxyConfig['port'] ?? 'N/A',
-                    'type' => $this->proxyConfig['type'] ?? 'N/A'
+                    'host' => $this->proxyConfig['proxy_host'] ?? $this->proxyConfig['host'] ?? 'N/A',
+                    'port' => $this->proxyConfig['proxy_port'] ?? $this->proxyConfig['port'] ?? 'N/A',
+                    'type' => $this->proxyConfig['proxy_type'] ?? $this->proxyConfig['type'] ?? 'N/A'
                 ] : null,
                 'timeout' => $this->timeout,
                 'retry_attempt' => $retryCount,
@@ -473,11 +473,10 @@ class FacebookInsightsClient
         ]);
         curl_setopt($ch, CURLOPT_HEADER, true); // Include headers in response
 
-        // Configure proxy if provided
+        // Configure proxy if provided (getProxyConfig shape: use_proxy + proxy_host/port/…)
         $proxyConfigured = false;
-        if ($this->proxyConfig) {
-            ProxyHandler::configureCurl($ch, $this->proxyConfig);
-            $proxyConfigured = true;
+        if ($this->proxyConfig && !empty($this->proxyConfig['use_proxy'])) {
+            $proxyConfigured = ProxyHandler::configureCurl($ch, $this->proxyConfig);
         }
         
         // CURL SETUP LOGGING
@@ -492,9 +491,9 @@ class FacebookInsightsClient
                 ],
                 'proxy_configured' => $proxyConfigured,
                 'proxy_details' => $this->proxyConfig ? [
-                    'host' => $this->proxyConfig['host'] ?? 'N/A',
-                    'port' => $this->proxyConfig['port'] ?? 'N/A',
-                    'type' => $this->proxyConfig['type'] ?? 'N/A'
+                    'host' => $this->proxyConfig['proxy_host'] ?? $this->proxyConfig['host'] ?? 'N/A',
+                    'port' => $this->proxyConfig['proxy_port'] ?? $this->proxyConfig['port'] ?? 'N/A',
+                    'type' => $this->proxyConfig['proxy_type'] ?? $this->proxyConfig['type'] ?? 'N/A'
                 ] : null,
                 'ssl_verification' => true
             ]);

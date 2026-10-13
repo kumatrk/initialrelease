@@ -9,8 +9,8 @@ use SimpleKuma\Stats\StatsExclusionFlag;
 /**
  * On-write updates to clicks_daily_summary, clicks_stats_by_token_daily,
  * and clicks_stats_by_token_hourly (plan: stats pre-aggregation).
- * Called after each click insert and after each conversion insert so aggregates stay current.
- * No cron: token tables are updated only on-write (click + conversion).
+ * Called after click insert, LP CTA, and conversion insert so aggregates stay current.
+ * No cron: token tables are updated only on-write (click + LP CTA + conversion).
  */
 class DailySummaryUpdater
 {
@@ -803,14 +803,15 @@ class DailySummaryUpdater
     }
 
     /**
-     * After LPRotator marks lp_click: increment lp_clicks on landing page row (offer_id=null).
+     * After LPRotator marks lp_click: increment lp_clicks on landing page row (offer_id=null)
+     * and on matching token daily/hourly aggregates (Creative ID / zone / etc.).
      * Called for every LP CTA click, including rule redirects.
+     *
+     * Token path must not reuse upsertTokenAggregatesForClick(lpClick=1): that would
+     * also increment visitors. Only lp_clicks moves here.
      */
     public function upsertLpClickUpdate(string $clickId): void
     {
-        if (!$this->tableExists()) {
-            return;
-        }
         $row = $this->loadClickForSummaryUpdate($clickId);
         if (!$row || empty($row['landing_page_id'])) {
             return;
@@ -819,15 +820,70 @@ class DailySummaryUpdater
             return;
         }
 
-        $updLp = $this->db->prepare("
-            UPDATE clicks_daily_summary
-            SET lp_clicks = lp_clicks + 1, updated_at = NOW()
-            WHERE campaign_id = ? AND (traffic_source_id <=> ?) AND offer_id IS NULL AND landing_page_id = ? AND summary_date = ?
-        ");
-        if ($updLp) {
-            $updLp->bind_param('iiis', $row['campaign_id'], $row['traffic_source_id'], $row['landing_page_id'], $row['summary_date']);
-            $updLp->execute();
-            $updLp->close();
+        if ($this->tableExists()) {
+            $updLp = $this->db->prepare("
+                UPDATE clicks_daily_summary
+                SET lp_clicks = lp_clicks + 1, updated_at = NOW()
+                WHERE campaign_id = ? AND (traffic_source_id <=> ?) AND offer_id IS NULL AND landing_page_id = ? AND summary_date = ?
+            ");
+            if ($updLp) {
+                $updLp->bind_param('iiis', $row['campaign_id'], $row['traffic_source_id'], $row['landing_page_id'], $row['summary_date']);
+                $updLp->execute();
+                $updLp->close();
+            }
+        }
+
+        $this->incrementTokenLpClicks($row);
+    }
+
+    /**
+     * LP CTA only: +1 lp_clicks on token daily/hourly rows (visitors/cost unchanged).
+     *
+     * @param array{campaign_id: int, traffic_source_id: ?int, summary_date: string, summary_hour: ?int, extra_data: mixed, ua: ?string} $row
+     */
+    private function incrementTokenLpClicks(array $row): void
+    {
+        if (!$this->tokenTableExists()) {
+            return;
+        }
+        $extraData = is_array($row['extra_data'] ?? null) ? $row['extra_data'] : null;
+        if ($extraData === null) {
+            return;
+        }
+        $ua = isset($row['ua']) && $row['ua'] !== null ? (string) $row['ua'] : null;
+        if (self::isBotClick($extraData, $ua)) {
+            return;
+        }
+        $tokens = $this->extractTokensFromExtraData($extraData);
+        if ($tokens === []) {
+            return;
+        }
+
+        $hour = self::normalizeSummaryHour(isset($row['summary_hour']) ? (int) $row['summary_hour'] : null);
+        $hasOptins = $this->tokenTableHasOptinsColumn();
+        $hasBotClicks = $this->tokenTableHasBotClicksColumn();
+        $upsertRows = [];
+        foreach ($tokens as $t) {
+            $upsertRows[] = [
+                'campaign_id' => (int) $row['campaign_id'],
+                'summary_date' => (string) $row['summary_date'],
+                'hour' => $hour,
+                'token_param' => $t['param'],
+                'token_value' => $t['value'],
+                'traffic_source_id' => $row['traffic_source_id'],
+                'visitors' => 0,
+                'lp_clicks' => 1,
+                'cost' => 0.0,
+                'conversions' => 0,
+                'optins' => 0,
+                'revenue' => 0.0,
+                'bot_clicks' => 0,
+            ];
+        }
+
+        $this->insertTokenAggregateRows('clicks_stats_by_token_daily', $upsertRows, false, $hasOptins, $hasBotClicks);
+        if ($hour !== null && $this->tokenHourlyTableExists()) {
+            $this->insertTokenAggregateRows('clicks_stats_by_token_hourly', $upsertRows, true, $hasOptins, $hasBotClicks);
         }
     }
 

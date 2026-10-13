@@ -26,6 +26,12 @@ final class HoneycombKernel
     /** @var list<CampaignFieldsProvider> */
     private array $campaignFieldsProviders = [];
 
+    /** @var array<string, AddonHttpHandler> keyed by addon slug */
+    private array $httpHandlers = [];
+
+    /** @var list<array{slug: string, file: string, type: string}> */
+    private array $frontendAssets = [];
+
     public function __construct(private mysqli $db)
     {
     }
@@ -58,6 +64,74 @@ final class HoneycombKernel
     public function addCampaignFieldsProvider(CampaignFieldsProvider $provider): void
     {
         $this->campaignFieldsProviders[] = $provider;
+    }
+
+    public function addHttpHandler(AddonHttpHandler $handler): void
+    {
+        $slug = $handler->addonSlug();
+        if ($slug === '') {
+            return;
+        }
+        $this->httpHandlers[$slug] = $handler;
+    }
+
+    /**
+     * Register a file under honeycomb/addons/{slug}/assets/ for the campaign editor.
+     * $file is relative to the addon's assets/ directory (e.g. campaign-tiktok.js).
+     */
+    public function addFrontendAsset(string $addonSlug, string $file, string $type = 'js'): void
+    {
+        $addonSlug = trim($addonSlug);
+        $file = str_replace('\\', '/', trim($file));
+        $file = ltrim($file, '/');
+        if ($addonSlug === '' || $file === '' || str_contains($file, '..')) {
+            return;
+        }
+        $type = strtolower(trim($type));
+        if ($type === '') {
+            $type = 'js';
+        }
+        $this->frontendAssets[] = [
+            'slug' => $addonSlug,
+            'file' => $file,
+            'type' => $type,
+        ];
+    }
+
+    public function httpHandler(string $slug): ?AddonHttpHandler
+    {
+        return $this->httpHandlers[$slug] ?? null;
+    }
+
+    /**
+     * @return array<string, AddonHttpHandler>
+     */
+    public function httpHandlers(): array
+    {
+        return $this->httpHandlers;
+    }
+
+    /**
+     * @return list<array{slug: string, file: string, type: string, url: string}>
+     */
+    public function frontendAssets(?string $appBaseUrl = null): array
+    {
+        $out = [];
+        $seen = [];
+        foreach ($this->frontendAssets as $asset) {
+            $key = $asset['slug'] . "\0" . $asset['file'];
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $out[] = [
+                'slug' => $asset['slug'],
+                'file' => $asset['file'],
+                'type' => $asset['type'],
+                'url' => HoneycombAddonUrls::asset($asset['slug'], $asset['file'], $appBaseUrl),
+            ];
+        }
+        return $out;
     }
 
     /**

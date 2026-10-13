@@ -331,7 +331,7 @@ class CampaignStatsBreakdownService
             FROM {$clicksTable} cl
             INNER JOIN campaigns cp ON cl.campaign_id = cp.id
             LEFT JOIN traffic_sources ts ON cp.traffic_source_id = ts.id
-            " . CampaignStatsExpressions::conversionsAggJoin() . "
+            " . CampaignStatsExpressions::conversionsAggJoin('cl', $clicksTable) . "
             {$fbJoins}
             WHERE cl.campaign_id = ? AND cl.ts >= ? AND cl.ts <= ?{$includedSql}
             GROUP BY {$dayExpr}
@@ -339,6 +339,13 @@ class CampaignStatsBreakdownService
         $types = 'iss';
         $params = [$campaignId, $utcFrom, $utcTo];
         [$types, $params] = CampaignStatsCostSql::mergeScopedApiJoinDateBinds($utcFrom, $utcTo, $types, $params);
+        [$types, $params] = CampaignStatsExpressions::mergeConversionsAggJoinBinds(
+            $campaignId,
+            $utcFrom,
+            $utcTo,
+            $types,
+            $params
+        );
         $stmt = $this->db->prepare($sql);
         $stmt->bind_param($types, ...$params);
         $stmt->execute();
@@ -404,7 +411,7 @@ class CampaignStatsBreakdownService
             FROM {$clicksTable} cl
             INNER JOIN campaigns cp ON cl.campaign_id = cp.id
             LEFT JOIN traffic_sources ts ON cp.traffic_source_id = ts.id
-            " . CampaignStatsExpressions::conversionsAggJoin() . "
+            " . CampaignStatsExpressions::conversionsAggJoin('cl', $clicksTable) . "
             {$joinOffer}
             {$joinLp}
             {$fbJoins}
@@ -415,6 +422,13 @@ class CampaignStatsBreakdownService
         $types = 'iss';
         $params = [$campaignId, $utcFrom, $utcTo];
         [$types, $params] = CampaignStatsCostSql::mergeScopedApiJoinDateBinds($utcFrom, $utcTo, $types, $params);
+        [$types, $params] = CampaignStatsExpressions::mergeConversionsAggJoinBinds(
+            $campaignId,
+            $utcFrom,
+            $utcTo,
+            $types,
+            $params
+        );
 
         $stmt = $this->db->prepare($sql);
         $stmt->bind_param($types, ...$params);

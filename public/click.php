@@ -10,6 +10,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../config/config.php';
 
+use SimpleKuma\Database\DbTimezone;
 use SimpleKuma\Tracking\LPRotator;
 
 // Get click_id
@@ -28,6 +29,8 @@ if ($db->connect_error) {
     http_response_code(500);
     die('Service unavailable');
 }
+
+DbTimezone::init($db);
 
 // Process LP click and redirect to offer
 $rotator = new LPRotator($db);

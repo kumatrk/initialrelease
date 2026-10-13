@@ -375,14 +375,22 @@ final class CampaignListStatsService
 
         $convTypes = 'ss' . $idTypes;
         $convParams = array_merge([$utcFrom, $utcTo], $campaignIds);
-        $clCover = ClicksIndexHints::clickIdCoverAlias($this->db, 'cl', $clicksTable);
+        $force = '';
+        $idx = $this->db->query(
+            "SELECT 1 FROM information_schema.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clicks'
+               AND INDEX_NAME = 'idx_clicks_ts_stats_cover' LIMIT 1"
+        );
+        if ($idx && $idx->num_rows > 0 && $clicksTable === 'clicks') {
+            $force = ' FORCE INDEX (idx_clicks_ts_stats_cover)';
+        }
         $convSql = "
             SELECT
                 cl.campaign_id,
                 COUNT(*) AS conversions,
                 COALESCE(SUM(COALESCE(cv.payout, cv.value)), 0) AS revenue
-            FROM conversions cv
-            INNER JOIN {$clicksTable} {$clCover} ON cl.click_id = cv.click_id
+            FROM {$clicksTable} cl{$force}
+            INNER JOIN conversions cv ON cv.click_id = cl.click_id
             WHERE cl.ts >= ? AND cl.ts <= ?
               AND cl.campaign_id IN ({$placeholders})
               {$includedSql}

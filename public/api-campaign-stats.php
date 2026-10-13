@@ -13,6 +13,7 @@ require_once __DIR__ . '/../src/bootstrap_web_paths.php';
 use SimpleKuma\Auth\Auth;
 use SimpleKuma\Auth\Permission;
 use SimpleKuma\Database\DatabaseCompatibility;
+use SimpleKuma\Database\DbTimezone;
 use SimpleKuma\Entity\Campaign;
 use SimpleKuma\Stats\CampaignStatsQueryFilters;
 use SimpleKuma\Stats\CampaignStatsResponseCache;
@@ -36,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 ignore_user_abort(false);
 
 $db = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
-$db->query("SET time_zone = '+00:00'");
+DbTimezone::init($db);
 DatabaseCompatibility::applyReportingQueryTimeout($db, 20);
 ReportingQueryCancel::arm($db);
 

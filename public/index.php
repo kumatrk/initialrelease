@@ -24,6 +24,7 @@ require_once __DIR__ . '/../src/bootstrap_web_paths.php';
 use SimpleKuma\Auth\Auth;
 use SimpleKuma\Auth\Permission;
 use SimpleKuma\Auth\SingleAdminMode;
+use SimpleKuma\Database\DbTimezone;
 use SimpleKuma\Theme\ThemeRegistry;
 use SimpleKuma\Tracking\FrontControllerClickDispatch;
 
@@ -31,10 +32,14 @@ use SimpleKuma\Tracking\FrontControllerClickDispatch;
 // Hand off before auth so tracking never redirects to the login page.
 FrontControllerClickDispatch::dispatchIfNeeded(__DIR__ . '/km.php');
 
+// UTF-8 for admin HTML (campaign redirect-rule fields with diacritics, etc.)
+if (!headers_sent()) {
+    header('Content-Type: text/html; charset=utf-8');
+}
+
 // Database connection for auth
 $db = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
-// Ensure MySQL session timezone is UTC for consistent timestamp storage
-$db->query("SET time_zone = '+00:00'");
+DbTimezone::init($db);
 $auth = new Auth($db);
 
 // Require authentication
@@ -272,7 +277,7 @@ $pageTitle = $pageTitles[$page] ?? 'Dashboard';
 if ($page === 'visitors' && isset($_GET['export']) && $_GET['export'] === 'csv') {
     require_once __DIR__ . '/../src/Utils/Formatter.php';
     $csvDb = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
-    $csvDb->query("SET time_zone = '+00:00'");
+    DbTimezone::init($csvDb);
 
     $csvTz = ($currentUser && isset($currentUser['timezone'])) ? $currentUser['timezone'] : 'UTC';
     $todayInTz = \SimpleKuma\Utils\Formatter::getTodayInTimezone($csvTz);

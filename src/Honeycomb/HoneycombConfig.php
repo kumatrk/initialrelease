@@ -21,6 +21,7 @@ final class HoneycombConfig
         'settings_panel',
         'campaign_fields',
         'conversion_export',
+        'http_api',
     ];
 
     public const ALLOWED_TYPES = [

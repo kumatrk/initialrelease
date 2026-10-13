@@ -184,11 +184,9 @@ $extraJs = ASSETS_BASE_URL . '/assets/js/campaign-create-wizard.js?v=' . (file_e
 <?php
 $fbPickerJsPath = __DIR__ . '/../public/assets/js/facebook-campaign-picker.js';
 $fbPickerJs = ASSETS_BASE_URL . '/assets/js/facebook-campaign-picker.js?v=' . (file_exists($fbPickerJsPath) ? filemtime($fbPickerJsPath) : '1');
-$ringbaJsPath = __DIR__ . '/../public/assets/js/campaign-ringba.js';
-$ringbaJs = ASSETS_BASE_URL . '/assets/js/campaign-ringba.js?v=' . (file_exists($ringbaJsPath) ? filemtime($ringbaJsPath) : '1');
 ?>
 <script>window.APP_BASE_URL = <?= json_encode(rtrim(APP_BASE_URL, '/'), JSON_THROW_ON_ERROR) ?>;</script>
-<script src="<?= htmlspecialchars($ringbaJs) ?>"></script>
+<?php include __DIR__ . '/partials/honeycomb-frontend-assets.php'; ?>
 <script src="<?= htmlspecialchars($fbPickerJs) ?>"></script>
 <script>
 document.body.setAttribute('data-initial-step', '<?= (int)$initialStep ?>');

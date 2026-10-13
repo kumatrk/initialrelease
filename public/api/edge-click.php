@@ -10,6 +10,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../vendor/autoload.php';
 require_once __DIR__ . '/../../config/config.php';
 
+use SimpleKuma\Database\DbTimezone;
 use SimpleKuma\Edge\EdgeClickIngest;
 
 header('Content-Type: application/json; charset=utf-8');
@@ -25,9 +26,7 @@ mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 try {
     $db = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
-    if (defined('DB_CHARSET')) {
-        $db->set_charset(DB_CHARSET);
-    }
+    DbTimezone::init($db);
 } catch (Throwable $e) {
     http_response_code(503);
     echo json_encode(['error' => 'db_unavailable', 'message' => 'Database unavailable']);

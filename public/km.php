@@ -62,6 +62,7 @@ if (!class_exists(\SimpleKuma\Tracking\Redirector::class)) {
     require_once __DIR__ . '/../config/config.php';
 }
 
+use SimpleKuma\Database\DbTimezone;
 use SimpleKuma\Tracking\Redirector;
 
 // Create database connection
@@ -86,8 +87,7 @@ if ($db->connect_error) {
     die('Service unavailable');
 }
 
-// Ensure MySQL session timezone is UTC
-$db->query("SET time_zone = '+00:00'");
+DbTimezone::init($db);
 
 // Create Redirector and process
 try {

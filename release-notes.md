@@ -1,3 +1,51 @@
+# Simple Kuma Tracker — Unreleased
+
+> Next catalog-only work (not part of this core zip unless noted). **TikTok Cost 1.2.0** / **Ringba 1.2.0** catalog publish to `kumatrk/honeycomb-addons` remains on hold until explicitly resumed.
+
+---
+
+# Simple Kuma Tracker Version 1.1.5.28
+
+## Changes in 1.1.5.28
+
+### Bug fix: Facebook Fetch Ad Accounts (`business_management` + opaque errors)
+- Fetch no longer requests Graph field `business` (that field needs `business_management`; standard `ads_read` + `ads_management` tokens failed with Meta error 100)
+- Fields used: `id,name,account_id,currency,timezone_name`
+- AJAX/UI returns curl errors and Graph `error.message` / `code` instead of a generic failure; sanitized lines go to PHP `error_log` (token never logged)
+- Token help text notes required permissions: `ads_read` + `ads_management`
+- Cost cron unchanged — Insights already uses spend / adset / campaign ids only
+
+### Facebook Marketing proxy fortification
+- Fetch/create/update sync use `ProxyHandler::getProxyConfig()` (same encrypted-password shape as cost cron)
+- `ProxyHandler` accepts plaintext `proxy_pass` for validate-before-save / Test Proxy
+- Save validates the access token **through the proxy** when enabled (blank token on edit reuses stored token)
+- Settings: **Test Proxy → Facebook Graph** verifies egress to `graph.facebook.com`
+- InsightsClient proxy logging uses `proxy_host` / `proxy_port` / `proxy_type` correctly
+
+### Bug fix: UTF-8 / non-ASCII in campaign redirect-rule form fields
+- Admin HTML sends `Content-Type: text/html; charset=utf-8`; `public/.htaccess` sets `AddDefaultCharset UTF-8`
+- `DbTimezone::init()` applies `DB_CHARSET` + UTC on campaign UI, stats API, REST v1, and click/track paths
+- Redirect-rule inputs use `htmlspecialchars(..., ENT_QUOTES, 'UTF-8')`
+- If a rule was already saved garbled, re-enter the correct value after upgrading
+
+### Bug fix: LP CTA clicks missing on token breakdown rows
+- `DailySummaryUpdater::upsertLpClickUpdate` also increments `lp_clicks` on `clicks_stats_by_token_daily` / `clicks_stats_by_token_hourly` (forward-only; historical rows unchanged)
+
+### Performance: scoped conversions joins on breakdown / group_by
+- Tracker-dimension breakdowns no longer scan all conversions account-wide; clicks-first join scoped to campaign + date range
+- Fixes slow `group_by=browser|os|language|country|…` (and native Breakdown UI) on large conversion histories
+
+### Core: Honeycomb generic addon HTTP API + frontend assets
+- `AddonHttpHandler` + `http_api` capability; `public/api/honeycomb-addon.php` / `honeycomb-asset.php`
+- Kernel HTTP handlers + frontend asset registration; campaign editor/wizard load via `honeycomb-frontend-assets` partial
+- Legacy shims: `honeycomb-tiktok.php` / `honeycomb-ringba.php` → generic dispatcher
+- **Catalog hold:** do not publish TikTok Cost 1.2.0 or Ringba 1.2.0 to `kumatrk/honeycomb-addons` until that work is explicitly resumed (core is ready; catalog addons are not live yet)
+
+### Packaging / upgrade notes
+- `version.php` → **1.1.5.28**; `upgrade-manifest.json` + `UPGRADE.md` aligned
+- Migrations footer remains **001–095** (no new migration in this patch)
+
+---
 # Simple Kuma Tracker Version 1.1.5.27
 
 ## Changes in 1.1.5.27
@@ -11,7 +59,7 @@
 
 ## Changes in 1.1.5.26
 
-### Campaign wizard ↔ editor parity (Ringba + Edge)
+### Campaign wizard â†” editor parity (Ringba + Edge)
 - Shared `public/assets/js/campaign-ringba.js` so Ringba API campaign picker / Refresh works on create wizard and classic editor
 - Ringba LP copy panel available on wizard Traffic step (same partial as Tracking on edit)
 - Create wizard: **Edge redirect** checkbox; review summary includes Honeycomb bindings, Edge, and Meta CAPI
@@ -23,40 +71,40 @@
 - `upgrade-manifest.json` aligned to this release; release-notes Migrations footer through **095**
 
 ### Ringba Honeycomb addon (catalog)
-- Ringba v1.1.1 published to `kumatrk/honeycomb-addons` — Import from **System → Honeycomb** (or local install script)
+- Ringba v1.1.1 published to `kumatrk/honeycomb-addons` â€” Import from **System â†’ Honeycomb** (or local install script)
 
 # Simple Kuma Tracker Version 1.1.5.25
 
 ## Changes in 1.1.5.25
 
 ### Honeycomb: secure addon update checks (like core)
-- Installed Honeycomb addons are compared to the official catalog (`kumatrk/honeycomb-addons`); outdated addons show an admin banner and alerts on **System → Honeycomb**
-- Per-addon **Update** uses the same verified path as Import: allowlisted HTTPS, mandatory catalog SHA-256, safe zip extract, slug/`min_kuma` checks — no user-supplied zip URLs, no silent auto-apply, no remote PHP on check
+- Installed Honeycomb addons are compared to the official catalog (`kumatrk/honeycomb-addons`); outdated addons show an admin banner and alerts on **System â†’ Honeycomb**
+- Per-addon **Update** uses the same verified path as Import: allowlisted HTTPS, mandatory catalog SHA-256, safe zip extract, slug/`min_kuma` checks â€” no user-supplied zip URLs, no silent auto-apply, no remote PHP on check
 - Updates preserve enabled/disabled status and leave credentials / campaign bindings in place; downgrades are rejected
-- Background check API: `public/api-check-honeycomb-updates.php` (session-auth, cache-first — same pattern as core `api-check-updates.php`)
+- Background check API: `public/api-check-honeycomb-updates.php` (session-auth, cache-first â€” same pattern as core `api-check-updates.php`)
 - Packaging: new public API + `AddonUpdateChecker` included in the production zip allowlist / required set
 
 ### Campaigns: redirect when paused or archived
 - New campaign setting **When paused or archived** (editor Campaign section + create wizard Basics, with review summary)
-- **Off** — tracking link still returns not found (previous behavior)
-- **Redirect to another campaign** — 302 to that campaign’s tracking link; inbound query tokens are forwarded; a normal click is recorded on the **target** campaign (not the paused/archived one)
-- **Redirect to a custom URL** — 302 to an http(s) URL (no Kuma click)
+- **Off** â€” tracking link still returns not found (previous behavior)
+- **Redirect to another campaign** â€” 302 to that campaignâ€™s tracking link; inbound query tokens are forwarded; a normal click is recorded on the **target** campaign (not the paused/archived one)
+- **Redirect to a custom URL** â€” 302 to an http(s) URL (no Kuma click)
 - Target campaign must be **active**; self-targeting is blocked; deleted campaigns are unchanged (no soft-delete in this release)
 - Edge Redirect falls through to origin for inactive campaigns, so origin applies the redirect
 - Migration: `095_add_campaign_inactive_redirect.sql`
 
 ### Settings: remove duplicate Honeycomb nav item
-- Settings sidebar no longer lists **Honeycomb** (it only linked to the main **System → Honeycomb** page)
+- Settings sidebar no longer lists **Honeycomb** (it only linked to the main **System â†’ Honeycomb** page)
 
 ### Honeycomb: Ringba utility addon (pay-per-call)
-- New addon source: `honeycomb-addons/addons/ringba` (v1.1.1) — Import from **System → Honeycomb** catalog (`kumatrk/honeycomb-addons`), or `php scripts/install-local-honeycomb-addon.php honeycomb-addons/addons/ringba`
-- **Type `utility`:** works with any traffic source (Whop, Meta, Propeller, etc.) — not a traffic-source cost sync
-- Campaign **Honeycomb** section: enable Ringba, paste or pick call-tracking / campaign id (`CA…` — used as `//b-js.ringba.com/CA….js`), optional number-to-replace
-- **Ringba tag name for Kuma’s click id** (default `click_id`): label Ringba uses to store **Kuma’s** click id on the call for payout pixels — explicitly not Propeller/Meta/ad-network click ids (copy clarified so users don’t mix them up)
-- Optional **Ringba API** credentials (account ID + API access token, `Authorization: Token …`) with connection test on save; campaign dropdown + Refresh list via `public/api/honeycomb-ringba.php` (`status` / `campaigns` / `tags`); paste mode still works without API
-- Campaign **Tracking** (editor) and create wizard Traffic step: `#ringba-lp-codes-panel` copy script (`_rgba_tags` for Kuma’s click id + Ringba number-pool JS) when enabled; shared `public/assets/js/campaign-ringba.js` powers API campaign picker on both surfaces
-- Honeycomb Options: setup checklist + Connected / Converted / Payout pixel URLs → `postback.php` (`et=call_connected` / `call_converted` / `call_payout`)
-- Alias endpoint: `public/ringba-postback.php` (accepts clickid / call_id / call_revenue aliases → same `ConversionTracker` pipeline)
+- New addon source: `honeycomb-addons/addons/ringba` (v1.1.1) â€” Import from **System â†’ Honeycomb** catalog (`kumatrk/honeycomb-addons`), or `php scripts/install-local-honeycomb-addon.php honeycomb-addons/addons/ringba`
+- **Type `utility`:** works with any traffic source (Whop, Meta, Propeller, etc.) â€” not a traffic-source cost sync
+- Campaign **Honeycomb** section: enable Ringba, paste or pick call-tracking / campaign id (`CAâ€¦` â€” used as `//b-js.ringba.com/CAâ€¦.js`), optional number-to-replace
+- **Ringba tag name for Kumaâ€™s click id** (default `click_id`): label Ringba uses to store **Kumaâ€™s** click id on the call for payout pixels â€” explicitly not Propeller/Meta/ad-network click ids (copy clarified so users donâ€™t mix them up)
+- Optional **Ringba API** credentials (account ID + API access token, `Authorization: Token â€¦`) with connection test on save; campaign dropdown + Refresh list via `public/api/honeycomb-ringba.php` (`status` / `campaigns` / `tags`); paste mode still works without API
+- Campaign **Tracking** (editor) and create wizard Traffic step: `#ringba-lp-codes-panel` copy script (`_rgba_tags` for Kumaâ€™s click id + Ringba number-pool JS) when enabled; shared `public/assets/js/campaign-ringba.js` powers API campaign picker on both surfaces
+- Honeycomb Options: setup checklist + Connected / Converted / Payout pixel URLs â†’ `postback.php` (`et=call_connected` / `call_converted` / `call_payout`)
+- Alias endpoint: `public/ringba-postback.php` (accepts clickid / call_id / call_revenue aliases â†’ same `ConversionTracker` pipeline)
 - Core: `CampaignFieldsProvider::alwaysVisible()` + campaign-editor JS so utility panels are not gated by traffic-source `provider_key`
 - Packaging: `public/ringba-postback.php` and `public/api/honeycomb-ringba.php` added to production zip public PHP allowlist
 
@@ -83,12 +131,12 @@
 ## Changes in 1.1.5.23
 
 ### Campaign Stats: Hour and Week breakdown dimensions
-- New Core dimensions **Hour** and **Week** in Breakdown (same **+ Add dimension** flow as Date — no new tab)
-- Nest with other dims (e.g. Offer → Hour, Ad → Hour) via presets
+- New Core dimensions **Hour** and **Week** in Breakdown (same **+ Add dimension** flow as Date â€” no new tab)
+- Nest with other dims (e.g. Offer â†’ Hour, Ad â†’ Hour) via presets
 - **Week** = ISO Monday-start calendar week (label = week-start date), fast path from `clicks_daily_summary`
-- **Day of week** = Monday…Sunday (aggregate across the range), fast path from `clicks_daily_summary`
+- **Day of week** = Mondayâ€¦Sunday (aggregate across the range), fast path from `clicks_daily_summary`
 - **Hour** L0 uses the lean covering-index path (same family as Chart hourly)
-- New pre-agg table `clicks_stats_by_token_hourly` (migration `094`) for token ↔ hour nests — on-write with clicks/conversions, never age-purged
+- New pre-agg table `clicks_stats_by_token_hourly` (migration `094`) for token â†” hour nests â€” on-write with clicks/conversions, never age-purged
 - Rebuild: `scripts/rebuild-token-daily-summaries.php` now rebuilds daily + hourly token tables together
 
 # Simple Kuma Tracker Version 1.1.5.22
@@ -96,27 +144,27 @@
 ## Changes in 1.1.5.22
 
 ### Honeycomb: installable traffic & conversion addons
-- New **System → Honeycomb** page: browse the fixed catalog (`kumatrk/honeycomb-addons`), search/filter by type, import verified zips, enable/disable without uninstalling, and remove addons
-- Addons live outside the Kuma zip under `honeycomb/addons/` on each server — core updates and addon updates stay independent
+- New **System â†’ Honeycomb** page: browse the fixed catalog (`kumatrk/honeycomb-addons`), search/filter by type, import verified zips, enable/disable without uninstalling, and remove addons
+- Addons live outside the Kuma zip under `honeycomb/addons/` on each server â€” core updates and addon updates stay independent
 - Safe install path: HTTPS GitHub host allowlist, required SHA-256, zip path/symlink/size limits, extension allowlist, blocked server config files
-- Campaign edit / create wizard: Honeycomb bindings driven by addon `provides` — conversion export and remote cost IDs can appear together
-- Hourly spend for Honeycomb networks lands in `honeycomb_campaign_hourly_costs` and overlays campaign KPI / chart totals via `HoneycombCostAggregator` (**summary-first** — no per-click cost joins)
+- Campaign edit / create wizard: Honeycomb bindings driven by addon `provides` â€” conversion export and remote cost IDs can appear together
+- Hourly spend for Honeycomb networks lands in `honeycomb_campaign_hourly_costs` and overlays campaign KPI / chart totals via `HoneycombCostAggregator` (**summary-first** â€” no per-click cost joins)
 - Recommended one cron for Facebook cost, Google Ads cost, and Honeycomb: `scripts/kuma-traffic-api-cron.php` (Honeycomb-only fallback: `scripts/honeycomb-cron.php`)
 - Migrations: `090_honeycomb_kernel`, `092_honeycomb_runtime`, `093_honeycomb_conversion_exports`
-- **Taboola Cost API** and **Whop Ads** ship from the Honeycomb catalog (not inside this zip) — import from Honeycomb after upgrade
+- **Taboola Cost API** and **Whop Ads** ship from the Honeycomb catalog (not inside this zip) â€” import from Honeycomb after upgrade
 
 ### Whop Ads (via Honeycomb catalog)
 - Template traffic source with Whop click tokens (`wacid` / `wasid` / `waid` / Meta UTMs)
 - Single landing page when the campaign uses a Whop traffic source (Whop Pixel + Kuma CTA handoff)
 - Conversion export to Whop Events API (default `lead`); click capture of `_wuid` + original landing URL
 - Campaign-level spend sync from Whop Ad Reports (`ad_campaign:stats:read`) when a Whop ad campaign ID is bound
-- Cost badge: Honeycomb `integrated_api` sources show Live API cost (not “variables only”)
+- Cost badge: Honeycomb `integrated_api` sources show Live API cost (not â€œvariables onlyâ€)
 
 ### Taboola Cost API (via Honeycomb catalog)
 - Backstage client-credentials spend sync into the same Honeycomb hourly cost table and stats overlay
 
 ### Server Status: VPS CPU / RAM / disk monitor
-- New **System → Server Status** page: live disk meters, best-effort CPU load pressure + RAM (Linux `/proc`), MySQL click-table sizes, and Run archive & retention now
+- New **System â†’ Server Status** page: live disk meters, best-effort CPU load pressure + RAM (Linux `/proc`), MySQL click-table sizes, and Run archive & retention now
 - In-app warning banner when CPU / RAM / disk cross thresholds (configurable on the page; no email)
 - Retention cron records host metrics alongside disk; raw purge still preserves report summaries
 - Theme-aware UI (readable in dark mode)
@@ -124,12 +172,12 @@
 ### Tracker: ISP, connection type, and browser language
 - New click columns: `isp`, `connection_type`, `language` (migration `091_add_clicks_isp_connection_language.sql`)
 - Campaign Stats tracker breakdowns: **ISP**, **Connection Type**, **Browser Language**
-- **ISP** from redistributable **DB-IP ASN Lite** (`geoip/DBIP-ASN-Lite.mmdb`, CC BY 4.0) — packaged in the customer zip
+- **ISP** from redistributable **DB-IP ASN Lite** (`geoip/DBIP-ASN-Lite.mmdb`, CC BY 4.0) â€” packaged in the customer zip
 - Do **not** ship MaxMind GeoLite2-ASN in the zip (license); private drop-in still works if present
-- **Connection type**: traffic-source tokens first, else ASN org heuristic → Cellular / Broadband / Corporate / Unknown
+- **Connection type**: traffic-source tokens first, else ASN org heuristic â†’ Cellular / Broadband / Corporate / Unknown
 - **Browser language**: primary Accept-Language tag on origin; edge ingest keeps worker `language`
 - Refresh ASN DB: `php scripts/download-geoip-databases.php --dbip-asn` (also in `--all`)
-- Historical clicks stay N/A until new traffic; Settings → GeoIP shows ASN/ISP status
+- Historical clicks stay N/A until new traffic; Settings â†’ GeoIP shows ASN/ISP status
 
 ### Offer / LP rotation weights (edge UX)
 - Origin links apply new weights **immediately** after save
@@ -140,7 +188,7 @@
 - Customer zip includes Honeycomb kernel + empty secured `honeycomb/` runtime (addons are catalog-installed, not bundled)
 - Required migrations include Honeycomb **090 / 092 / 093** and ISP **091**
 - Production crons allowlisted: `kuma-traffic-api-cron.php`, `honeycomb-cron.php`
-- **Installer:** migration **091** (ISP / connection / language) is idempotent in PHP — re-running after a partial apply no longer fails with `Duplicate column name 'isp'`
+- **Installer:** migration **091** (ISP / connection / language) is idempotent in PHP â€” re-running after a partial apply no longer fails with `Duplicate column name 'isp'`
 - Custom postbacks skip empty network click ids (e.g. PropellerAds `visitor_id`) and do not retry HTTP 4xx
 
 ## Changes in 1.1.5.21
@@ -182,11 +230,11 @@
 ### Email Opt-ins page and Click Lookup card
 - New **Email Opt-ins** page (sidebar under Conversion Log): visitors, opt-ins, opt-in %, cost / opt-in, daily chart, campaign table, event list
 - Click Lookup shows a dedicated Email opt-in card; purchase conversions stay in their own section
-- Email is shown only if it was already on the click or postback — no new email column or lead CRM
+- Email is shown only if it was already on the click or postback â€” no new email column or lead CRM
 - Campaign Stats columns and Hermes queries are unchanged
 
 ### Updates tab: release notes readable in dark mode
-- What’s New notes use theme tokens instead of a white box with remapped light text
+- Whatâ€™s New notes use theme tokens instead of a white box with remapped light text
 
 ## Changes in 1.1.5.20
 
@@ -210,12 +258,12 @@
 - Redirectless tracker, Facebook cost aggregator, and GeoIP providers use the same gated logger
 
 ### Performance: API `group_by` uses Hermes summary-first path
-- `GET /api/v1/stats/campaigns/{id}?group_by=…` now uses the same `CampaignStatsV2Service` breakdown path as Campaign Stats UI
+- `GET /api/v1/stats/campaigns/{id}?group_by=â€¦` now uses the same `CampaignStatsV2Service` breakdown path as Campaign Stats UI
 - Unfiltered token/geo/device breakdowns prefer pre-aggregates / lean cover indexes instead of raw `clicks` scans
 
 ### Fix: LP offer update fatal (`incrementSummaryClickRow` argument count)
 - Restored correct `clickInc` / `lpInc` / `directInc` / `cost` arguments after the bot-summary signature change
-- Fixes fatal errors on `lp/click.php` → offer rotation (can break LP / popunder offer attribution)
+- Fixes fatal errors on `lp/click.php` â†’ offer rotation (can break LP / popunder offer attribution)
 
 ## Changes in 1.1.5.19
 
@@ -237,28 +285,28 @@
 
 ### UI & Dark Mode Readability Improvements
 - Improved contrast and dark mode styling for Edge Redirect (Cloudflare Worker) status panels in the Campaign Editor.
-- Enhanced contrast, distinct pill styling, and hover/active states for traffic source postback tokens in Settings → Integrations and Offer edit dialogs so tokens are clearly legible and clickable.
+- Enhanced contrast, distinct pill styling, and hover/active states for traffic source postback tokens in Settings â†’ Integrations and Offer edit dialogs so tokens are clearly legible and clickable.
 
 ## Changes in 1.1.5.18
 
 ### Attribution Window: Unlimited Option
-- Settings → Privacy now supports **Unlimited** attribution window (`0` days) in addition to presets (7, 14, 30, 60, 90, 180, 365 days)
+- Settings â†’ Privacy now supports **Unlimited** attribution window (`0` days) in addition to presets (7, 14, 30, 60, 90, 180, 365 days)
 - Postbacks and pixels will accept conversions indefinitely when set to Unlimited without age cutoff
 
 ### Data Lifecycle & Hot Clicks Archiving
 - Moves old clicks from the hot `clicks` table into `clicks_archive` (`archive_after_days`, default: 365 days)
-- Scheduled via `scripts/run-data-retention-cron.php` or on-demand in Settings → Privacy (“Run archive & retention now”)
+- Scheduled via `scripts/run-data-retention-cron.php` or on-demand in Settings â†’ Privacy (â€œRun archive & retention nowâ€)
 - **Summary-first protection**: Historical pre-aggregated reporting tables (`clicks_daily_summary`, `clicks_stats_by_token_daily`) are preserved intact so Hermes fast-path campaign KPI/breakdown queries remain instant and unaffected by raw click archiving or purging
 
 ### Affiliate Networks: Clean Postback UI
 - Removed legacy S2S postback template input from Add/Edit Network and table views
-- Outbound postbacks are configured under **Settings → Integrations** (Custom Postbacks), and inbound postback URLs under **Postback URLs**
+- Outbound postbacks are configured under **Settings â†’ Integrations** (Custom Postbacks), and inbound postback URLs under **Postback URLs**
 
 ## Changes in 1.1.5.17
 
-### Fix: Campaign save blocked by browser “0.01” validation (locale language)
+### Fix: Campaign save blocked by browser â€œ0.01â€ validation (locale language)
 - Default CPC and minimum postback payout use `step="any"` so optional money fields are not blocked by HTML5 step mismatch
-- Browser validation bubbles use the browser UI language (e.g. Chinese) — that was not a Kuma translation bug
+- Browser validation bubbles use the browser UI language (e.g. Chinese) â€” that was not a Kuma translation bug
 - Stored values are normalized for display to avoid float junk tripping the input
 
 ### Fix: Campaign save 502 when Edge Redirect sync hangs
@@ -269,14 +317,14 @@
 ## Changes in 1.1.5.16
 
 ### Fix: Nginx tracking links no longer open the login page
-- Pretty click URLs (`/km/…`, `/go/…`, `/c/…`) that fall through to the admin front controller now hand off to `km.php` before auth (common bare Nginx `try_files` setup)
+- Pretty click URLs (`/km/â€¦`, `/go/â€¦`, `/c/â€¦`) that fall through to the admin front controller now hand off to `km.php` before auth (common bare Nginx `try_files` setup)
 - Shipped `docker/nginx.conf.example` with the recommended click + API rewrites
 - Installer complete screen and docs call out Nginx rewrite requirements (Apache `.htaccess` unchanged)
 
 ## Changes in 1.1.5.15
 
 ### Fix: Restore tracking domain Bypass Verification
-- Settings → Domains again shows **Bypass Verification** when automated DNS/SSL checks fail or stay pending
+- Settings â†’ Domains again shows **Bypass Verification** when automated DNS/SSL checks fail or stay pending
 - Manually approved domains get status **Verified (Manual)** and can be selected on campaigns and postbacks
 - Confirms at your own risk before enabling a domain that did not pass automated verification
 
@@ -284,11 +332,11 @@
 
 ### Fix: Create campaign with custom traffic sources
 - User-added sources (e.g. Tacolo) are selectable for campaigns even when live cost API is not integrated yet
-- Manual / URL cost still works; Bing remains the only “(Coming soon)” holdout
+- Manual / URL cost still works; Bing remains the only â€œ(Coming soon)â€ holdout
 - Campaign create wizard: avoid silent Create failures (`novalidate`, hidden `save_campaign`, clearer validation feedback); clear Facebook fields when leaving Facebook
 
 ### Fix: Facebook Marketing API resync with hidden token
-- “Leave blank to keep existing token” now applies to Fetch & Save / resync (JS + AJAX + post-update sync use the stored token)
+- â€œLeave blank to keep existing tokenâ€ now applies to Fetch & Save / resync (JS + AJAX + post-update sync use the stored token)
 
 ## Changes in 1.1.5.13
 
@@ -311,8 +359,8 @@
 
 ### Fix: Campaign Stats / dashboard speed at large click volume
 - Restored Hermes-style **summary-first** reporting: daily/token summary tables when eligible, covering-index lean scans as fallback
-- Meta spend uses hourly/map overlay instead of per-click cost joins on unfiltered reports (prevents 20s timeouts around ~50k–100k clicks)
-- Campaign Stats breakdown (Ad Set → Landing → Region), KPI summary, and charts no longer time out when rapidly changing date ranges
+- Meta spend uses hourly/map overlay instead of per-click cost joins on unfiltered reports (prevents 20s timeouts around ~50kâ€“100k clicks)
+- Campaign Stats breakdown (Ad Set â†’ Landing â†’ Region), KPI summary, and charts no longer time out when rapidly changing date ranges
 - Abort/stale request handling improved so abandoned date switches do not flash false error banners over good KPIs
 - Migration **086**: covering index on `clicks (click_id, exclude_from_stats, ts, campaign_id)` for fast conversion attribution joins
 
@@ -339,8 +387,8 @@
 - Settings navigation redesigned for faster tab discovery and clearer mobile layout
 - New settings layout/CSS so related options (tracking, bots, edge, about, updates) are easier to find
 
-### About page — contributors & open source
-- Settings → About highlights **The Kuma Club** for major code and idea contributors
+### About page â€” contributors & open source
+- Settings â†’ About highlights **The Kuma Club** for major code and idea contributors
 - Open-source credits section for libraries we ship (including Crawler-Detect and Matomo DeviceDetector) with links to their repos
 
 ### Bot detection
@@ -350,7 +398,7 @@
 
 ### Cloudflare Edge Redirect (Phase 1)
 - Optional Cloudflare Worker redirects eligible campaigns at the edge with async click ingest back to origin
-- Settings → Edge Redirect: deploy Worker, sync campaign KV snapshots, health check, rotate ingest secret, disable (removes route + clears KV)
+- Settings â†’ Edge Redirect: deploy Worker, sync campaign KV snapshots, health check, rotate ingest secret, disable (removes route + clears KV)
 - Per-campaign **Edge redirect** toggle; migration **083** (`edge_enabled` + sync metadata)
 - Phase 1 stays on origin for redirectless, cloaking/referrer modes, offer caps, and advanced URL `{tokens}`
 - Worker mirrors origin param allowlists (`pass_to_lp` / `pass_to_offer`), slug attribution, and HMAC-secured ingest
@@ -358,7 +406,7 @@
 ## Changes in 1.1.5.8
 
 ### About page + Kuma Club
-- Settings → About redesigned with a theme-aware hero banner (light and dark artwork)
+- Settings â†’ About redesigned with a theme-aware hero banner (light and dark artwork)
 - Creator stays on the left; **The Kuma Club** on the right recognizes major code and idea contributors
 - First Kuma Club member: **L1Ght** (linked AffLift profile, avatar, Patched In: July 29, 2026)
 - Mid section compacted into a single values panel with GIF cards; Steve Jobs inspiration video retained below
@@ -378,20 +426,20 @@
 ### Google Ads Data Manager CSV URL
 - Conversion import URL now uses `/api/google-conversions.csv` so Google Data Manager accepts the HTTPS source (path must end in `.csv`)
 - Apache rewrites `.csv` to the existing `google-conversions.php` endpoint; query params (`key`, `camp`, etc.) unchanged
-- Settings → Integrations copies the `.csv` URL and documents that Username/Password fields can be any values (auth is the `key` query param)
+- Settings â†’ Integrations copies the `.csv` URL and documents that Username/Password fields can be any values (auth is the `key` query param)
 
 ## Changes in 1.1.5.5
 
 ### Meta CAPI custom conversion event mapping
 - Inbound postbacks/pixels accept optional funnel keys (`et`, with aliases `event_type` / `event`) stored as `conversions.event_key` (migration **082**)
-- Settings → Meta CAPI integrations: map inbound keys (e.g. `register`, `ftd`, `rebill`) to Meta standard or custom event names; default event still used when `et` is missing/unmapped
+- Settings â†’ Meta CAPI integrations: map inbound keys (e.g. `register`, `ftd`, `rebill`) to Meta standard or custom event names; default event still used when `et` is missing/unmapped
 - Multi-step funnels on one click: distinct Meta `event_id` / `order_id` so FTD + rebill do not collide
 - Optional non-blocking **Send PageView on click** for linked CAPI integrations
 - Custom postbacks gain `{event_key}` token for traffic-source S2S URLs
 - Postback URLs page documents multi-event funnel examples
 
 ### Login privacy gate (custom login token)
-- Optional login-page gate: require a secret query token (default `?mv=…`, param name configurable) before the login form is shown
+- Optional login-page gate: require a secret query token (default `?mv=â€¦`, param name configurable) before the login form is shown
 - Unauthorized visitors are redirected to a decoy URL (custom if set, otherwise Google)
 - Short-lived signed cookie after a successful token visit; token stored hashed in settings (never plaintext at rest)
 - Settings UI to enable/disable, set/rotate token, choose param name, and set decoy redirect
@@ -426,7 +474,7 @@
 ## Changes in 1.1.4
 
 - **REST API v1 (Kuma API):** Bearer-key auth, OpenAPI spec, CRUD for networks/offers/landing pages/campaigns, stats and click/conversion reporting (`/api/v1/*`, migration 060).
-- **Settings → Kuma API:** In-app API key management and documentation.
+- **Settings â†’ Kuma API:** In-app API key management and documentation.
 - Meta adset/ad name target breakdown fixes (generated columns migration 053 + unified view sync).
 - Patch release (version display and packaging aligned to 1.1.4).
 
@@ -438,7 +486,7 @@
 - Data retention cleanup CLI (`scripts/run-data-retention-cron.php`)
 - Secure remember-me tokens (migration 059)
 - Auth hardening: CSRF on login/settings, login rate limiting, API permission checks
-- Performance: JSON generated columns and composite indexes (migrations 050–051)
+- Performance: JSON generated columns and composite indexes (migrations 050â€“051)
 
 ## Changes in 1.0.1
 
@@ -454,7 +502,7 @@
 
 ## Migrations
 
-Fresh installs should apply forward migrations **001 through 095** (exclude `rollback_*.sql`). Existing installs: run pending migrations after upgrade (includes **090–093** Honeycomb, **091** ISP/connection/language, **094** token-hourly stats, **095** inactive campaign redirect).
+Fresh installs should apply forward migrations **001 through 095** (exclude `rollback_*.sql`). Existing installs: run pending migrations after upgrade (includes **090â€“093** Honeycomb, **091** ISP/connection/language, **094** token-hourly stats, **095** inactive campaign redirect).
 
 ## License
 

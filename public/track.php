@@ -200,8 +200,7 @@ if ($db->connect_error) {
     exit;
 }
 
-// Ensure MySQL session timezone is UTC for consistent timestamp storage
-$db->query("SET time_zone = '+00:00'");
+\SimpleKuma\Database\DbTimezone::init($db);
 
 // For server-side requests, we need to forward the visitor's IP, User-Agent, and Referrer
 // These are sent as headers or POST data from the landing page's curl request
