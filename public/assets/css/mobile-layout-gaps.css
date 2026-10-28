@@ -1,0 +1,169 @@
+/**
+ * Mobile layout gaps for pages without a dedicated mobile-*.css
+ * (click-lookup, kuma-api, email-optins polish, short-links, server-status, etc.)
+ * Loaded globally from base.php — only applies under 768px.
+ */
+
+@media (max-width: 768px) {
+    /* Inline auto-fit grids used on Click Lookup (and similar) */
+    .card-body [style*="minmax(300px"],
+    .card-body [style*="minmax(250px"],
+    .card-body [style*="minmax(200px"] {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* Click Lookup / Short Links search rows */
+    .card-body form > div[style*="display: flex"] {
+        flex-direction: column !important;
+        align-items: stretch !important;
+    }
+
+    .card-body form > div[style*="display: flex"] > div[style*="min-width"] {
+        min-width: 0 !important;
+        width: 100% !important;
+        flex: 1 1 auto !important;
+    }
+
+    .card-body form > div[style*="display: flex"] > button,
+    .card-body form > div[style*="display: flex"] > .btn {
+        width: 100% !important;
+        margin-top: 0 !important;
+        align-self: stretch !important;
+    }
+
+    /* Short Links URL row */
+    #url_to_mask {
+        width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+    }
+
+    /* Kuma API */
+    .api-docs-layout {
+        display: block !important;
+    }
+
+    .api-docs-nav {
+        position: static !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        margin-bottom: 16px !important;
+    }
+
+    .api-create-key-row,
+    .api-key-create-form,
+    form.api-create-form {
+        flex-direction: column !important;
+        align-items: stretch !important;
+    }
+
+    .api-endpoints-table,
+    .api-endpoint-table,
+    table.api-endpoint-table,
+    .api-ref-table,
+    .api-keys-table {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Wrap endpoint tables so wide cols scroll inside the card */
+    .api-endpoint-table-wrap,
+    .card-body:has(> .api-endpoint-table),
+    .card-body:has(.api-endpoint-table) {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        max-width: 100%;
+    }
+
+    .api-method {
+        white-space: normal !important;
+    }
+
+    /* Email opt-ins filters + tables */
+    .email-optins-filter-form {
+        grid-template-columns: 1fr !important;
+    }
+
+    .email-optins-table-wrap,
+    .email-optins-events-wrap {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        max-width: 100%;
+    }
+
+    .email-optins-rate {
+        min-width: 0 !important;
+    }
+
+    /* Server status tables */
+    .ss-table,
+    .ss-table-wrap {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .ss-grid,
+    .ss-stats-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* Honeycomb residual */
+    .honeycomb-catalog-toolbar,
+    .honeycomb-row-actions {
+        flex-wrap: wrap !important;
+    }
+
+    .honeycomb-catalog-table-wrap {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        max-width: 100%;
+    }
+
+    .honeycomb-page a[href*="github"],
+    .honeycomb-page .catalog-url,
+    .honeycomb-hero + * a,
+    [class*="honeycomb"] code,
+    .card-body a[href*="raw.githubusercontent"] {
+        word-break: break-all;
+        overflow-wrap: anywhere;
+    }
+
+    /* Campaign wizard progress */
+    .campaign-wizard-progress,
+    .wizard-progress,
+    .create-wizard-steps {
+        flex-wrap: wrap !important;
+        gap: 8px !important;
+    }
+
+    /* Settings / forms: force inline 2-col grids to stack */
+    #api-costs [style*="grid-template-columns: 1fr 1fr"],
+    .settings-tab-panel [style*="grid-template-columns: 1fr 1fr"],
+    .card-body [style*="grid-template-columns: 1fr 1fr"],
+    .card-body [style*="grid-template-columns:1fr 1fr"],
+    .content-container [style*="grid-template-columns: 1fr 1fr"] {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* About / feature grids that use 3 cols */
+    .about-features-grid,
+    .about-creator-grid,
+    [style*="grid-template-columns: repeat(3, 1fr)"],
+    [style*="grid-template-columns: 1fr 2fr"] {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* Generic: any wide pre/code block */
+    .card-body pre,
+    .card-body code {
+        max-width: 100%;
+        overflow-x: auto;
+        word-break: break-word;
+    }
+}

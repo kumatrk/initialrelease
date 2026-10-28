@@ -134,43 +134,74 @@
         margin-left: 0;
     }
     
-    /* Navbar adjustments */
+    /* Navbar adjustments — keep Install + theme + logout on one row */
     .navbar {
-        padding: 0 var(--spacing-md);
-        flex-wrap: wrap;
+        padding: 0 var(--spacing-sm);
+        flex-wrap: nowrap;
         min-height: var(--navbar-height);
         height: auto;
+        gap: 6px;
     }
     
     .navbar-left {
-        flex: 1;
+        flex: 1 1 auto;
         min-width: 0;
+        gap: var(--spacing-sm);
     }
     
     .navbar-title {
-        font-size: var(--font-size-lg);
+        font-size: var(--font-size-base);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        max-width: 30vw;
     }
     
     .navbar-right {
-        flex-shrink: 0;
+        flex: 0 1 auto;
+        min-width: 0;
     }
     
     .navbar-user {
         font-size: var(--font-size-sm);
-        gap: var(--spacing-xs);
+        gap: 4px;
+        flex-wrap: nowrap;
+        justify-content: flex-end;
+        max-width: 100%;
+    }
+
+    .navbar-user .theme-switcher select,
+    .navbar-user select#theme-select,
+    .navbar-user select[name="theme"],
+    .navbar .theme-switcher select {
+        max-width: 78px;
+        font-size: 12px;
+        padding-left: 6px;
+        padding-right: 18px;
+    }
+
+    .navbar-user .pwa-install-btn,
+    .navbar .pwa-install-btn,
+    #pwa-install-btn {
+        padding: 4px 8px !important;
+        font-size: 12px !important;
+        white-space: nowrap;
+    }
+
+    .navbar-user .logout-btn,
+    .navbar-user a.btn-logout,
+    .navbar a[href*="logout"] {
+        padding: 4px 8px !important;
+        font-size: 12px !important;
+        min-width: 0;
     }
     
-    .navbar-user span {
-        display: none; /* Hide username text on very small screens */
+    .navbar-username {
+        display: none;
     }
     
     .navbar-avatar {
-        width: 32px;
-        height: 32px;
-        font-size: 14px;
+        display: none; /* Avatar eats space; Install needs the slot */
     }
     
     /* Content container */
@@ -216,50 +247,59 @@
         font-size: var(--font-size-sm);
     }
     
-    /* Date picker form - keep preset buttons as they were, only fix Update button */
-    .page-header form {
+    /* Dashboard date controls — even grid, no orphaned last button */
+    .page-header {
+        align-items: stretch !important;
+    }
+
+    #dashboard-date-form {
         width: 100% !important;
         max-width: 100% !important;
+        align-items: stretch !important;
         box-sizing: border-box !important;
-        overflow-x: hidden !important;
     }
-    
-    /* Preset buttons container - keep as is (allow wrapping) */
-    .page-header form > div:first-child {
-        flex-wrap: wrap !important;
-    }
-    
-    /* Date inputs container - allow wrapping so Update button can drop to next line */
-    .page-header form > div:last-child,
-    .page-header form > div[style*="gap: 12px"] {
-        flex-wrap: wrap !important;
+
+    .dash-date-presets {
+        display: grid !important;
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        gap: 6px !important;
         width: 100% !important;
-        max-width: 100% !important;
-        box-sizing: border-box !important;
-        overflow-x: hidden !important;
+        justify-content: stretch !important;
     }
-    
-    /* Date inputs - allow them to shrink but keep reasonable size */
-    .page-header form > div:last-child input[type="date"],
-    .page-header form > div[style*="gap: 12px"] input[type="date"] {
-        flex: 1 1 auto !important;
+
+    .dash-date-preset {
+        width: 100%;
+        min-height: 36px;
+        padding: 6px 4px !important;
+        text-align: center;
+        box-sizing: border-box;
+    }
+
+    .dash-date-range {
+        display: grid !important;
+        grid-template-columns: 1fr auto 1fr !important;
+        gap: 8px !important;
+        width: 100% !important;
+        align-items: center !important;
+    }
+
+    .dash-date-input {
+        width: 100% !important;
         min-width: 0 !important;
-        max-width: calc(50% - 6px) !important; /* Allow two inputs side by side with gap */
+        max-width: none !important;
         box-sizing: border-box !important;
     }
-    
-    /* Update button - force to wrap to next line and be full width */
-    .page-header form > div:last-child button[type="submit"],
-    .page-header form > div[style*="gap: 12px"] button[type="submit"],
-    .page-header form button.btn-primary[type="submit"] {
+
+    .dash-date-update {
+        grid-column: 1 / -1;
         width: 100% !important;
-        max-width: 100% !important;
-        flex: 1 1 100% !important;
-        flex-basis: 100% !important;
-        box-sizing: border-box !important;
-        margin-top: var(--spacing-sm) !important;
-        margin-left: 0 !important;
-        margin-right: 0 !important;
+        margin-top: 2px;
+    }
+
+    .dash-status-filters {
+        width: 100%;
+        justify-content: flex-start;
+        gap: 10px;
     }
     
     /* Stats cards - 2 columns on mobile for better use of space */

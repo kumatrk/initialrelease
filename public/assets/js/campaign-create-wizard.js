@@ -169,7 +169,7 @@
                 let enabledLpCount = 0;
                 const lp = document.getElementById('lp_items');
                 if (lp) {
-                    lp.querySelectorAll('div[style*="grid-template-columns"]').forEach(function (row) {
+                    lp.querySelectorAll('.wizard-rotation-row, div[style*="grid-template-columns"]').forEach(function (row) {
                         if (row.style.display === 'none') return;
                         const cb = row.querySelector('input[type="checkbox"]');
                         const sel = row.querySelector('select[name="lp_id[]"]');
@@ -182,18 +182,44 @@
                     e.textContent = isWhopTrafficSourceSelected()
                         ? 'Whop Ads requires exactly one landing page (the ad destination).'
                         : 'Add at least one enabled landing page.';
-                    lp.appendChild(e);
+                    if (lp) lp.appendChild(e);
                     return false;
                 }
                 if (isWhopTrafficSourceSelected() && enabledLpCount > 1) {
                     const e = document.createElement('div');
                     e.className = 'wizard-field-error';
                     e.textContent = 'Whop Ads allows only one landing page. Remove extra LPs.';
-                    lp.appendChild(e);
+                    if (lp) lp.appendChild(e);
                     return false;
                 }
             }
-            if (isWhopTrafficSourceSelected() && flowType === 'DTO') {
+            if (flowType === 'DeepFunnel') {
+                if (typeof window.kumaDeepFunnelsSync === 'function') {
+                    window.kumaDeepFunnelsSync();
+                }
+                const raw = (document.getElementById('deep_funnel_json') || {}).value || '';
+                let okLevels = false;
+                try {
+                    const data = JSON.parse(raw || '{}');
+                    const levels = data.levels || [];
+                    okLevels = levels.some(function (level) {
+                        return (level.items || []).some(function (item) {
+                            return item && item.enabled !== false && parseInt(item.id, 10) > 0;
+                        });
+                    });
+                } catch (err) {
+                    okLevels = false;
+                }
+                if (!okLevels) {
+                    const wrap = document.getElementById('wizard-deep-funnels-wrap') || document.getElementById('df-levels-builder');
+                    const e = document.createElement('div');
+                    e.className = 'wizard-field-error';
+                    e.textContent = 'Deep Funnel needs at least one enabled landing page on Level 1.';
+                    if (wrap) wrap.appendChild(e);
+                    return false;
+                }
+            }
+            if (isWhopTrafficSourceSelected() && (flowType === 'DTO' || flowType === 'DeepFunnel')) {
                 const ft = form.querySelector('[name="flow_type"]');
                 showFieldError(ft, 'Whop Ads needs Landing Page → Offer (Pixel runs on your LP).');
                 return false;
@@ -235,6 +261,18 @@
         const edgeOn = edgeCb && edgeCb.checked ? 'Yes' : 'No';
         const tagsInput = form.querySelector('[name="tags"]');
         const tagsVal = tagsInput && tagsInput.value.trim() ? tagsInput.value.trim() : '—';
+        const botModeSel = form.querySelector('[name="bot_route_mode"]');
+        let botRouteLabel = 'Allow';
+        if (botModeSel) {
+            if (botModeSel.value === 'record_only') {
+                botRouteLabel = 'Record only';
+            } else if (botModeSel.value === 'safe_url') {
+                const botUrl = form.querySelector('[name="bot_route_url"]');
+                botRouteLabel = botUrl && botUrl.value.trim()
+                    ? ('Safe URL: ' + botUrl.value.trim())
+                    : 'Safe URL (empty)';
+            }
+        }
         const inactiveModeSel = form.querySelector('[name="inactive_redirect_mode"]');
         let inactiveRedirectLabel = 'Off';
         if (inactiveModeSel) {
@@ -275,6 +313,7 @@
             '<dt>Tags</dt><dd>' + escapeHtml(tagsVal) + '</dd>' +
             '<dt>Status</dt><dd>' + escapeHtml(status) + '</dd>' +
             '<dt>When paused/archived</dt><dd>' + escapeHtml(inactiveRedirectLabel) + '</dd>' +
+            '<dt>Bots and proxy</dt><dd>' + escapeHtml(botRouteLabel) + '</dd>' +
             '<dt>Referrer privacy</dt><dd>' + escapeHtml(referrerMode) + '</dd>' +
             '<dt>Traffic source</dt><dd>' + escapeHtml(ts) + '</dd>' +
             '<dt>Meta CAPI</dt><dd>' + escapeHtml(capiLabel) + '</dd>' +
@@ -356,8 +395,24 @@
 
     window.updateFlowFields = function () {
         const ft = document.getElementById('flow_type').value;
-        document.getElementById('lp_fields').style.display = ft === 'LP' || ft === 'Split' ? 'block' : 'none';
-        document.getElementById('split_fields').style.display = ft === 'Split' ? 'block' : 'none';
+        const lpFields = document.getElementById('lp_fields');
+        if (lpFields) {
+            lpFields.style.display = ft === 'LP' || ft === 'Split' ? 'block' : 'none';
+        }
+        const splitFields = document.getElementById('split_fields');
+        if (splitFields) {
+            splitFields.style.display = ft === 'Split' ? 'block' : 'none';
+        }
+        const dfWrap = document.getElementById('wizard-deep-funnels-wrap');
+        if (dfWrap) {
+            dfWrap.style.display = ft === 'DeepFunnel' ? 'block' : 'none';
+        }
+        document.querySelectorAll('.honeycomb-deep-funnels-panel').forEach(function (el) {
+            el.style.display = ft === 'DeepFunnel' ? 'block' : 'none';
+        });
+        if (typeof window.kumaDeepFunnelsOnFlowChange === 'function') {
+            window.kumaDeepFunnelsOnFlowChange(ft);
+        }
         if (typeof window.syncWhopWizardUi === 'function') {
             window.syncWhopWizardUi();
         }
@@ -367,8 +422,11 @@
         const input = document.getElementById('split_traffic_to_lp_input');
         const span = document.getElementById('split_remaining_percent');
         if (input && span) {
-            const p = parseInt(input.value, 10) || 0;
-            span.textContent = '(' + (100 - p) + '% Direct)';
+            let p = parseInt(input.value, 10);
+            if (isNaN(p)) p = 0;
+            if (p < 0) p = 0;
+            if (p > 100) p = 100;
+            span.textContent = (100 - p) + '% goes direct to offer';
         }
     };
 
@@ -417,10 +475,17 @@
         if (flowHint) flowHint.style.display = isWhop ? 'block' : 'none';
         if (codesPanel) codesPanel.style.display = isWhop ? 'block' : 'none';
 
-        if (isWhop && flowTypeEl && flowTypeEl.value === 'DTO') {
+        if (isWhop && flowTypeEl && (flowTypeEl.value === 'DTO' || flowTypeEl.value === 'DeepFunnel')) {
             flowTypeEl.value = 'LP';
-            document.getElementById('lp_fields').style.display = 'block';
-            document.getElementById('split_fields').style.display = 'none';
+            const lpFields = document.getElementById('lp_fields');
+            if (lpFields) lpFields.style.display = 'block';
+            const splitFields = document.getElementById('split_fields');
+            if (splitFields) splitFields.style.display = 'none';
+            const dfWrap = document.getElementById('wizard-deep-funnels-wrap');
+            if (dfWrap) dfWrap.style.display = 'none';
+            document.querySelectorAll('.honeycomb-deep-funnels-panel').forEach(function (el) {
+                el.style.display = 'none';
+            });
         }
 
         syncWhopLpRotationLimits(isWhop);
@@ -463,7 +528,7 @@
         });
         if (!container) return;
 
-        const rows = Array.from(container.querySelectorAll('div[style*="grid-template-columns"]'));
+        const rows = Array.from(container.querySelectorAll('.wizard-rotation-row'));
         if (!rows.length) return;
 
         if (!isWhop) {
@@ -570,7 +635,7 @@
         let lpUrl = '';
         const container = document.getElementById('lp_items');
         if (container) {
-            const rows = Array.from(container.querySelectorAll('div[style*="grid-template-columns"]'));
+            const rows = Array.from(container.querySelectorAll('.wizard-rotation-row'));
             for (let i = 0; i < rows.length; i++) {
                 const row = rows[i];
                 if (row.style.display === 'none') continue;
@@ -791,7 +856,7 @@
     window.equalizeLPWeights = function () {
         if (isWhopTrafficSourceSelected()) return;
         const c = document.getElementById('lp_items');
-        const all = c.querySelectorAll('div[style*="grid-template-columns"]');
+        const all = c.querySelectorAll('.wizard-rotation-row');
         const enabled = Array.prototype.filter.call(all, function (row) {
             return row.querySelector('input[type="checkbox"]').checked;
         });
@@ -840,7 +905,7 @@
             return;
         }
         const c = document.getElementById('lp_items');
-        const rows = c.querySelectorAll('div[style*="grid-template-columns"]');
+        const rows = c.querySelectorAll('.wizard-rotation-row');
         if (!rows.length) return;
         const idx = rows.length;
         const item = rows[0].cloneNode(true);
@@ -864,6 +929,7 @@
             true
         );
         c.appendChild(item);
+        equalizeLPWeights();
     };
 
     window.initializeDisabledStates = function () {
@@ -877,7 +943,7 @@
                 handleOfferEnabledChange(idx, cb.checked);
             }
         });
-        document.getElementById('lp_items').querySelectorAll('div[style*="grid-template-columns"]').forEach(function (row) {
+        document.getElementById('lp_items').querySelectorAll('.wizard-rotation-row').forEach(function (row) {
             const cb = row.querySelector('input[type="checkbox"]');
             if (cb && cb.id.indexOf('lp_checkbox_') === 0) {
                 const idx = cb.id.replace('lp_checkbox_', '');
@@ -1045,7 +1111,7 @@
         row.style.cssText = 'background:#f9f9f9;padding:16px;border:2px solid #ddd;border-radius:4px;margin-bottom:12px;';
         row.innerHTML =
             '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
-            '<strong class="redirect-rule-number" style="color:#3d5a26;">Rule #' + (ruleIndex + 1) + '</strong>' +
+            '<strong class="redirect-rule-number" style="color:var(--accent);">Rule #' + (ruleIndex + 1) + '</strong>' +
             '<button type="button" class="btn btn-outline" onclick="removeRedirectRule(this)" style="padding:4px 8px;font-size:12px;color:#d32f2f;">× Remove</button>' +
             '</div>' +
             '<div style="display:grid;grid-template-columns:2fr 1.5fr 2fr 3fr;gap:12px;margin-bottom:12px;">' +

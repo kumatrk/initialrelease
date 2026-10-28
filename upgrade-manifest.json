@@ -2,8 +2,8 @@
   "schema": "simplekuma-upgrade-manifest",
   "schema_version": 1,
   "release": {
-    "version": "1.1.5.28",
-    "release_date": "2026-10-13",
+    "version": "1.1.5.29",
+    "release_date": "2026-10-28",
     "channel": "stable"
   },
   "purpose": "Overlay this release onto an existing install without replacing config, storage, or database data.",
@@ -163,6 +163,62 @@
     {
       "file": "database/migrations/095_add_campaign_inactive_redirect.sql",
       "description": "Paused/archived campaign redirect settings"
+    },
+    {
+      "file": "database/migrations/096_deep_funnel_path_aggregates.sql",
+      "description": "Deep Funnel step/path daily pre-agg for Funnel stats tab"
+    },
+    {
+      "file": "database/migrations/097_widen_update_logs_error_log.sql",
+      "description": "Widen update log error storage so a long upgrade failure can be saved"
+    },
+    {
+      "file": "database/migrations/098_add_campaign_bot_route.sql",
+      "description": "Campaign choice for bot and proxy traffic: allow, record only, or a safe URL"
+    },
+    {
+      "file": "database/migrations/099_add_user_report_columns.sql",
+      "description": "Per-user column order for the dashboard and Campaign Stats"
+    },
+    {
+      "file": "database/migrations/100_add_grizzly_guard.sql",
+      "description": "Grizzly Guard campaign destinations, action log, and hold rows"
+    },
+    {
+      "file": "database/migrations/101_widen_clicks_daily_summary_roi.sql",
+      "description": "Widen clicks_daily_summary.roi so cheap-click ROI cannot fail the hourly rebuild"
+    },
+    {
+      "file": "database/migrations/102_dashboard_period_hidden_default_on.sql",
+      "description": "User preference for dashboard totals-by-period collapsed by default"
+    },
+    {
+      "file": "database/migrations/103_create_meta_delivery_daily.sql",
+      "description": "Meta delivery metrics overlay for Campaign Stats columns"
+    },
+    {
+      "file": "database/migrations/104_meta_entity_status.sql",
+      "description": "Stored Meta ad/ad set status for Pause and Activate on Campaign Stats"
+    },
+    {
+      "file": "database/migrations/105_create_api_failure_log.sql",
+      "description": "Recent API failures card on Settings → API Cost Updates"
+    },
+    {
+      "file": "database/migrations/106_rollerads_postback_template.sql",
+      "description": "RollerAds conversion postback template on existing traffic source"
+    },
+    {
+      "file": "database/migrations/107_create_push_subscriptions.sql",
+      "description": "Browser push subscriptions for Grizzly Guard alerts"
+    },
+    {
+      "file": "database/migrations/108_newsbreak_postback_template.sql",
+      "description": "NewsBreak traffic-source postback template and provider key"
+    },
+    {
+      "file": "database/migrations/109_newsbreak_cost_tables.sql",
+      "description": "NewsBreak Access-Token integrations and hourly cost overlay table"
     }
   ],
   "agent_workflow": [
@@ -195,7 +251,7 @@
       "commands": [
         "php scripts/verify-production-security.php",
         "php scripts/verify-campaign-stats-v2.php --campaign-id=ID --from=YYYY-MM-DD --to=YYYY-MM-DD (dev/staging — scripts not in production zip)",
-        "confirm version.php shows 1.1.5.28",
+        "confirm version.php shows 1.1.5.29",
         "confirm /km/{campaign_key} still redirects",
         "confirm admin campaign-list loads"
       ]
@@ -203,8 +259,8 @@
   ],
   "success_criteria": [
     "config/config.php SHA-256 unchanged after --apply",
-    "version.php reports 1.1.5.28",
-    "migrations through 095 applied or already present",
+    "version.php reports 1.1.5.29 (bump when this release ships)",
+    "migrations through 109 applied or already present",
     "campaigns visible in admin",
     "legacy /km/ tracking links still work",
     "Facebook Marketing Fetch Ad Accounts works with ads_read + ads_management (no business_management required)"

@@ -1,13 +1,18 @@
 /**
- * Light theme token pack.
+ * Original theme token pack (stored id: light).
  * Also applied on :root so pages that only load themes.css (auth) get defaults.
  * Themes remap via [data-theme="…"].
  */
 :root,
 [data-theme="light"] {
-    --color-forest-dark: #2d5016;
-    --color-forest: #3d5a26;
-    --color-forest-light: #4a7c2c;
+    --accent: #3d5a26;
+    --accent-hover: #2d5016;
+    --accent-muted: #4a7c2c;
+    --accent-soft: #eef3ea;
+
+    --color-forest-dark: var(--accent-hover);
+    --color-forest: var(--accent);
+    --color-forest-light: var(--accent-muted);
     --color-bark: #8b6f47;
     --color-bark-dark: #6d5636;
     --color-cream: #f5f1e8;
@@ -30,13 +35,18 @@
     --color-info: #0066cc;
     --color-info-bg: #e7f3ff;
 
-    --sidebar-bg: var(--color-forest);
+    --heading-color: var(--accent);
+    --link-color: var(--accent);
+    --link-hover: var(--accent-hover);
+
+    --sidebar-bg: var(--accent);
     --sidebar-text: var(--color-cream);
     --sidebar-text-muted: rgba(255, 255, 255, 0.5);
     --sidebar-hover-bg: rgba(255, 255, 255, 0.1);
     --sidebar-active-bg: rgba(255, 255, 255, 0.15);
     --sidebar-active-border: var(--color-bark);
-    --sidebar-scrollbar-track: var(--color-forest-dark);
+    --sidebar-active-text: var(--sidebar-text);
+    --sidebar-scrollbar-track: var(--accent-hover);
     --sidebar-scrollbar-thumb: rgba(255, 255, 255, 0.25);
     --sidebar-scrollbar-thumb-hover: rgba(255, 255, 255, 0.35);
     --sidebar-border: rgba(255, 255, 255, 0.1);
@@ -57,7 +67,7 @@
     --input-placeholder: rgba(102, 102, 102, 0.75);
 
     --table-bg: var(--color-white);
-    --table-header-bg: var(--color-forest);
+    --table-header-bg: var(--accent);
     --table-header-text: var(--color-cream);
     --table-header-accent: none;
     --table-row-hover: var(--color-cream);
@@ -65,10 +75,18 @@
 
     --btn-on-primary-text: #f5f1e8;
     --btn-outline-hover-text: #f5f1e8;
+    --btn-radius: var(--radius-sm, 4px);
+    --btn-padding-y: var(--spacing-sm, 8px);
+    --btn-padding-x: var(--spacing-lg, 24px);
     --badge-warning-text: #856404;
 
-    --auth-page-bg: linear-gradient(135deg, #2d5016 0%, #4a7c2c 100%);
-    --auth-header-bg: var(--color-forest);
+    --logo-max-width: 64px;
+    --logo-max-height: 60px;
+    --auth-logo-max-height: 140px;
+
+    --auth-page-bg: linear-gradient(135deg, var(--accent-hover) 0%, var(--accent-muted) 100%);
+    --auth-header-bg: var(--accent);
+    --auth-header-text: var(--color-cream);
     --auth-container-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
     --auth-tagline-text: #e8f5e9;
     --auth-tagline-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8), 0 0 3px rgba(200, 255, 200, 0.6);
@@ -77,9 +95,9 @@
     --chart-tick: #666666;
     --chart-legend: #666666;
     --chart-point-border: #ffffff;
-    --chart-clicks: #3d5a26;
-    --chart-clicks-fill: rgba(61, 90, 38, 0.1);
-    --chart-tooltip-border: #3d5a26;
+    --chart-clicks: var(--accent);
+    --chart-clicks-fill: color-mix(in srgb, var(--accent) 12%, transparent);
+    --chart-tooltip-border: var(--accent);
     --chart-tooltip-bg: rgba(0, 0, 0, 0.8);
 
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);

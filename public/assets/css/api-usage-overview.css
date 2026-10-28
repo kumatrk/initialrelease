@@ -80,11 +80,11 @@
 .api-usage-provider__details {
     font-size: 12px;
     font-weight: 600;
-    color: var(--color-forest, #3d5a26);
+    color: var(--color-forest, var(--accent));
     text-decoration: none;
     white-space: nowrap;
-    background: rgba(61, 90, 38, 0.12);
-    border: 1px solid rgba(61, 90, 38, 0.35);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
     border-radius: 6px;
     padding: 6px 10px;
     cursor: pointer;
@@ -93,7 +93,7 @@
 
 .api-usage-provider__details:hover {
     text-decoration: none;
-    background: rgba(61, 90, 38, 0.2);
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .api-usage-provider__metrics {
@@ -114,7 +114,7 @@
     font-size: 24px;
     font-weight: 700;
     line-height: 1.15;
-    color: var(--color-forest, #3d5a26);
+    color: var(--color-forest, var(--accent));
     margin-bottom: 4px;
 }
 
@@ -197,12 +197,12 @@
 .api-usage-endpoints__count {
     flex-shrink: 0;
     font-weight: 700;
-    color: var(--color-forest, #3d5a26);
+    color: var(--color-forest, var(--accent));
     font-variant-numeric: tabular-nums;
 }
 
 [data-theme-base="dark"] .api-usage-endpoints__count {
-    color: var(--color-forest-light, #7fd67e);
+    color: var(--color-forest-light, var(--accent-muted));
 }
 
 .api-usage-summary {
@@ -236,7 +236,7 @@
 .api-usage-summary__tile-value {
     font-size: 20px;
     font-weight: 700;
-    color: var(--color-forest, #3d5a26);
+    color: var(--color-forest, var(--accent));
     margin-bottom: 4px;
 }
 
@@ -280,7 +280,7 @@
 
 [data-theme-base="dark"] .api-usage-metric__value,
 [data-theme-base="dark"] .api-usage-summary__tile-value {
-    color: var(--color-forest-light, #7fd67e);
+    color: var(--color-forest-light, var(--accent-muted));
 }
 
 [data-theme-base="dark"] .api-usage-provider__details {
@@ -464,8 +464,8 @@ body.api-diag-modal-open {
     font-size: 13px;
     line-height: 1.45;
     color: var(--color-black, #222);
-    background: rgba(61, 90, 38, 0.1);
-    border: 1px solid rgba(61, 90, 38, 0.25);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
     border-radius: 8px;
     padding: 12px 14px;
     margin: 0 0 16px;
@@ -474,6 +474,70 @@ body.api-diag-modal-open {
 .api-diag-error {
     color: #b00020;
     font-size: 13px;
+}
+
+.api-failure-log {
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px solid var(--color-gray-200, #e0e0e0);
+}
+
+.api-failure-log__title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--color-black, #222);
+}
+
+.api-failure-log__hint {
+    margin: 6px 0 12px;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--color-gray-600, #666);
+}
+
+.api-failure-log__table-wrap {
+    overflow-x: auto;
+}
+
+.api-failure-log__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.api-failure-log__table th,
+.api-failure-log__table td {
+    text-align: left;
+    vertical-align: top;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--color-gray-200, #e0e0e0);
+}
+
+.api-failure-log__table th {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-gray-600, #666);
+}
+
+.api-failure-log__time {
+    white-space: nowrap;
+}
+
+.api-failure-log__source {
+    display: block;
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--color-gray-600, #666);
+}
+
+.api-failure-log__message {
+    max-width: 360px;
+    word-break: break-word;
+}
+
+.api-failure-copy {
+    white-space: nowrap;
 }
 
 @media (max-width: 600px) {

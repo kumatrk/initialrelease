@@ -150,6 +150,16 @@
                             } catch (e) {
                                 // ignore
                             }
+                            if (data.bot_route === 'safe_url' && typeof data.bot_route_url === 'string') {
+                                try {
+                                    const safeUrl = new URL(data.bot_route_url);
+                                    if (safeUrl.protocol === 'http:' || safeUrl.protocol === 'https:') {
+                                        window.location.replace(safeUrl.href);
+                                    }
+                                } catch (e) {
+                                    // ignore a bad safe URL; the click is already recorded
+                                }
+                            }
                             try {
                                 const url = new URL(window.location.href);
                                 url.searchParams.set('click_id', data.click_id);

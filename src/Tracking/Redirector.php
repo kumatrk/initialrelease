@@ -6,6 +6,7 @@ namespace SimpleKuma\Tracking;
 
 use mysqli;
 use SimpleKuma\Campaign\InactiveRedirectParser;
+use SimpleKuma\Database\SchemaProbe;
 use SimpleKuma\Settings\SettingsManager;
 use SimpleKuma\Stats\CampaignStatsExpressions;
 use SimpleKuma\Stats\StatsExclusionFlag;
@@ -19,6 +20,7 @@ class Redirector
 {
     private mysqli $db;
     private ?SettingsManager $settings = null;
+    private ?string $guardEmergency = null;
 
     public function __construct(mysqli $db)
     {
@@ -53,9 +55,6 @@ class Redirector
             die('Campaign not found');
         }
         
-        // Log successful lookup for debugging
-        $this->debugLog("Redirector: Campaign found - ID: {$campaign['id']}, Name: {$campaign['name']}, Key: " . ($campaign['campaign_key'] ?? 'N/A') . ", Slug ID: " . ($campaign['slug_id'] ?? 'N/A'));
-
         if (($campaign['status'] ?? '') !== 'active') {
             if ($this->tryInactiveRedirect($campaign, $params)) {
                 return;
@@ -65,6 +64,26 @@ class Redirector
                 header('Content-Type: text/plain; charset=utf-8');
             }
             die('Campaign not found');
+        }
+
+        $guardAlreadyHopped = isset($params[\SimpleKuma\Guard\GrizzlyGuardArrival::HOP_PARAM])
+            && (string) $params[\SimpleKuma\Guard\GrizzlyGuardArrival::HOP_PARAM] === '1';
+        unset($params[\SimpleKuma\Guard\GrizzlyGuardArrival::HOP_PARAM]);
+        $guardHop = \SimpleKuma\Guard\GrizzlyGuardArrival::hopUrl(
+            $this->db,
+            $campaign,
+            (string) ($_SERVER['HTTP_HOST'] ?? ''),
+            (string) ($_SERVER['REQUEST_URI'] ?? ''),
+            $campaignKey,
+            $params,
+            $guardAlreadyHopped
+        );
+        if ($guardHop !== null) {
+            if (!headers_sent()) {
+                header('Cache-Control: no-store');
+                header('Location: ' . $guardHop, true, 302);
+            }
+            exit;
         }
 
         // Detect traffic source from Tf parameter or use campaign default
@@ -86,9 +105,8 @@ class Redirector
             // For rule redirects, we can't determine if it's an offer, so leave lp_click as false
             $cost = $this->captureCost($campaign, $params, $detectedTrafficSourceId, $trafficSourceConfig);
             $slugId = isset($campaign['slug_id']) ? (int)$campaign['slug_id'] : null;
-            $this->storeClick($campaign['id'], $clickId, $params, $cost, $campaign, false, null, null, $detectedTrafficSourceId, $slugId, true);
-            // Traffic-source click: no cloaking on redirect (LP or rule target)
-            $this->redirect($ruleRedirect, null);
+            $visit = $this->storeClick($campaign['id'], $clickId, $params, $cost, $campaign, false, null, null, $detectedTrafficSourceId, $slugId, true);
+            $this->redirectUnlessBotRoute($campaign, $visit, $ruleRedirect, null);
             return;
         }
 
@@ -96,7 +114,7 @@ class Redirector
         $cost = $this->captureCost($campaign, $params, $detectedTrafficSourceId, $trafficSourceConfig);
 
         // Resolve destination (returns array with url, offer_id, landing_page_id)
-        $destinationData = $this->resolveDestination($campaign);
+        $destinationData = $this->applyLandingBypass($campaign, $this->resolveDestination($campaign));
 
         if (!$destinationData || !isset($destinationData['url'])) {
             // No offers available (all outside time window or disabled)
@@ -110,8 +128,16 @@ class Redirector
             
             // Store click even though no destination (for tracking purposes)
             $slugId = isset($campaign['slug_id']) ? (int)$campaign['slug_id'] : null;
-            $this->storeClick($campaign['id'], $clickId, $params, $cost, $campaign, false, null, null, $detectedTrafficSourceId, $slugId);
-            
+            $visit = $this->storeClick($campaign['id'], $clickId, $params, $cost, $campaign, false, null, null, $detectedTrafficSourceId, $slugId);
+            if (BotRoute::applies($campaign, $visit)) {
+                BotRoute::respond($campaign);
+            }
+            $lastResort = \SimpleKuma\Guard\GrizzlyGuardCampaign::lastResortUrl($campaign);
+            if ($lastResort !== null) {
+                KumaHopRedirect::redirect($lastResort, null);
+                return;
+            }
+
             // Show friendly "no offers available" page instead of error
             $this->showNoOffersAvailablePage($campaign);
             return;
@@ -122,7 +148,10 @@ class Redirector
         $landingPageId = $destinationData['landing_page_id'] ?? null;
 
         // Determine if this is a direct to offer (DTO or Split direct path) flow
-        $isDirectToOffer = $this->isDirectToOffer($campaign, $destination);
+        $isDirectToOffer = $this->guardEmergency === 'lp' || $this->isDirectToOffer($campaign, $destination);
+        if ($this->guardEmergency === 'lp') {
+            $landingPageId = null;
+        }
 
         // For DTO/Split direct path flows, also check redirect rules for 'offer_click' 
         // (since user goes directly to offer, not through LP)
@@ -131,8 +160,10 @@ class Redirector
             if ($ruleRedirect) {
                 // Store click before redirect
                 $slugId = isset($campaign['slug_id']) ? (int)$campaign['slug_id'] : null;
-                $this->storeClick($campaign['id'], $clickId, $params, $cost, $campaign, $isDirectToOffer, $offerId, $landingPageId, $detectedTrafficSourceId, $slugId, true);
-                $this->redirect(
+                $visit = $this->storeClick($campaign['id'], $clickId, $params, $cost, $campaign, $isDirectToOffer, $offerId, $landingPageId, $detectedTrafficSourceId, $slugId, true);
+                $this->redirectUnlessBotRoute(
+                    $campaign,
+                    $visit,
                     $ruleRedirect,
                     KumaHopRedirect::modeForOutboundOffer(true, $this->referrerModeFromCampaign($campaign))
                 );
@@ -142,7 +173,27 @@ class Redirector
 
         // Store click in database (async would be better for performance)
         $slugId = isset($campaign['slug_id']) ? (int)$campaign['slug_id'] : null;
-        $this->storeClick($campaign['id'], $clickId, $params, $cost, $campaign, $isDirectToOffer, $offerId, $landingPageId, $detectedTrafficSourceId, $slugId);
+        $visit = $this->storeClick($campaign['id'], $clickId, $params, $cost, $campaign, $isDirectToOffer, $offerId, $landingPageId, $detectedTrafficSourceId, $slugId);
+        if (BotRoute::applies($campaign, $visit)) {
+            BotRoute::respond($campaign);
+        }
+
+        // Deep Funnel: tag Level-1 path on the new click (does not change clicks_daily_summary grain)
+        if (($campaign['flow_type'] ?? '') === 'DeepFunnel'
+            && $landingPageId
+            && !empty($destinationData['funnel_level'])
+        ) {
+            $funnelTracker = new FunnelPathTracker($this->db);
+            $costAmount = is_array($cost) ? (float) ($cost['cost'] ?? 0) : 0.0;
+            $funnelTracker->recordLevelEntry(
+                $clickId,
+                (int) $campaign['id'],
+                (int) $destinationData['funnel_level'],
+                (int) ($destinationData['funnel_slot'] ?? 1),
+                (int) $landingPageId,
+                $costAmount
+            );
+        }
 
         // Check if URL contains tokens - if so, use ClickTokenReplacer; otherwise append parameters
         if ($isDirectToOffer && $this->urlContainsTokens($destination)) {
@@ -456,10 +507,8 @@ class Redirector
 
         $costMethod = $trafficSourceConfig['cost_tracking_method'] ?? 'manual_token';
 
-        // If using integrated API, cost will be pulled from API later (not from URL params)
+        // Integrated API cost is applied by the cost updaters, not on the redirect.
         if ($costMethod === 'integrated_api') {
-            // For now, fall back to default CPC if available
-            // TODO: Implement API cost fetching (Facebook/Google API integration)
             if (!empty($campaign['default_cpc'])) {
                 return [
                     'cost' => (float)$campaign['default_cpc'],
@@ -490,6 +539,124 @@ class Redirector
     }
 
     /**
+     * When Guard is holding every landing page, send the visit to an offer
+     * and mark the click. Deep Funnel rotation is left alone.
+     *
+     * @param array<string, mixed> $campaign
+     * @param array<string, mixed>|null $destination
+     * @return array<string, mixed>|null
+     */
+    private function applyLandingBypass(array $campaign, ?array $destination): ?array
+    {
+        $this->guardEmergency = null;
+        if (is_array($destination) && !empty($destination['url'])) {
+            return $destination;
+        }
+        $flow = (string) ($campaign['flow_type'] ?? '');
+        if ($flow === 'DeepFunnel' || $flow === 'DTO') {
+            return $destination;
+        }
+        $mode = \SimpleKuma\Guard\GrizzlyGuardPlan::normalizeMode((string) ($campaign['guard_mode'] ?? 'off'));
+        if ($mode === \SimpleKuma\Guard\GrizzlyGuardPlan::MODE_OFF) {
+            return $destination;
+        }
+        $rotation = is_array($campaign['rotation_json'] ?? null) ? $campaign['rotation_json'] : [];
+        $lpIds = \SimpleKuma\Guard\GrizzlyGuardPlan::collectIds($rotation, 'landing_page');
+        $held = 0;
+        $campaignId = (int) ($campaign['id'] ?? 0);
+        foreach ($lpIds as $lpId) {
+            if (\SimpleKuma\Guard\GrizzlyGuardCampaign::isHeld($this->db, $campaignId, 'landing_page', $lpId)) {
+                $held++;
+            }
+        }
+        $enabled = \SimpleKuma\Guard\GrizzlyGuardPlan::countItems($rotation, 'landing_page', true);
+        $rotationOffer = $mode === \SimpleKuma\Guard\GrizzlyGuardPlan::MODE_FULL
+            ? $this->pickReadyRotationOffer($campaign, $rotation)
+            : null;
+        $fallback = $this->tryFallbackOffer($campaign);
+        $lastResort = \SimpleKuma\Guard\GrizzlyGuardCampaign::lastResortUrl($campaign) !== null;
+        $backupReady = $fallback !== null || $lastResort;
+        if (!\SimpleKuma\Guard\GrizzlyGuardPlan::shouldDirectLinkLp($mode, $held, $enabled, $backupReady, $rotationOffer !== null || $backupReady)) {
+            return $destination;
+        }
+        if ($rotationOffer !== null) {
+            $this->guardEmergency = 'lp';
+            return $rotationOffer;
+        }
+        if ($fallback !== null) {
+            $this->guardEmergency = 'lp';
+            return $fallback;
+        }
+        if ($lastResort) {
+            $this->guardEmergency = 'lp';
+        }
+
+        return $destination;
+    }
+
+    /**
+     * @param array<string, mixed> $campaign
+     * @param array<mixed> $rotation
+     * @return array<string, mixed>|null
+     */
+    private function pickReadyRotationOffer(array $campaign, array $rotation): ?array
+    {
+        $lists = [];
+        if (isset($rotation['offers']) && is_array($rotation['offers'])) {
+            $lists[] = $rotation['offers'];
+        }
+        foreach (['lp_path', 'direct_path'] as $path) {
+            if (isset($rotation[$path]['offers']) && is_array($rotation[$path]['offers'])) {
+                $lists[] = $rotation[$path]['offers'];
+            }
+        }
+        $ready = [];
+        $offerEntity = new \SimpleKuma\Entity\Offer($this->db);
+        $campaignId = (int) ($campaign['id'] ?? 0);
+        foreach ($lists as $list) {
+            foreach ($list as $item) {
+                if (!is_array($item) || (isset($item['enabled']) && $item['enabled'] === false)) {
+                    continue;
+                }
+                if ((string) ($item['type'] ?? 'offer') === 'landing_page') {
+                    continue;
+                }
+                $offerId = (int) ($item['id'] ?? 0);
+                if ($offerId <= 0) {
+                    continue;
+                }
+                if (\SimpleKuma\Guard\GrizzlyGuardCampaign::isHeld($this->db, $campaignId, 'offer', $offerId)) {
+                    continue;
+                }
+                $offerData = $offerEntity->getById($offerId);
+                if ($offerData && $offerEntity->isAvailableForRotation($offerData)) {
+                    $ready[] = $item;
+                }
+            }
+        }
+        if ($ready === []) {
+            return null;
+        }
+        $total = 0;
+        foreach ($ready as $item) {
+            $total += max(0, (int) ($item['weight'] ?? 0));
+        }
+        if ($total <= 0) {
+            return $this->getDestinationData($ready[0]);
+        }
+        $roll = mt_rand(1, $total);
+        $cursor = 0;
+        foreach ($ready as $item) {
+            $cursor += max(0, (int) ($item['weight'] ?? 0));
+            if ($roll <= $cursor) {
+                return $this->getDestinationData($item);
+            }
+        }
+
+        return $this->getDestinationData($ready[0]);
+    }
+
+    /**
      * Resolve destination URL based on flow and weights
      * Returns array with 'url', 'offer_id', and 'landing_page_id' keys
      */
@@ -499,6 +666,28 @@ class Redirector
 
         if (empty($rotation)) {
             return null;
+        }
+
+        // Deep Funnel: Level 1 only at /km/ entry (hops use /lp/hop.php)
+        if (($campaign['flow_type'] ?? '') === 'DeepFunnel') {
+            $config = FunnelRotation::getConfig($campaign);
+            if (!$config) {
+                return null;
+            }
+            $items = FunnelRotation::enabledLevelItems($config, 1);
+            $picked = FunnelRotation::pickLevelItem($items, null);
+            if (!$picked) {
+                return null;
+            }
+            $dest = $this->getDestinationData([
+                'type' => 'landing_page',
+                'id' => $picked['id'],
+            ]);
+            if ($dest) {
+                $dest['funnel_level'] = 1;
+                $dest['funnel_slot'] = (int) $picked['slot'];
+            }
+            return $dest;
         }
 
         // Helper function to filter enabled items
@@ -742,6 +931,9 @@ class Redirector
         $offerEntity = new \SimpleKuma\Entity\Offer($this->db);
         $offerData = $offerEntity->getById($fallbackId);
         if (!$offerData || !$offerEntity->isAvailableForRotation($offerData)) {
+            return null;
+        }
+        if (\SimpleKuma\Guard\GrizzlyGuardCampaign::isHeld($this->db, (int) ($campaign['id'] ?? 0), 'offer', $fallbackId)) {
             return null;
         }
 
@@ -1192,7 +1384,10 @@ class Redirector
     /**
      * Store click in database
      */
-    private function storeClick(int $campaignId, string $clickId, array $params, ?array $cost, array $campaign = [], bool $isDirectToOffer = false, ?int $offerId = null, ?int $landingPageId = null, ?int $trafficSourceId = null, ?int $slugId = null, bool $isRedirectRuleMatch = false): void
+    /**
+     * @return array{classification: string, exclude_from_stats: bool, connection_type: ?string}
+     */
+    private function storeClick(int $campaignId, string $clickId, array $params, ?array $cost, array $campaign = [], bool $isDirectToOffer = false, ?int $offerId = null, ?int $landingPageId = null, ?int $trafficSourceId = null, ?int $slugId = null, bool $isRedirectRuleMatch = false): array
         {
             // Get real IP address
             $ip = $_SERVER['REMOTE_ADDR'] ?? null;
@@ -1271,6 +1466,13 @@ class Redirector
                 $this->getBotDetectionOptions()
             );
             $extraData['bot'] = \SimpleKuma\Enrichment\BotDetector::toExtraJson($botDetection);
+            $visit = [
+                'classification' => (string) ($botDetection['classification'] ?? \SimpleKuma\Enrichment\BotDetector::CLASS_HUMAN),
+                'exclude_from_stats' => !empty($botDetection['exclude_from_stats']),
+                'connection_type' => isset($geoData['connection_type']) && is_string($geoData['connection_type']) && $geoData['connection_type'] !== ''
+                    ? $geoData['connection_type']
+                    : null,
+            ];
             
             // Capture Facebook cookies (_fbc and _fbp) for Conversions API
             // Meta's best practice: Use _fbc cookie directly if available
@@ -1282,6 +1484,10 @@ class Redirector
             if (!empty($_COOKIE['_fbp'])) {
                 $extraData['cookies']['_fbp'] = $_COOKIE['_fbp'];
                 $extraData['all_params']['_fbp'] = $_COOKIE['_fbp']; // Also store in all_params for easy access
+            }
+
+            if ($this->guardEmergency !== null) {
+                $extraData['emergency_bypass'] = $this->guardEmergency;
             }
 
             $extraData = ClickAttributionCapture::enrich($extraData, $params);
@@ -1346,19 +1552,8 @@ class Redirector
             $lpClick = $isDirectToOffer ? 1 : 0;
             $lpClickTime = $isDirectToOffer ? 'NOW()' : 'NULL';
 
-            // Check if traffic_source_id column exists
-            $trafficSourceColumnExists = false;
-            $checkResult = $this->db->query("SHOW COLUMNS FROM clicks LIKE 'traffic_source_id'");
-            if ($checkResult && $checkResult->num_rows > 0) {
-                $trafficSourceColumnExists = true;
-            }
-
-            // Check if clicks.postal column exists (migration 052)
-            $postalColumnExists = false;
-            $postalCheck = $this->db->query("SHOW COLUMNS FROM clicks LIKE 'postal'");
-            if ($postalCheck && $postalCheck->num_rows > 0) {
-                $postalColumnExists = true;
-            }
+            $trafficSourceColumnExists = SchemaProbe::columnExists($this->db, 'clicks', 'traffic_source_id');
+            $postalColumnExists = SchemaProbe::columnExists($this->db, 'clicks', 'postal');
             $statsFlagColumnExists = StatsExclusionFlag::columnExists($this->db);
             $excludeFromStats = CampaignStatsExpressions::shouldExcludeClickFromStats(
                 $trafficSourceId,
@@ -1380,10 +1575,7 @@ class Redirector
                 $geoBind[] = $geoData['postal'] ?? null;
             }
             $geoAppend = ClickNetworkEnrichment::appendOptionalColumns(
-                function (string $table, string $column): bool {
-                    $check = $this->db->query("SHOW COLUMNS FROM `{$table}` LIKE '" . $this->db->real_escape_string($column) . "'");
-                    return $check && $check->num_rows > 0;
-                },
+                fn (string $table, string $column): bool => SchemaProbe::columnExists($this->db, $table, $column),
                 $geoCols,
                 $geoPlaceholders,
                 $geoParamTypes,
@@ -1413,7 +1605,7 @@ class Redirector
             $stmt = $this->db->prepare($sql);
             if (!$stmt) {
                 error_log("Redirector: Failed to prepare INSERT statement: " . $this->db->error);
-                return;
+                return $visit;
             }
 
             $costValue = $cost['cost'] ?? null;
@@ -1473,12 +1665,31 @@ class Redirector
                     (int) gmdate('G')
                 );
 
-                // Optional Meta PageView (non-blocking; failures never affect redirect)
-                $this->maybeQueueMetaPageView($campaignId, $clickId, $ip, $ua, $extraData);
+                // Optional Meta PageView (non-blocking; failures never affect redirect).
+                // Skip when this visit is about to be diverted: they never reached the page.
+                if (!BotRoute::applies($campaign, $visit)) {
+                    $this->maybeQueueMetaPageView($campaignId, $clickId, $ip, $ua, $extraData);
+                }
             } catch (\Throwable $e) {
                 error_log("Redirector: Failed to record click (campaign {$campaignId}, click {$clickId}): " . $e->getMessage());
             }
+
+            return $visit;
         }
+
+    /**
+     * Recorded visits that match the campaign bot/proxy rule leave the live destination.
+     *
+     * @param array<string, mixed> $campaign
+     * @param array{classification: string, exclude_from_stats: bool, connection_type: ?string} $visit
+     */
+    private function redirectUnlessBotRoute(array $campaign, array $visit, string $url, ?string $referrerMode): void
+    {
+        if (BotRoute::applies($campaign, $visit)) {
+            BotRoute::respond($campaign);
+        }
+        $this->redirect($url, $referrerMode);
+    }
 
     /**
      * Fire Meta CAPI PageView after click insert when integration enables it.
@@ -1501,21 +1712,11 @@ class Redirector
                 $fbp = (string)$extraData['traffic_source_tokens']['_fbp'];
             }
 
-            // Defer until after response when possible (redirect already in flight / about to send)
-            if (function_exists('fastcgi_finish_request')) {
-                // Caller may still be building redirect; register shutdown so we never block Location header
-                register_shutdown_function(static function () use ($sender, $campaignId, $clickId, $ip, $ua, $fbc, $fbp): void {
-                    $sender->maybeSendForClick($campaignId, $clickId, [
-                        'ip' => $ip,
-                        'ua' => $ua,
-                        'fbc' => $fbc,
-                        'fbp' => $fbp,
-                    ]);
-                });
-                return;
-            }
-
+            // After the script ends (Location already sent), flush the response then send CAPI.
             register_shutdown_function(static function () use ($sender, $campaignId, $clickId, $ip, $ua, $fbc, $fbp): void {
+                if (function_exists('fastcgi_finish_request')) {
+                    @fastcgi_finish_request();
+                }
                 $sender->maybeSendForClick($campaignId, $clickId, [
                     'ip' => $ip,
                     'ua' => $ua,

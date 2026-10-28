@@ -28,6 +28,9 @@ class FacebookInsightsClient
     /** Current call purpose logged to facebook_api_calls.purpose */
     private ?string $callPurpose = null;
 
+    /** Last Graph error safe to show a user. Never includes the access token. */
+    private string $lastGraphError = '';
+
     public function __construct(string $accessToken, ?array $proxyConfig = null, ?\SimpleKuma\Facebook\FacebookApiCallTracker $callTracker = null, ?int $integrationId = null, ?Logger $logger = null)
     {
         $this->accessToken = $accessToken;
@@ -133,6 +136,61 @@ class FacebookInsightsClient
 
     /**
      * @param array<int, string>|null $metaCampaignIds
+     * @return list<array<string, mixed>>
+     */
+    private function buildAdInsightsFilters(?array $metaCampaignIds): array
+    {
+        $filters = [
+            ['field' => 'ad.effective_status', 'operator' => 'IN', 'value' => ['ACTIVE']],
+        ];
+        if (!empty($metaCampaignIds)) {
+            $filters[] = [
+                'field' => 'campaign.id',
+                'operator' => 'IN',
+                'value' => array_values(array_map('strval', $metaCampaignIds)),
+            ];
+        }
+        return $filters;
+    }
+
+    /**
+     * @param array<string, mixed> $insight
+     * @return array<string, mixed>
+     */
+    private function newDeliveryRow(float $spend, ?string $campaignId, array $insight, string $nameKey): array
+    {
+        $name = isset($insight[$nameKey]) ? mb_substr(trim((string) $insight[$nameKey]), 0, 500) : '';
+        $reach = (isset($insight['reach']) && $insight['reach'] !== '') ? (int) $insight['reach'] : null;
+        return [
+            'spend' => $spend,
+            'campaign_id' => $campaignId,
+            'name' => $name,
+            'impressions' => isset($insight['impressions']) ? (int) $insight['impressions'] : 0,
+            'clicks' => isset($insight['clicks']) ? (int) $insight['clicks'] : 0,
+            'reach' => $reach,
+        ];
+    }
+
+    /**
+     * Add impressions and clicks. Reach stays the first day's value and is never summed.
+     *
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $insight
+     */
+    private function addDeliveryCounts(array &$row, array $insight, string $nameKey): void
+    {
+        $row['impressions'] = (int) ($row['impressions'] ?? 0) + (isset($insight['impressions']) ? (int) $insight['impressions'] : 0);
+        $row['clicks'] = (int) ($row['clicks'] ?? 0) + (isset($insight['clicks']) ? (int) $insight['clicks'] : 0);
+        if (($row['reach'] ?? null) === null && isset($insight['reach']) && $insight['reach'] !== '') {
+            $row['reach'] = (int) $insight['reach'];
+        }
+        if (($row['name'] ?? '') === '' && !empty($insight[$nameKey])) {
+            $row['name'] = mb_substr(trim((string) $insight[$nameKey]), 0, 500);
+        }
+    }
+
+    /**
+     * @param array<int, string>|null $metaCampaignIds
      */
     private function fetchAccountAdsetSpendPaged(string $adAccountId, string $date, ?array $metaCampaignIds): array
     {
@@ -147,7 +205,7 @@ class FacebookInsightsClient
         foreach ($chunks as $chunk) {
             $params = [
                 'access_token' => $this->accessToken,
-                'fields' => 'spend,adset_id,campaign_id',
+                'fields' => 'spend,adset_id,adset_name,campaign_id,impressions,reach,clicks',
                 'level' => 'adset',
                 'time_range' => json_encode(['since' => $date, 'until' => $date]),
                 'filtering' => json_encode($this->buildAdsetInsightsFilters($chunk)),
@@ -156,7 +214,7 @@ class FacebookInsightsClient
             if ($this->logger) {
                 $logParams = $params;
                 if (isset($logParams['access_token'])) {
-                    $logParams['access_token'] = substr($logParams['access_token'], 0, 10) . '...';
+                    $logParams['access_token'] = '[REDACTED]';
                 }
                 $this->logger->logDetail('Facebook API: Fetching account-level adset insights', [
                     'ad_account_id' => $adAccountId,
@@ -191,8 +249,9 @@ class FacebookInsightsClient
 
                     if (isset($results[$adsetId])) {
                         $results[$adsetId]['spend'] += $spend;
+                        $this->addDeliveryCounts($results[$adsetId], $insight, 'adset_name');
                     } else {
-                        $results[$adsetId] = ['spend' => $spend, 'campaign_id' => $campaignId];
+                        $results[$adsetId] = $this->newDeliveryRow($spend, $campaignId, $insight, 'adset_name');
                     }
                 }
 
@@ -309,8 +368,33 @@ class FacebookInsightsClient
      * @param string|null $untilDate Optional: End date for API query (7-day range)
      * @return array Associative array of ad_id => ['spend' => float, 'adset_id' => string|null]
      */
-    public function fetchAccountAdSpend(string $adAccountId, string $date, ?string $sinceDate = null, ?string $untilDate = null): array
-    {
+    public function fetchAccountAdSpend(
+        string $adAccountId,
+        string $date,
+        ?string $sinceDate = null,
+        ?string $untilDate = null,
+        ?array $metaCampaignIds = null
+    ): array {
+        if ($metaCampaignIds !== null && count($metaCampaignIds) > 50) {
+            $merged = [];
+            foreach (array_chunk(array_values($metaCampaignIds), 50) as $chunk) {
+                foreach ($this->fetchAccountAdSpend($adAccountId, $date, $sinceDate, $untilDate, $chunk) as $adId => $row) {
+                    if (!isset($merged[$adId])) {
+                        $merged[$adId] = $row;
+                        continue;
+                    }
+                    $merged[$adId]['spend'] = (float) $merged[$adId]['spend'] + (float) ($row['spend'] ?? 0);
+                    $this->addDeliveryCounts($merged[$adId], [
+                        'impressions' => $row['impressions'] ?? 0,
+                        'clicks' => $row['clicks'] ?? 0,
+                        'reach' => $row['reach'] ?? null,
+                        'ad_name' => $row['name'] ?? '',
+                    ], 'ad_name');
+                }
+            }
+            return $merged;
+        }
+
         // Ensure ad account ID has 'act_' prefix
         if (strpos($adAccountId, 'act_') !== 0) {
             $adAccountId = 'act_' . $adAccountId;
@@ -321,13 +405,13 @@ class FacebookInsightsClient
         // Use date range if provided, otherwise use single date; filter to ACTIVE ads only to save API credits
         $params = [
             'access_token' => $this->accessToken,
-            'fields' => 'spend,ad_id,adset_id,date_start,date_stop',
+            'fields' => 'spend,ad_id,ad_name,adset_id,campaign_id,impressions,reach,clicks,date_start,date_stop',
             'level' => 'ad',
             'time_range' => json_encode([
                 'since' => $sinceDate ?? $date,
                 'until' => $untilDate ?? $date
             ]),
-            'filtering' => json_encode([['field' => 'ad.effective_status', 'operator' => 'IN', 'value' => ['ACTIVE']]])
+            'filtering' => json_encode($this->buildAdInsightsFilters($metaCampaignIds))
         ];
         
         // Add time_increment=1 for date ranges to get daily breakdown instead of aggregated results
@@ -343,9 +427,9 @@ class FacebookInsightsClient
         // Log API request details (sanitize token)
         $logParams = $params;
         if (isset($logParams['access_token'])) {
-            $logParams['access_token'] = substr($logParams['access_token'], 0, 10) . '...';
+            $logParams['access_token'] = '[REDACTED]';
         }
-        error_log("Facebook API fetchAccountAdSpend: URL={$url}, Params=" . json_encode($logParams));
+        error_log('Facebook API fetchAccountAdSpend: URL=' . $url . ', Params=' . json_encode($logParams));
 
         do {
             $pageCount++;
@@ -400,11 +484,10 @@ class FacebookInsightsClient
                 // If we already have this ad, sum the spend (in case of multiple pages)
                 if (isset($results[$adId])) {
                     $results[$adId]['spend'] += $spend;
+                    $this->addDeliveryCounts($results[$adId], $insight, 'ad_name');
                 } else {
-                    $results[$adId] = [
-                        'spend' => $spend,
-                        'adset_id' => $adsetId
-                    ];
+                    $results[$adId] = $this->newDeliveryRow($spend, isset($insight['campaign_id']) ? (string) $insight['campaign_id'] : null, $insight, 'ad_name');
+                    $results[$adId]['adset_id'] = $adsetId;
                 }
             }
         }
@@ -440,7 +523,7 @@ class FacebookInsightsClient
         // Sanitize params for logging
         $logParams = $params;
         if (isset($logParams['access_token'])) {
-            $logParams['access_token'] = substr($logParams['access_token'], 0, 10) . '...';
+            $logParams['access_token'] = '[REDACTED]';
         }
         
         // PRE-CALL LOGGING
@@ -580,7 +663,8 @@ class FacebookInsightsClient
                     $retryCount > 0 ? 'rate_limit_retry' : ($this->callPurpose ?? 'other')
                 );
             }
-            
+
+            $this->noteFailure(null, $curlError !== '' ? $curlError : 'Could not reach Meta.');
             return null;
         }
 
@@ -598,6 +682,7 @@ class FacebookInsightsClient
                     'response_length' => strlen($body)
                 ]);
             }
+            $this->noteFailure($httpCode > 0 ? $httpCode : null, 'Meta returned a response that was not JSON.');
             return null;
         }
         
@@ -677,6 +762,7 @@ class FacebookInsightsClient
                             'max_retries' => 3
                         ]);
                     }
+                    $this->noteFailure($httpCode, 'Meta rate limit. Try again later.');
                     return null;
                 }
             }
@@ -696,7 +782,12 @@ class FacebookInsightsClient
                     'has_api_error' => isset($data['error'])
                 ]);
             }
-            
+
+            $detail = self::graphErrorMessage(is_array($data) ? $data : null);
+            if ($detail === 'Meta did not accept that change.') {
+                $detail = 'HTTP ' . $httpCode;
+            }
+            $this->noteFailure($httpCode, $detail);
             return null;
         }
         
@@ -757,7 +848,8 @@ class FacebookInsightsClient
                     return $this->makeApiCall($fullUrl, [], $retryCount + 1);
                 }
             }
-            
+
+            $this->noteFailure($httpCode > 0 ? $httpCode : null, self::graphErrorMessage($data));
             return null;
         }
 
@@ -852,6 +944,205 @@ class FacebookInsightsClient
         }
 
         return $recoveredAdsets;
+    }
+
+    /**
+     * Current ad and ad set status for mapped campaigns. Not an Insights query, and not limited to ACTIVE.
+     *
+     * @param list<string> $metaCampaignIds
+     * @return list<array{entity_level: string, entity_id: string, entity_name: string, meta_campaign_id: string, effective_status: string}>
+     */
+    public function fetchEntityStatuses(string $adAccountId, array $metaCampaignIds): array
+    {
+        $ids = [];
+        foreach ($metaCampaignIds as $id) {
+            $id = (string)$id;
+            if (ctype_digit($id)) {
+                $ids[$id] = $id;
+            }
+        }
+        if ($ids === [] || $adAccountId === '') {
+            return [];
+        }
+
+        $rows = [];
+        foreach (['adset' => 'adsets', 'ad' => 'ads'] as $level => $edge) {
+            foreach (array_chunk(array_values($ids), 50) as $chunk) {
+                $rows = array_merge($rows, $this->fetchStatusEdge($adAccountId, $edge, $level, $chunk));
+            }
+        }
+        return $rows;
+    }
+
+    /**
+     * @param list<string> $metaCampaignIds
+     * @return list<array{entity_level: string, entity_id: string, entity_name: string, meta_campaign_id: string, effective_status: string}>
+     */
+    private function fetchStatusEdge(string $adAccountId, string $edge, string $level, array $metaCampaignIds): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$adAccountId}/{$edge}";
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => 'id,name,effective_status,campaign_id',
+            'filtering' => json_encode([[
+                'field' => 'campaign.id',
+                'operator' => 'IN',
+                'value' => array_values($metaCampaignIds),
+            ]]),
+            'limit' => 200,
+        ];
+
+        $rows = [];
+        $nextUrl = null;
+        $pageCount = 0;
+        do {
+            $pageCount++;
+            $this->callPurpose = $pageCount === 1 ? 'entity_status' : 'entity_status_page';
+            $response = $nextUrl ? $this->makeApiCall($nextUrl, []) : $this->makeApiCall($url, $params);
+            if (!$response || !isset($response['data']) || !is_array($response['data'])) {
+                break;
+            }
+            foreach ($response['data'] as $item) {
+                $entityId = isset($item['id']) ? (string)$item['id'] : '';
+                $campaignId = isset($item['campaign_id']) ? (string)$item['campaign_id'] : '';
+                $status = strtoupper((string)($item['effective_status'] ?? ''));
+                if (!ctype_digit($entityId) || !ctype_digit($campaignId) || $status === '') {
+                    continue;
+                }
+                $rows[] = [
+                    'entity_level' => $level,
+                    'entity_id' => $entityId,
+                    'entity_name' => (string)($item['name'] ?? ''),
+                    'meta_campaign_id' => $campaignId,
+                    'effective_status' => $status,
+                ];
+            }
+            $nextUrl = $response['paging']['next'] ?? null;
+        } while ($nextUrl && $pageCount < 20);
+
+        return $rows;
+    }
+
+    /**
+     * Pause or activate one ad or ad set, then read effective_status back.
+     * POST /{id} with status=ACTIVE|PAUSED. One attempt. No rate-limit sleep.
+     *
+     * @return array{ok: bool, error: string, effective_status: string}
+     */
+    public function updateEntityStatus(string $entityId, string $status): array
+    {
+        if (!ctype_digit($entityId) || !in_array($status, ['ACTIVE', 'PAUSED'], true)) {
+            return ['ok' => false, 'error' => 'Choose an ad or ad set to pause or activate.', 'effective_status' => ''];
+        }
+
+        $this->callPurpose = 'entity_status_update';
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$entityId}";
+        $written = $this->makeWriteCall($url, [
+            'access_token' => $this->accessToken,
+            'status' => $status,
+        ]);
+        if ($written === null || empty($written['success'])) {
+            return [
+                'ok' => false,
+                'error' => $this->lastGraphError !== '' ? $this->lastGraphError : 'Meta did not accept that change.',
+                'effective_status' => '',
+            ];
+        }
+
+        $this->callPurpose = 'entity_status_read';
+        $read = $this->makeApiCall($url, [
+            'access_token' => $this->accessToken,
+            'fields' => 'effective_status',
+        ]);
+        $effective = strtoupper((string)($read['effective_status'] ?? ''));
+        if ($effective === '') {
+            return [
+                'ok' => false,
+                'error' => 'Meta accepted the change, but the new status could not be read.',
+                'effective_status' => '',
+            ];
+        }
+
+        return ['ok' => true, 'error' => '', 'effective_status' => substr($effective, 0, 32)];
+    }
+
+    /**
+     * One Graph POST. The token stays in the form body, not the URL.
+     *
+     * @param array<string, string> $fields
+     * @return array<string, mixed>|null
+     */
+    private function makeWriteCall(string $url, array $fields): ?array
+    {
+        $this->lastGraphError = '';
+        $endpoint = parse_url($url, PHP_URL_PATH) ?? '/';
+        $endpoint = preg_replace('#^/v\d+\.\d+/#', '/', (string)$endpoint) ?? '/';
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($fields));
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Accept: application/json']);
+        if ($this->proxyConfig && !empty($this->proxyConfig['use_proxy'])) {
+            ProxyHandler::configureCurl($ch, $this->proxyConfig);
+        }
+
+        $raw = curl_exec($ch);
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_errno($ch) !== 0;
+        curl_close($ch);
+
+        $data = is_string($raw) && $raw !== '' ? json_decode($raw, true) : null;
+        $data = is_array($data) ? $data : null;
+        $success = !$curlError && $httpCode === 200 && $data !== null && empty($data['error']) && !empty($data['success']);
+
+        if ($this->callTracker) {
+            $this->callTracker->logCall(
+                $endpoint,
+                'POST',
+                $this->adAccountId,
+                $this->integrationId,
+                $curlError ? null : $httpCode,
+                $success,
+                $this->callPurpose ?? 'entity_status_update'
+            );
+        }
+
+        if ($success) {
+            return $data;
+        }
+
+        $this->lastGraphError = $curlError
+            ? 'Could not reach Meta.'
+            : self::graphErrorMessage($data);
+        $this->noteFailure($curlError ? null : $httpCode, $this->lastGraphError);
+        return $data;
+    }
+
+    private function noteFailure(?int $httpCode, string $message): void
+    {
+        if ($this->callTracker === null || $message === '') {
+            return;
+        }
+        $this->callTracker->noteFailure($this->callPurpose ?? 'other', $httpCode, $message);
+    }
+
+    /**
+     * @param array<string, mixed>|null $data
+     */
+    private static function graphErrorMessage(?array $data): string
+    {
+        $error = is_array($data['error'] ?? null) ? $data['error'] : [];
+        $message = (string)($error['error_user_message'] ?? $error['message'] ?? '');
+        $message = preg_replace('/access_token=\S+/i', 'access_token=redacted', $message) ?? '';
+        if ($message === '') {
+            return 'Meta did not accept that change.';
+        }
+        return mb_substr($message, 0, 180);
     }
 }
 

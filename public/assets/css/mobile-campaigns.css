@@ -233,6 +233,74 @@
         max-width: 100% !important;
     }
 
+    /* Flow Type radio cards — keep title readable on phones */
+    .flow-type-picker {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    .flow-type-picker__grid {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 10px !important;
+        width: 100% !important;
+    }
+
+    .flow-type-option {
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        padding: 12px 14px !important;
+        transform: none !important;
+        animation: none !important;
+    }
+
+    .flow-type-option__head {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: flex-start !important;
+        gap: 10px !important;
+        width: 100% !important;
+    }
+
+    .flow-type-option input[type="radio"] {
+        position: static !important;
+        left: auto !important;
+        top: auto !important;
+        flex: 0 0 18px !important;
+        width: 18px !important;
+        height: 18px !important;
+        margin: 2px 0 0 !important;
+    }
+
+    .flow-type-option__title {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        width: auto !important;
+        max-width: 100% !important;
+        font-size: 14px !important;
+        line-height: 1.35 !important;
+        white-space: normal !important;
+        word-break: normal !important;
+        overflow-wrap: break-word !important;
+        padding-right: 0 !important;
+    }
+
+    .flow-type-option.is-selected::after {
+        display: none !important;
+    }
+
+    .flow-type-option__blurb {
+        margin-left: 28px !important;
+        width: auto !important;
+        max-width: calc(100% - 28px) !important;
+    }
+
+    .flow-split-panel {
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
     .campaign-form-meta-campaign-row {
         flex-direction: column !important;
         align-items: stretch !important;
@@ -408,7 +476,7 @@
     .custom-token-row > div:first-child {
         font-size: 14px !important;
         font-weight: 600 !important;
-        color: #3d5a26 !important;
+        color: var(--accent) !important;
         margin-bottom: 4px !important;
         text-align: left !important;
     }
@@ -544,14 +612,14 @@
         box-sizing: border-box !important;
         white-space: nowrap !important;
         padding: 12px 24px !important;
-        background: #4caf50 !important;
+        background: var(--accent) !important;
         border: none !important;
         border-radius: 6px !important;
         color: #fff !important;
         font-weight: 600 !important;
         cursor: pointer !important;
         transition: all 0.2s !important;
-        box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3) !important;
+        box-shadow: 0 2px 4px color-mix(in srgb, var(--accent) 30%, transparent) !important;
         font-size: 14px !important;
         order: 2 !important;
         display: block !important;
@@ -612,14 +680,14 @@
         box-sizing: border-box !important;
         white-space: nowrap !important;
         padding: 12px 24px !important;
-        background: #4caf50 !important;
+        background: var(--accent) !important;
         border: none !important;
         border-radius: 6px !important;
         color: #fff !important;
         font-weight: 600 !important;
         cursor: pointer !important;
         transition: all 0.2s !important;
-        box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3) !important;
+        box-shadow: 0 2px 4px color-mix(in srgb, var(--accent) 30%, transparent) !important;
         font-size: 14px !important;
         order: 2 !important;
         display: block !important;
@@ -627,8 +695,8 @@
     
     #copy-redirectless-js-btn:hover,
     #copy-redirectless-php-btn:hover {
-        background: #3d5a26 !important;
-        box-shadow: 0 3px 6px rgba(61, 90, 38, 0.4) !important;
+        background: var(--accent) !important;
+        box-shadow: 0 3px 6px color-mix(in srgb, var(--accent) 40%, transparent) !important;
     }
     
     /* Also target any code containers in the redirectless section */
@@ -650,14 +718,14 @@
         margin-right: 0 !important;
         white-space: nowrap !important;
         padding: 12px 24px !important;
-        background: #4caf50 !important;
+        background: var(--accent) !important;
         border: none !important;
         border-radius: 6px !important;
         color: #fff !important;
         font-weight: 600 !important;
         cursor: pointer !important;
         transition: all 0.2s !important;
-        box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3) !important;
+        box-shadow: 0 2px 4px color-mix(in srgb, var(--accent) 30%, transparent) !important;
         font-size: 14px !important;
         flex: none !important;
         display: block !important;
@@ -665,8 +733,8 @@
     
     details[open] button[id*="redirectless"]:hover,
     details[open] button[onclick*="redirectless"]:hover {
-        background: #3d5a26 !important;
-        box-shadow: 0 3px 6px rgba(61, 90, 38, 0.4) !important;
+        background: var(--accent) !important;
+        box-shadow: 0 3px 6px color-mix(in srgb, var(--accent) 40%, transparent) !important;
     }
     
     /* LP click code sections */

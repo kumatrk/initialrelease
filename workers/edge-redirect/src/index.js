@@ -132,6 +132,16 @@ function isClickPath(url) {
   return false;
 }
 
+/** Click paths and public tracker endpoints may reach origin. Everything else is 404. */
+export function isOriginPassthrough(url) {
+  if (isClickPath(url)) return true;
+  const path = url.pathname.replace(/\/+$/, '') || '/';
+  if (/(?:^|\/)(?:postback|pixel|ringba-postback)\.php$/i.test(path)) return true;
+  if (/(?:^|\/)lp(?:\/|$)/i.test(path)) return true;
+  if (/(?:^|\/)api\/domain-check\.php$/i.test(path)) return true;
+  return false;
+}
+
 function extractPathInfo(url) {
   const q = url.searchParams.get('k');
   if (q) {
@@ -576,12 +586,20 @@ function redirect(url) {
 }
 
 async function fallbackToOrigin(request, env) {
+  let incoming;
+  try {
+    incoming = new URL(request.url);
+  } catch (err) {
+    return new Response('Not found', { status: 404, headers: { 'Cache-Control': 'no-store' } });
+  }
+  if (!isOriginPassthrough(incoming)) {
+    return new Response('Not found', { status: 404, headers: { 'Cache-Control': 'no-store' } });
+  }
   const origin = env.ORIGIN_FALLBACK_URL;
   if (!origin) {
     return new Response('Edge campaign not found and origin fallback not configured', { status: 404 });
   }
   try {
-    const incoming = new URL(request.url);
     const target = new URL(incoming.pathname + incoming.search, origin.replace(/\/$/, '') + '/');
     return fetch(new Request(target.toString(), request));
   } catch (err) {

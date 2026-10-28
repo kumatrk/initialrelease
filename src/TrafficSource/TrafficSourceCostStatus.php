@@ -21,7 +21,6 @@ class TrafficSourceCostStatus
         'bing',
         'rumble',
         'outbrain',
-        'newsbreak',
     ];
 
     /** Pre-seeded by migration 031 only; optional sources use templates (072 removes unused seeds). */
@@ -80,6 +79,10 @@ class TrafficSourceCostStatus
             return true;
         }
 
+        if (TrafficSourceReleaseHelper::usesNewsBreakIntegration($ts)) {
+            return true;
+        }
+
         return TrafficSourceReleaseHelper::usesGoogleAdsIntegration($ts);
     }
 
@@ -128,6 +131,10 @@ class TrafficSourceCostStatus
 
     private static function liveApiHelpNote(array $ts): string
     {
+        if (TrafficSourceReleaseHelper::usesNewsBreakIntegration($ts)) {
+            return 'Cost syncs hourly via the built-in NewsBreak integration (Settings → API Cost Updates). Conversions post back using the traffic source postback URL.';
+        }
+
         $providerKey = trim((string) ($ts['provider_key'] ?? ''));
         if ($providerKey !== '' && ($ts['cost_tracking_method'] ?? '') === 'integrated_api') {
             return 'Cost syncs hourly via the Honeycomb addon for this traffic source (see Honeycomb → Keep ad spend up to date).';

@@ -18,7 +18,7 @@ $costAggregator = null;
 $bootstrapError = null;
 
 try {
-    // Resolve log path (same logic as Logger: storage/logs first, then public/logs)
+    // Read storage/logs. public/logs is a legacy location from older builds and is not written anymore.
     $storageLogsPath = $baseDir . '/storage/logs/fb_cost_updater.log';
     $publicLogsPath = $baseDir . '/public/logs/fb_cost_updater.log';
     if (file_exists($storageLogsPath)) {

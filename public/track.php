@@ -37,6 +37,23 @@ function sendRedirectlessCorsHeaders(): void
     header('Access-Control-Max-Age: 86400');
 }
 
+/**
+ * @param array{mode?: string, url?: string|null}|null $botRoute
+ * @return array<string, mixed>
+ */
+function sk_track_success_payload(string $clickId, ?array $botRoute): array
+{
+    $payload = ['success' => true, 'click_id' => $clickId];
+    if (is_array($botRoute) && !empty($botRoute['mode']) && $botRoute['mode'] !== 'allow') {
+        $payload['bot_route'] = $botRoute['mode'];
+        if ($botRoute['mode'] === 'safe_url' && !empty($botRoute['url'])) {
+            $payload['bot_route_url'] = $botRoute['url'];
+        }
+    }
+
+    return $payload;
+}
+
 sendRedirectlessCorsHeaders();
 
 // Preflight for credentialed cross-origin requests
@@ -58,7 +75,7 @@ register_shutdown_function(function() {
             header('Cache-Control: no-cache, no-store, must-revalidate');
             echo json_encode([
                 'success' => false,
-                'error' => 'Fatal error: ' . $error['message'] . ' in ' . $error['file'] . ' on line ' . $error['line'],
+                'error' => 'Tracking failed',
                 'click_id' => null
             ]);
         }
@@ -76,7 +93,7 @@ try {
         header('Cache-Control: no-cache, no-store, must-revalidate');
         echo json_encode([
             'success' => false,
-            'error' => 'Failed to load required files: ' . $e->getMessage(),
+            'error' => 'Tracking failed',
             'click_id' => null
         ]);
     }
@@ -228,9 +245,10 @@ if ($isServerSide) {
 // Process redirectless tracking
 $debugInfo = null;
 $trackFailureReason = null;
+$botRoute = null;
 try {
     $tracker = new RedirectlessTracker($db);
-    $clickId = $tracker->track($campaignId, $landingPageId, $trackingParams, $trackFailureReason);
+    $clickId = $tracker->track($campaignId, $landingPageId, $trackingParams, $trackFailureReason, $botRoute);
     
     // When tracking fails, always get detailed diagnostics (inlined - no RedirectlessTracker dependency)
     if (!$clickId) {
@@ -278,12 +296,8 @@ try {
         }
     }
     
-    // Log for debugging (remove in production)
-    error_log("Redirectless tracking: campaign_id=$campaignId, landing_page_id=$landingPageId, click_id=" . ($clickId ?? 'NULL') . ", server_side=" . ($isServerSide ? 'yes' : 'no'));
 } catch (Throwable $e) {
-    // Log the full error
-    error_log("Redirectless tracking error: " . $e->getMessage() . " in " . $e->getFile() . " on line " . $e->getLine());
-    error_log("Stack trace: " . $e->getTraceAsString());
+    error_log('Redirectless tracking error: ' . $e->getMessage());
     
     $clickId = null;
     $debugInfo = [
@@ -299,7 +313,7 @@ try {
         header('Cache-Control: no-cache, no-store, must-revalidate');
         header('Pragma: no-cache');
         header('Expires: 0');
-        $payload = ['success' => false, 'error' => 'Tracking error: ' . $e->getMessage(), 'click_id' => null, '_v' => 5];
+        $payload = ['success' => false, 'error' => 'Tracking failed', 'click_id' => null, '_v' => 5];
         if (defined('TRACK_DEBUG') && TRACK_DEBUG) {
             $payload['debug'] = $debugInfo;
         }
@@ -319,9 +333,9 @@ if ($isServerSide) {
     header('Expires: 0');
     
     if ($clickId) {
-        echo json_encode(['success' => true, 'click_id' => $clickId]);
+        echo json_encode(sk_track_success_payload($clickId, $botRoute));
     } else {
-        $errMsg = ($debugInfo !== null && isset($debugInfo['error'])) ? $debugInfo['error'] : 'Tracking failed - campaign may not be active or landing page not in rotation';
+        $errMsg = 'Tracking failed - campaign may not be active or landing page not in rotation';
         $errorPayload = ['success' => false, 'error' => $errMsg, 'click_id' => null, '_v' => 5];
         if (defined('TRACK_DEBUG') && TRACK_DEBUG) {
             $errorPayload['debug'] = $debugInfo;
@@ -343,10 +357,10 @@ if ($isAjax || $wantsJson) {
     header('Expires: 0');
     
     if ($clickId) {
-        echo json_encode(['success' => true, 'click_id' => $clickId]);
+        echo json_encode(sk_track_success_payload($clickId, $botRoute));
     } else {
         // If tracking failed, return error (but don't break the page)
-        $errMsg = ($debugInfo !== null && isset($debugInfo['error'])) ? $debugInfo['error'] : 'Tracking failed - campaign may not be active or landing page not in rotation';
+        $errMsg = 'Tracking failed - campaign may not be active or landing page not in rotation';
         $errorPayload = ['success' => false, 'error' => $errMsg, 'click_id' => null, '_v' => 5];
         if (defined('TRACK_DEBUG') && TRACK_DEBUG) {
             $errorPayload['debug'] = $debugInfo;

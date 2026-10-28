@@ -218,6 +218,8 @@ class Campaign
             $this->saveMinPostbackPayout((int)$newId, $data);
             $this->persistAllowMultipleConversions((int)$newId, $data);
             $this->persistInactiveRedirect((int)$newId, $data);
+            $this->persistBotRoute((int)$newId, $data);
+            $this->persistGuard((int)$newId, $data);
             $this->persistEdgeFlags((int)$newId, $data);
             \SimpleKuma\Edge\EdgeCampaignSync::hookAfterSave($this->db, (int)$newId);
         }
@@ -757,6 +759,8 @@ class Campaign
             $this->saveMinPostbackPayout($id, $data);
             $this->persistAllowMultipleConversions($id, $data);
             $this->persistInactiveRedirect($id, $data);
+            $this->persistBotRoute($id, $data);
+            $this->persistGuard($id, $data);
             $this->persistEdgeFlags($id, $data);
             \SimpleKuma\Edge\EdgeCampaignSync::hookAfterSave($this->db, $id);
         }
@@ -894,6 +898,111 @@ class Campaign
         $stmt->close();
     }
 
+    /**
+     * Persist bot/proxy route after main INSERT/UPDATE (migration 098).
+     *
+     * @param array<string, mixed> $data
+     */
+    private function persistBotRoute(int $campaignId, array $data): void
+    {
+        if (!$this->campaignsTableHasBotRoute()) {
+            return;
+        }
+        if (!array_key_exists('bot_route_mode', $data)) {
+            return;
+        }
+
+        $parsed = \SimpleKuma\Tracking\BotRoute::fromInput($data);
+        $mode = $parsed['bot_route_mode'];
+        $url = $parsed['bot_route_url'];
+        $stmt = $this->db->prepare('UPDATE campaigns SET bot_route_mode = ?, bot_route_url = ? WHERE id = ?');
+        if (!$stmt) {
+            return;
+        }
+        $stmt->bind_param('ssi', $mode, $url, $campaignId);
+        $stmt->execute();
+        $stmt->close();
+    }
+
+    /**
+     * Persist Grizzly Guard choices after the main INSERT/UPDATE (migration 100).
+     *
+     * @param array<string, mixed> $data
+     */
+    private function persistGuard(int $campaignId, array $data): void
+    {
+        if (!$this->campaignsTableHasGuard()) {
+            return;
+        }
+        if (!array_key_exists('guard_mode', $data)) {
+            return;
+        }
+
+        $parsed = \SimpleKuma\Guard\GrizzlyGuardCampaign::fromInput($data);
+        $mode = $parsed['guard_mode'];
+        $domainId = $parsed['guard_backup_domain_id'];
+        $lpId = $parsed['guard_backup_lp_id'];
+        $url = $parsed['guard_last_resort_url'];
+
+        if ($domainId !== null) {
+            $check = $this->db->prepare("SELECT id FROM tracking_domains WHERE id = ? AND status IN ('verified', 'verified_manual') LIMIT 1");
+            if ($check) {
+                $check->bind_param('i', $domainId);
+                $check->execute();
+                $found = $check->get_result()->fetch_assoc();
+                $check->close();
+                if (!$found) {
+                    $domainId = null;
+                }
+            }
+        }
+        if ($lpId !== null) {
+            $check = $this->db->prepare('SELECT id FROM landing_pages WHERE id = ? LIMIT 1');
+            if ($check) {
+                $check->bind_param('i', $lpId);
+                $check->execute();
+                $found = $check->get_result()->fetch_assoc();
+                $check->close();
+                if (!$found) {
+                    $lpId = null;
+                }
+            }
+        }
+
+        $stmt = $this->db->prepare(
+            'UPDATE campaigns SET guard_mode = ?, guard_backup_domain_id = ?, guard_backup_lp_id = ?, guard_last_resort_url = ? WHERE id = ?'
+        );
+        if (!$stmt) {
+            return;
+        }
+        $stmt->bind_param('siisi', $mode, $domainId, $lpId, $url, $campaignId);
+        $stmt->execute();
+        $stmt->close();
+    }
+
+    private function campaignsTableHasGuard(): bool
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+        $result = $this->db->query("SHOW COLUMNS FROM campaigns LIKE 'guard_mode'");
+        $cached = $result && $result->num_rows > 0;
+
+        return $cached;
+    }
+
+    private function campaignsTableHasBotRoute(): bool
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+        $result = $this->db->query("SHOW COLUMNS FROM campaigns LIKE 'bot_route_mode'");
+        $cached = $result && $result->num_rows > 0;
+        return $cached;
+    }
+
     private function campaignsTableHasInactiveRedirect(): bool
     {
         static $cached = null;
@@ -978,7 +1087,7 @@ class Campaign
 
         if (empty($data['flow_type'])) {
             $errors['flow_type'] = 'Flow type is required';
-        } elseif (!in_array($data['flow_type'], ['DTO', 'LP', 'Split'], true)) {
+        } elseif (!in_array($data['flow_type'], ['DTO', 'LP', 'Split', 'DeepFunnel'], true)) {
             $errors['flow_type'] = 'Invalid flow type';
         }
 
@@ -988,6 +1097,12 @@ class Campaign
             $editingId > 0 ? $editingId : null
         );
         foreach ($inactiveErrors as $field => $message) {
+            $errors[$field] = $message;
+        }
+        foreach (\SimpleKuma\Tracking\BotRoute::validateFields($data) as $field => $message) {
+            $errors[$field] = $message;
+        }
+        foreach (\SimpleKuma\Guard\GrizzlyGuardCampaign::validateFields($data) as $field => $message) {
             $errors[$field] = $message;
         }
         if (
@@ -1041,6 +1156,53 @@ class Campaign
                     $errors['rotation'] = 'Enabled landing page weights must sum to 100%';
                 } elseif ($offerWeight !== 100) {
                     $errors['rotation'] = 'Enabled offer weights must sum to 100%';
+                }
+            }
+        } elseif ($data['flow_type'] === 'DeepFunnel' && is_array($data['rotation'])) {
+            $df = $data['rotation']['deep_funnel'] ?? null;
+            if (!is_array($df) || empty($df['levels']) || !is_array($df['levels'])) {
+                $errors['rotation'] = 'Deep Funnel requires at least one level with landing pages';
+            } else {
+                $levels = array_values($df['levels']);
+                if (count($levels) < 1 || count($levels) > 5) {
+                    $errors['rotation'] = 'Deep Funnel supports 1–5 levels';
+                }
+                foreach ($levels as $li => $level) {
+                    $items = array_values(array_filter($level['items'] ?? [], static function ($item) {
+                        return !isset($item['enabled']) || $item['enabled'] !== false;
+                    }));
+                    if ($items === []) {
+                        $errors['rotation'] = 'Level ' . ($li + 1) . ' needs at least one enabled landing page';
+                        break;
+                    }
+                    if (count($items) > 5) {
+                        $errors['rotation'] = 'Level ' . ($li + 1) . ' supports at most 5 landing pages';
+                        break;
+                    }
+                    $w = 0;
+                    foreach ($items as $item) {
+                        $w += (int) ($item['weight'] ?? 0);
+                    }
+                    if ($w !== 100) {
+                        $errors['rotation'] = 'Level ' . ($li + 1) . ' enabled LP weights must sum to 100%';
+                        break;
+                    }
+                }
+                if (empty($errors['rotation'])) {
+                    $enabledOffers = array_filter($df['offers'] ?? [], static function ($offer) {
+                        return !isset($offer['enabled']) || $offer['enabled'] !== false;
+                    });
+                    if (empty($enabledOffers)) {
+                        $errors['rotation'] = 'Deep Funnel requires at least one enabled offer';
+                    } else {
+                        $ow = 0;
+                        foreach ($enabledOffers as $offer) {
+                            $ow += (int) ($offer['weight'] ?? 0);
+                        }
+                        if ($ow !== 100) {
+                            $errors['rotation'] = 'Enabled offer weights must sum to 100%';
+                        }
+                    }
                 }
             }
         } elseif ($data['flow_type'] === 'DTO' && is_array($data['rotation'])) {

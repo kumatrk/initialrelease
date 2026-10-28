@@ -228,7 +228,7 @@
     }
     
     /* Traffic source selector section - improve mobile layout */
-    .card-body > form > div > div[style*="background: #e8f5e9"] {
+    .card-body > form > div > div[style*="background: var(--accent-soft)"] {
         padding: 12px !important;
     }
     

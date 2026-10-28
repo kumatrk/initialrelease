@@ -312,6 +312,9 @@ class ConversionTracker
             $this->firePostbacks($conversionId);
             $updater = new DailySummaryUpdater($this->db);
             $updater->upsertConversion($clickId, $payout, $value, $eventKey);
+            // Deep Funnel path pre-agg (no-op unless funnel_path_key exists / tables present)
+            $funnelRev = $payout !== null ? (float) $payout : ($value !== null ? (float) $value : 0.0);
+            (new FunnelPathTracker($this->db))->recordConversion($clickId, $funnelRev);
         } else {
             error_log('ConversionTracker: INSERT failed: ' . $stmt->error);
             $stmt->close();

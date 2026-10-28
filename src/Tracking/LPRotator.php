@@ -21,8 +21,12 @@ class LPRotator
 
     /**
      * Process LP click and redirect to offer
+     *
+     * @param int|null $forceSlot 1-based / stable offer slot (normal LP/Split; ignored for DeepFunnel)
+     * @param int|null $forceOfferId Catalog offers.id if present in rotation (null = ignore)
+     * @param string|null $forceLinkKey Opaque Deep Funnel offer link_key (preferred for DeepFunnel)
      */
-    public function process(string $clickId): void
+    public function process(string $clickId, ?int $forceSlot = null, ?int $forceOfferId = null, ?string $forceLinkKey = null): void
     {
         // Get click and campaign data
         $click = $this->getClick($clickId);
@@ -38,6 +42,10 @@ class LPRotator
         if (!$campaign || $campaign['status'] !== 'active') {
             http_response_code(403);
             die('Campaign not active');
+        }
+
+        if (BotRoute::applies($campaign, BotRoute::visitFromClick($click))) {
+            BotRoute::respond($campaign);
         }
 
         // Mark LP click in database (idempotent) — only update pre-agg on first successful mark
@@ -63,10 +71,33 @@ class LPRotator
             return;
         }
 
+        // Deep Funnel: force offer only via opaque link_key (not enumerable slot numbers)
+        if (FunnelRotation::isDeepFunnelCampaign($campaign) && $forceLinkKey) {
+            $forceSlot = null;
+            $forceOfferId = null;
+            $dfConfig = FunnelRotation::getConfig($campaign);
+            if ($dfConfig) {
+                $byKey = FunnelRotation::findOfferByLinkKey($dfConfig, $forceLinkKey);
+                if ($byKey) {
+                    $forceOfferId = (int) $byKey['id'];
+                } else {
+                    $forceLinkKey = null; // invalid key → rotate / fallback below
+                }
+            }
+        } elseif (FunnelRotation::isDeepFunnelCampaign($campaign)) {
+            // Ignore bare slot numbers on Deep Funnel (prevents easy enumeration)
+            $forceSlot = null;
+        }
+
         // Resolve offer based on campaign rotation (returns array with url and offer_id)
-        $offerData = $this->resolveOffer($campaign);
+        $offerData = $this->resolveOffer($campaign, $forceSlot, $forceOfferId);
 
         if (!$offerData || !isset($offerData['url'])) {
+            $lastResort = \SimpleKuma\Guard\GrizzlyGuardCampaign::lastResortUrl($campaign);
+            if ($lastResort !== null) {
+                $this->redirect($lastResort, null);
+                return;
+            }
             // No offers available (all outside time window or disabled)
             // Still update click record, then show friendly message
             error_log("LPRotator: No available offers for campaign ID {$campaign['id']}. All offers are outside time window or disabled.");
@@ -84,6 +115,17 @@ class LPRotator
         } elseif ($offerId) {
             // Retry: still ensure offer_id is set if missing, but do not bump summary again
             $this->updateClickOfferId($clickId, $offerId);
+        }
+
+        // Deep Funnel: append offer exit to full path + path/step daily (isolated pre-agg)
+        if ($offerId && FunnelRotation::isDeepFunnelCampaign($campaign) && $firstLpClick) {
+            $offerSlot = FunnelPathTracker::offerSlotForId($campaign, (int) $offerId);
+            (new FunnelPathTracker($this->db))->recordOfferExit(
+                $clickId,
+                (int) $campaign['id'],
+                $offerSlot,
+                (int) $offerId
+            );
         }
 
         // Check if URL contains tokens - if so, use ClickTokenReplacer; otherwise append parameters
@@ -381,9 +423,9 @@ class LPRotator
         $campaign = $result->fetch_assoc();
 
         if ($campaign) {
-            $campaign['rotation_json'] = json_decode($campaign['rotation_json'], true) ?? [];
-            $campaign['custom_tokens_json'] = json_decode($campaign['custom_tokens_json'], true) ?? [];
-            $campaign['redirect_rules_json'] = json_decode($campaign['redirect_rules_json'], true) ?? [];
+            $campaign['rotation_json'] = json_decode((string) ($campaign['rotation_json'] ?? ''), true) ?? [];
+            $campaign['custom_tokens_json'] = json_decode((string) ($campaign['custom_tokens_json'] ?? ''), true) ?? [];
+            $campaign['redirect_rules_json'] = json_decode((string) ($campaign['redirect_rules_json'] ?? ''), true) ?? [];
         }
 
         return $campaign ?: null;
@@ -408,13 +450,13 @@ class LPRotator
     }
 
     /**
-     * Resolve offer from campaign rotation
+     * Resolve offer based on campaign rotation.
+     * Returns array with 'url' and 'offer_id' keys.
+     *
+     * When $forceSlot or $forceOfferId is set, pick that offer (no rotate). If unavailable,
+     * use campaign fallback_offer_id — do not silently rotate to another slot.
      */
-    /**
-     * Resolve offer based on campaign rotation
-     * Returns array with 'url' and 'offer_id' keys
-     */
-    private function resolveOffer(array $campaign): ?array
+    private function resolveOffer(array $campaign, ?int $forceSlot = null, ?int $forceOfferId = null): ?array
     {
         $rotation = $campaign['rotation_json'] ?? [];
 
@@ -422,41 +464,35 @@ class LPRotator
             return null;
         }
 
-        // Helper function to filter enabled items
-        $filterEnabled = function($items) {
-            return array_filter($items, function($item) {
-                return !isset($item['enabled']) || $item['enabled'] !== false;
-            });
-        };
-
-        // For LP flow, offers are nested under 'offers' key
-        if (isset($rotation['offers']) && is_array($rotation['offers'])) {
-            $offers = $filterEnabled($rotation['offers']);
-        } elseif (isset($rotation['landing_pages'])) {
-            // New structure with landing_pages array - offers are separate
-            $offers = $filterEnabled($rotation['offers'] ?? []);
-        } elseif (isset($rotation['lp_path']['offers'])) {
-            // Split flow: offers for LP path
-            $offers = $filterEnabled($rotation['lp_path']['offers']);
-        } else {
-            // For DTO or Split flow (shouldn't hit this, but fallback)
-            $offers = $filterEnabled(is_array($rotation) ? $rotation : []);
-        }
-
+        $offers = $this->enabledOfferConfigs($rotation);
         if (empty($offers)) {
             return null;
         }
 
-        // Filter offers by schedule availability and CAP status
         $offerEntity = new \SimpleKuma\Entity\Offer($this->db);
+
+        // Forced pick by catalog id or slot (standalone core feature)
+        if ($forceOfferId !== null || $forceSlot !== null) {
+            $forced = $this->pickForcedOfferConfig($offers, $forceSlot, $forceOfferId);
+            if ($forced) {
+                $offerId = (int) ($forced['id'] ?? 0);
+                $offerData = $offerId ? $offerEntity->getById($offerId) : null;
+                if ($offerData && $offerEntity->isAvailableForRotation($offerData)) {
+                    return $this->getOfferData($offerId);
+                }
+            }
+            // Forced target missing or unavailable — fallback only, no silent rotate
+            return $this->tryFallbackOffer($campaign);
+        }
+
+        // Filter offers by schedule availability and CAP status
         $availableOffers = [];
         foreach ($offers as $offerConfig) {
             $offerId = $offerConfig['id'] ?? null;
             if (!$offerId) {
                 continue;
             }
-            
-            // Load full offer data to check schedule and CAP
+
             $offerData = $offerEntity->getById($offerId);
             if ($offerData && $offerEntity->isAvailableForRotation($offerData)) {
                 $availableOffers[] = $offerConfig;
@@ -471,19 +507,17 @@ class LPRotator
             return null;
         }
 
-        $availableOffers = array_values($availableOffers); // Re-index after filtering
+        $availableOffers = array_values($availableOffers);
 
-        // Single offer - just return it
         if (count($availableOffers) === 1) {
             return $this->getOfferData($availableOffers[0]['id']);
         }
 
-        // Weighted rotation
         $totalWeight = array_sum(array_column($availableOffers, 'weight'));
         if ($totalWeight <= 0) {
             return null;
         }
-        
+
         $random = mt_rand(1, $totalWeight);
         $currentWeight = 0;
 
@@ -494,8 +528,70 @@ class LPRotator
             }
         }
 
-        // Fallback to first offer
         return $this->getOfferData($availableOffers[0]['id']);
+    }
+
+    /**
+     * Enabled offer configs from LP / Split / DeepFunnel / DTO-shaped rotation.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function enabledOfferConfigs(array $rotation): array
+    {
+        $filterEnabled = static function ($items) {
+            if (!is_array($items)) {
+                return [];
+            }
+            return array_values(array_filter($items, static function ($item) {
+                return !isset($item['enabled']) || $item['enabled'] !== false;
+            }));
+        };
+
+        if (isset($rotation['deep_funnel']['offers']) && is_array($rotation['deep_funnel']['offers'])) {
+            return $filterEnabled($rotation['deep_funnel']['offers']);
+        }
+        if (isset($rotation['offers']) && is_array($rotation['offers'])) {
+            return $filterEnabled($rotation['offers']);
+        }
+        if (isset($rotation['lp_path']['offers'])) {
+            return $filterEnabled($rotation['lp_path']['offers']);
+        }
+        // DTO: flat list of offer items
+        if (isset($rotation[0]) && (($rotation[0]['type'] ?? '') === 'offer' || isset($rotation[0]['id']))) {
+            return $filterEnabled($rotation);
+        }
+
+        return [];
+    }
+
+    /**
+     * Pick offer config by stable slot, 1-based index, or catalog offer id.
+     *
+     * @param list<array<string, mixed>> $offers Enabled offer configs in editor order
+     */
+    private function pickForcedOfferConfig(array $offers, ?int $forceSlot, ?int $forceOfferId): ?array
+    {
+        if ($forceOfferId !== null) {
+            foreach ($offers as $offer) {
+                if ((int) ($offer['id'] ?? 0) === $forceOfferId) {
+                    return $offer;
+                }
+            }
+            return null;
+        }
+
+        if ($forceSlot === null) {
+            return null;
+        }
+
+        foreach ($offers as $index => $offer) {
+            $slot = isset($offer['slot']) ? (int) $offer['slot'] : ($index + 1);
+            if ($slot === $forceSlot) {
+                return $offer;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -511,6 +607,9 @@ class LPRotator
         $offerEntity = new \SimpleKuma\Entity\Offer($this->db);
         $offerData = $offerEntity->getById($fallbackId);
         if (!$offerData || !$offerEntity->isAvailableForRotation($offerData)) {
+            return null;
+        }
+        if (\SimpleKuma\Guard\GrizzlyGuardCampaign::isHeld($this->db, (int) ($campaign['id'] ?? 0), 'offer', $fallbackId)) {
             return null;
         }
 

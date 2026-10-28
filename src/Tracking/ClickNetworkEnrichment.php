@@ -6,6 +6,7 @@ namespace SimpleKuma\Tracking;
 
 use SimpleKuma\Enrichment\ConnectionTypeNormalizer;
 use SimpleKuma\Enrichment\LanguageDetector;
+use SimpleKuma\GeoIP\AnonymousRangeLookup;
 use SimpleKuma\GeoIP\AsnLookup;
 
 /**
@@ -39,7 +40,8 @@ final class ClickNetworkEnrichment
             }
         }
 
-        // Traffic-source connection tokens override ASN heuristic
+        // Traffic-source connection tokens override the ASN name guess.
+        $fromTrafficSource = null;
         foreach (['connection_type', 'conn', 'connectionType', 'connection'] as $key) {
             if (!isset($params[$key]) || !is_scalar($params[$key])) {
                 continue;
@@ -47,6 +49,7 @@ final class ClickNetworkEnrichment
             $normalized = ConnectionTypeNormalizer::normalize((string) $params[$key]);
             if ($normalized !== null) {
                 $connectionType = $normalized;
+                $fromTrafficSource = $normalized;
                 break;
             }
         }
@@ -66,6 +69,14 @@ final class ClickNetworkEnrichment
 
         if ($connectionType === null && $asnOrg !== null) {
             $connectionType = ConnectionTypeNormalizer::fromAsnOrganization($asnOrg);
+        }
+
+        // Tor, anonymous-proxy, and cloud ranges. Cellular from the traffic source stays.
+        // A missing range file leaves the label already chosen above.
+        if ($ip !== null && $ip !== '' && $fromTrafficSource !== ConnectionTypeNormalizer::CELLULAR) {
+            if (AnonymousRangeLookup::contains($ip)) {
+                $connectionType = ConnectionTypeNormalizer::CORPORATE;
+            }
         }
 
         $language = LanguageDetector::primaryTag($languageRaw);

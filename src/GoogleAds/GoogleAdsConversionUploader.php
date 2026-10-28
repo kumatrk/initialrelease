@@ -223,6 +223,7 @@ class GoogleAdsConversionUploader
 
             if ($partialFail) {
                 $errMsg = $response->getPartialFailureError()->getMessage();
+                \SimpleKuma\Support\ApiFailureLog::record($this->db, 'google_ads', 'Upload conversion', null, $errMsg);
                 if ($this->isRetryableErrorMessage($errMsg)) {
                     $next = gmdate('Y-m-d H:i:s', time() + 3600);
                     $this->markQueued($conversionId, $next, $errMsg);
@@ -238,6 +239,7 @@ class GoogleAdsConversionUploader
             $msg = $e->getMessage();
             $failCustomerId = GoogleAdsIntegration::normalizeCustomerId($integration['customer_id'] ?? '') ?? '';
             $this->logApiCall('uploadClickConversions', $failCustomerId, $integrationId, false);
+            \SimpleKuma\Support\ApiFailureLog::record($this->db, 'google_ads', 'Upload conversion', null, $msg);
             error_log('GoogleAdsConversionUploader: ' . $msg);
             if ($this->isRetryableErrorMessage($msg)) {
                 $next = gmdate('Y-m-d H:i:s', time() + 3600);

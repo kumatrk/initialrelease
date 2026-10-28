@@ -22,7 +22,6 @@ $skAppVersion = is_array($skVersionData) ? (string) ($skVersionData['version'] ?
 use SimpleKuma\Auth\Auth;
 use SimpleKuma\Auth\Csrf;
 use SimpleKuma\Auth\LoginGate;
-use SimpleKuma\Services\EmailService;
 use SimpleKuma\Theme\ThemeRegistry;
 
 // Database connection
@@ -64,32 +63,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (isset($result['token']) && isset($result['user'])) {
                 $resetUrl = APP_BASE_URL . '/reset-password.php?token=' . urlencode($result['token']);
                 
-                // Initialize email service with auto-detection
-                // Works out of the box on most PHP servers - no configuration needed!
-                $emailConfig = [
-                    'enabled' => true, // Enabled by default - will use PHP mail() automatically
-                    'use_smtp' => false, // Set to true only if you want to use SMTP
-                    // SMTP settings (optional - only needed if use_smtp = true)
-                    // 'smtp_host' => 'smtp.gmail.com',
-                    // 'smtp_port' => 587,
-                    // 'smtp_username' => 'your-email@gmail.com',
-                    // 'smtp_password' => 'your-app-password',
-                    // 'smtp_encryption' => 'tls',
-                    'development_mode' => defined('APP_ENV') && APP_ENV !== 'production',
-                ];
-                $emailService = new EmailService($db, $emailConfig);
-                
-                $emailSent = $emailService->sendPasswordResetEmail(
-                    $result['user']['email'],
-                    $result['token'],
+                \SimpleKuma\Notify\NotificationDispatcher::sendReset(
+                    $db,
+                    (string) $result['user']['email'],
                     $resetUrl
                 );
-                
-                // In development mode, show the reset link
-                if ($emailConfig['development_mode'] && !$emailConfig['enabled']) {
-                    $success .= '<br><br><strong>Development Mode:</strong><br>';
-                    $success .= '<a href="' . htmlspecialchars($resetUrl) . '" style="color: #3d5a26; word-break: break-all;">' . htmlspecialchars($resetUrl) . '</a>';
-                }
             }
         } else {
             $error = $result['message'];
@@ -124,7 +102,7 @@ $authLogoDefault = ThemeRegistry::logo(ThemeRegistry::DEFAULT_THEME);
     </script>
     <title>Forgot password</title>
     <link rel="icon" type="image/x-icon" href="<?= ASSETS_BASE_URL ?>/assets/images/favicon.ico">
-    <link rel="stylesheet" href="<?= ASSETS_BASE_URL ?>/assets/css/themes.css?v=<?= rawurlencode($skAppVersion) ?>">
+    <link rel="stylesheet" href="<?= htmlspecialchars(sk_css_href('assets/css/themes.css')) ?>">
     <style>
         * {
             margin: 0;
@@ -134,7 +112,7 @@ $authLogoDefault = ThemeRegistry::logo(ThemeRegistry::DEFAULT_THEME);
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #f5f1e8 0%, #e8e4d8 100%);
+            background: linear-gradient(135deg, var(--color-cream) 0%, #e8e4d8 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -152,7 +130,7 @@ $authLogoDefault = ThemeRegistry::logo(ThemeRegistry::DEFAULT_THEME);
         }
 
         .login-header {
-            background: linear-gradient(135deg, #3d5a26 0%, #5a7a3a 100%);
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-muted) 100%);
             padding: 30px;
             text-align: center;
             color: #fff;
@@ -162,7 +140,7 @@ $authLogoDefault = ThemeRegistry::logo(ThemeRegistry::DEFAULT_THEME);
             display: block;
             font-size: 16px;
             font-weight: 600;
-            color: #f5f1e8;
+            color: var(--color-cream);
             letter-spacing: 1px;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
         }
@@ -194,7 +172,7 @@ $authLogoDefault = ThemeRegistry::logo(ThemeRegistry::DEFAULT_THEME);
 
         .form-input:focus {
             outline: none;
-            border-color: #3d5a26;
+            border-color: var(--accent);
         }
 
         .error-message {
@@ -209,7 +187,7 @@ $authLogoDefault = ThemeRegistry::logo(ThemeRegistry::DEFAULT_THEME);
 
         .success-message {
             background: #d4edda;
-            border: 2px solid #28a745;
+            border: 2px solid var(--color-success);
             color: #155724;
             padding: 12px;
             border-radius: 6px;
@@ -220,8 +198,8 @@ $authLogoDefault = ThemeRegistry::logo(ThemeRegistry::DEFAULT_THEME);
         .btn-login {
             width: 100%;
             padding: 14px;
-            background: #3d5a26;
-            color: #f5f1e8;
+            background: var(--accent);
+            color: var(--color-cream);
             border: none;
             border-radius: 6px;
             font-size: 16px;
@@ -232,7 +210,7 @@ $authLogoDefault = ThemeRegistry::logo(ThemeRegistry::DEFAULT_THEME);
         }
 
         .btn-login:hover {
-            background: #2d5016;
+            background: var(--accent-hover);
         }
 
         .btn-secondary {
@@ -270,13 +248,13 @@ $authLogoDefault = ThemeRegistry::logo(ThemeRegistry::DEFAULT_THEME);
     <div class="login-container">
         <div class="login-header">
             <div style="margin-bottom: 16px;">
-                <img id="auth-logo-img" src="<?= ASSETS_BASE_URL ?>/assets/images/<?= htmlspecialchars($authLogoDefault) ?>" alt="" style="max-height: 140px; height: auto;">
+                <img id="auth-logo-img" class="auth-logo-img" src="<?= ASSETS_BASE_URL ?>/assets/images/<?= htmlspecialchars($authLogoDefault) ?>" alt="">
             </div>
             <span class="retro-text">Harder, Better, Faster, Stronger</span>
         </div>
 
         <div class="login-body">
-            <h2 style="color: #3d5a26; margin-bottom: 24px; text-align: center;">Forgot Password?</h2>
+            <h2 style="color: var(--heading-color); margin-bottom: 24px; text-align: center;">Forgot Password?</h2>
             <p style="color: #666; margin-bottom: 24px; text-align: center; font-size: 14px;">
                 Enter your email address and we'll send you a link to reset your password.
             </p>

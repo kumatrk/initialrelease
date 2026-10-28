@@ -108,8 +108,29 @@ $defaultHost = parse_url(BASE_URL, PHP_URL_HOST) ?: 'Current Domain';
                             <td class="is-optional">{et}</td>
                             <td>Optional — Funnel event key (e.g. register, ftd, rebill). Aliases: event_type, event. Mapped to Meta CAPI events in Settings → Integrations.</td>
                         </tr>
+                        <tr>
+                            <td class="is-optional">{sub1}…{sub10}</td>
+                            <td>Optional — Stored on the conversion and filterable in Conversion Log. Map network fields here if you want uniform column names.</td>
+                        </tr>
+                        <tr>
+                            <td class="is-optional">Other params</td>
+                            <td>Optional — Any other non-reserved query params on the postback URL are stored with the conversion and can be shown/filtered on the Conversion Log (e.g. <code class="postback-inline-code">offer_name</code>, <code class="postback-inline-code">offer_id</code>, or your own names).</td>
+                        </tr>
                     </table>
                 </div>
+            </section>
+
+            <section class="postback-doc-section postback-doc-section--info">
+                <h3 class="postback-section-heading postback-section-heading--info">Extra params example</h3>
+                <p class="postback-example-text">
+                    Pass whatever your network already sends — Simple KUMA stores non-reserved params with the conversion. Use <code class="postback-inline-code">sub1</code>–<code class="postback-inline-code">sub10</code> when you want standardized names across networks:
+                </p>
+                <div class="postback-network-examples">
+                    <div>.../postback.php?click_id=<strong>{click_id}</strong>&amp;payout=<strong>{payout}</strong>&amp;offer_name=<strong>{offer_name}</strong>&amp;offer_id=<strong>{offer_id}</strong>&amp;sub1=<strong>{your_value}</strong></div>
+                </div>
+                <p class="postback-example-text" style="margin-top: 8px;">
+                    View and filter these on the <strong>Conversions</strong> page.
+                </p>
             </section>
 
             <section class="postback-doc-section postback-doc-section--info">
@@ -125,7 +146,7 @@ $defaultHost = parse_url(BASE_URL, PHP_URL_HOST) ?: 'Current Domain';
             </section>
 
             <section class="postback-doc-section postback-doc-section--info">
-                <h3 class="postback-section-heading postback-section-heading--info">Multiple payouts on the same click (Propush-style)</h3>
+                <h3 class="postback-section-heading postback-section-heading--info">Multiple payouts on the same click</h3>
                 <p class="postback-example-text">
                     Prefer a unique <code class="postback-inline-code">txid</code> on each earn when the network provides one — that already records multiple conversions.
                     If the network reuses the same click ID without a new transaction ID, enable
@@ -135,7 +156,7 @@ $defaultHost = parse_url(BASE_URL, PHP_URL_HOST) ?: 'Current Domain';
             </section>
 
             <section class="postback-doc-section postback-doc-section--info">
-                <h3 class="postback-section-heading postback-section-heading--info">Email opt-ins (BeMob-style)</h3>
+                <h3 class="postback-section-heading postback-section-heading--info">Email opt-ins</h3>
                 <p class="postback-example-text">
                     Fire an opt-in with <code class="postback-inline-code">et=optin</code> (also accepted: <code class="postback-inline-code">lead</code>, <code class="postback-inline-code">email</code>, <code class="postback-inline-code">subscribe</code>, <code class="postback-inline-code">opt-in</code>).
                     Use a unique <code class="postback-inline-code">txid</code> per opt-in. Opt-ins appear as <strong>Opt-ins</strong> in Campaign Stats and do <strong>not</strong> inflate Conversions / CR / revenue.
@@ -307,8 +328,8 @@ $defaultHost = parse_url(BASE_URL, PHP_URL_HOST) ?: 'Current Domain';
 
         function showCopied() {
             buttonElement.textContent = 'Copied!';
-            buttonElement.style.background = '#4caf50';
-            buttonElement.style.border = '1px solid #4caf50';
+            buttonElement.style.background = 'var(--accent)';
+            buttonElement.style.border = '1px solid var(--accent)';
             buttonElement.disabled = true;
             setTimeout(function () {
                 buttonElement.textContent = originalText;

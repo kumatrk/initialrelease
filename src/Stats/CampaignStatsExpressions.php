@@ -423,6 +423,25 @@ class CampaignStatsExpressions
     }
 
     /**
+     * ROI percent stored in clicks_daily_summary.roi DECIMAL(20,4).
+     * NULL when cost is not positive or the percent does not fit, so one cheap
+     * click cannot fail the statement under strict SQL mode.
+     *
+     * Each expression is inlined more than once. Do not pass placeholders.
+     */
+    public static function storedRoiPercentSql(string $revenueExpr, string $costExpr): string
+    {
+        $max = '9999999999999999.9999';
+
+        return "CASE
+            WHEN ({$costExpr}) > 0
+             AND ABS((({$revenueExpr}) - ({$costExpr})) / ({$costExpr}) * 100) <= {$max}
+            THEN (({$revenueExpr}) - ({$costExpr})) / ({$costExpr}) * 100
+            ELSE NULL
+        END";
+    }
+
+    /**
      * Invalid Facebook clicks count (approval/test clicks missing ad tokens).
      */
     public static function invalidClicksCountExpr(string $clAlias = 'cl', string $tsAlias = 'ts'): string

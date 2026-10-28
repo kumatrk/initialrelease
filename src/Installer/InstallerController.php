@@ -262,6 +262,15 @@ class InstallerController
                     'admin_password' => $_POST['admin_password'] ?? '',
                     'admin_password_confirm' => $_POST['admin_password_confirm'] ?? '',
                     'admin_email' => trim($_POST['admin_email'] ?? ''),
+                    'install_reset_via' => trim((string) ($_POST['install_reset_via'] ?? 'smtp')),
+                    'smtp_host' => trim((string) ($_POST['smtp_host'] ?? '')),
+                    'smtp_port' => trim((string) ($_POST['smtp_port'] ?? '587')),
+                    'smtp_username' => trim((string) ($_POST['smtp_username'] ?? '')),
+                    'smtp_encryption' => trim((string) ($_POST['smtp_encryption'] ?? 'tls')),
+                    'smtp_from' => trim((string) ($_POST['smtp_from'] ?? '')),
+                    'install_discord_url' => trim((string) ($_POST['install_discord_url'] ?? '')),
+                    'install_slack_url' => trim((string) ($_POST['install_slack_url'] ?? '')),
+                    'install_ntfy_topic' => trim((string) ($_POST['install_ntfy_topic'] ?? '')),
                 ];
 
                 try {
@@ -285,11 +294,19 @@ class InstallerController
                                 $data['public_path_suffix'] ?? ''
                             ),
                         ];
+                        $mailGate = \SimpleKuma\Notify\MailCapability::installGate($_POST);
+                        if ($mailGate['error'] !== null) {
+                            $errors = ['mail' => $mailGate['error']];
+                            $validator->closeConnection();
+                            $this->renderDatabaseView($data, $errors, false, $csrfError);
+                            return;
+                        }
                         $_SESSION['admin_config'] = [
                             'username' => $data['admin_username'],
                             'password' => $data['admin_password'],
                             'email' => $data['admin_email'],
                         ];
+                        $_SESSION['install_mail'] = $mailGate['config'];
                         $_SESSION['database_configured'] = true;
                         $connectionSuccess = true;
                         $validator->closeConnection();
@@ -356,6 +373,8 @@ class InstallerController
             ),
             'requirementLabel' => \SimpleKuma\Database\DatabaseCompatibility::getRequirementLabel(),
             'csrfError' => $csrfError,
+            'phpMailAvailable' => \SimpleKuma\Notify\MailCapability::phpMailAvailable(),
+            'mailStatusLine' => \SimpleKuma\Notify\MailCapability::statusLine(),
         ]);
     }
 
@@ -570,9 +589,17 @@ class InstallerController
                                         }
                                         $errors[] = $roleError;
                                     } else {
+                                        $installMail = $_SESSION['install_mail'] ?? null;
+                                        if (is_array($installMail) && $installMail !== []) {
+                                            try {
+                                                \SimpleKuma\Notify\NotificationSettings::applyInstall($db, $installMail);
+                                            } catch (\Throwable $e) {
+                                                error_log('Installer: notification setup was not saved: ' . $e->getMessage());
+                                            }
+                                        }
                                         $_SESSION['admin_created'] = true;
                                         $success = true;
-                                        unset($_SESSION['admin_config']);
+                                        unset($_SESSION['admin_config'], $_SESSION['install_mail']);
                                         header('refresh:2;url=install.php?step=' . self::STEP_COMPLETE);
                                     }
                                 } else {

@@ -106,8 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $data = [
             'name' => $_POST['name'] ?? '',
-            // Traffic-source outbound postback templates removed — use campaign Custom Postbacks
-            'postback_template' => '',
+            'postback_template' => trim((string) ($_POST['postback_template'] ?? '')),
             'cost_tracking_method' => $_POST['cost_tracking_method'] ?? 'manual_token',
             'cost_param_key' => $_POST['cost_param_key'] ?? '',
             'cost_currency' => $_POST['cost_currency'] ?? '',
@@ -159,7 +158,7 @@ $db->close();
 </div>
 
 <?php if ($success): ?>
-    <div style="background: #d4edda; color: #155724; padding: 15px; border-radius: 4px; margin-bottom: 20px; border-left: 4px solid #28a745;">
+    <div style="background: var(--accent-soft); color: var(--accent-hover); padding: 15px; border-radius: 4px; margin-bottom: 20px; border-left: 4px solid var(--color-success);">
         ✅ <?= htmlspecialchars($success) ?>
     </div>
 <?php endif; ?>
@@ -264,7 +263,7 @@ $db->close();
                         <div class="mobile-traffic-source-card" style="background: var(--color-white); border: 1px solid var(--color-gray-200); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-md); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                             <!-- Header: Name -->
                             <div style="margin-bottom: var(--spacing-sm); border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: var(--spacing-xs);">
-                                <div style="font-weight: 600; font-size: 16px; color: #3d5a26;">
+                                <div style="font-weight: 600; font-size: 16px; color: var(--accent);">
                                     <?= htmlspecialchars($source['name']) ?><?= $honeycombListBadges[(int) $source['id']] ?? '' ?>
                                 </div>
                                 <div style="font-size: 11px; color: #666; margin-top: 4px;">
@@ -276,7 +275,7 @@ $db->close();
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-sm); margin-bottom: var(--spacing-sm);">
                                 <div>
                                     <div style="font-size: 11px; color: #666; margin-bottom: 4px;"><strong>Custom Params</strong></div>
-                                    <div style="font-size: 13px; color: #3d5a26; font-weight: 500;">
+                                    <div style="font-size: 13px; color: var(--accent); font-weight: 500;">
                                         <?= $tokensCount ?> <?= $tokensCount === 1 ? 'param' : 'params' ?>
                                     </div>
                                 </div>
@@ -411,7 +410,7 @@ $db->close();
                             Integrated API (Facebook / Google — or variables-only networks)
                         </option>
                     </select>
-                    <div style="font-size: 12px; color: #666; margin-top: 4px; padding: 12px; background: #f9f9f9; border-radius: 4px; border-left: 3px solid #3d5a26;">
+                    <div style="font-size: 12px; color: #666; margin-top: 4px; padding: 12px; background: #f9f9f9; border-radius: 4px; border-left: 3px solid var(--accent);">
                         <strong>Manual Token:</strong> Cost passed as URL parameter (e.g., ?cost=10.50). Best for custom networks — campaigns work either way.<br>
                         <strong>Integrated API:</strong> Live cost sync for Facebook and Google/YouTube (Settings → API Cost Updates). For other networks this is variables only until cost API ships — you can still create campaigns and keep cost manual.
                     </div>
@@ -468,6 +467,19 @@ $db->close();
                             </select>
                             <div style="font-size: 12px; color: #666; margin-top: 4px;">Select the currency for cost tracking</div>
                         </div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 24px;">
+                    <label style="display: block; font-weight: 600; margin-bottom: 8px;" for="postback_template">Conversion postback URL</label>
+                    <textarea name="postback_template" id="postback_template" rows="3"
+                              placeholder="Optional. Leave blank if this network does not take a conversion postback."
+                              style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px; font-size: 13px;"><?= htmlspecialchars((string) ($editSource['postback_template'] ?? $_POST['postback_template'] ?? '')) ?></textarea>
+                    <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                        RollerAds does not offer a spend API. Cost stays the <code>cost</code> parameter on the click.
+                        Their conversion postback is generated under Campaigns → Tracking. Replace
+                        <code>YOUR_ACCOUNT_NUMBER</code> and <code>YOUR_TRACKING_KEY</code> with that URL’s values.
+                        Kuma sends their click id, the payout, and goal 1. The call is skipped until those two placeholders are replaced.
                     </div>
                 </div>
                 
@@ -581,7 +593,7 @@ $db->close();
                                 <input type="text" class="ts-url-append-display" 
                                        value="<?= htmlspecialchars($urlAppend) ?>"
                                        readonly
-                                       style="width: 100%; padding: 8px; background: #f9f9f9; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; font-family: monospace; color: #3d5a26;"
+                                       style="width: 100%; padding: 8px; background: #f9f9f9; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; font-family: monospace; color: var(--accent);"
                                        aria-label="URL append preview">
                             </div>
                             <div style="display: flex; gap: 8px; justify-content: center;">
@@ -694,7 +706,7 @@ $db->close();
                 <div>
                     <input type="text" class="ts-url-append-display" 
                            readonly
-                           style="width: 100%; padding: 8px; background: #f9f9f9; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; font-family: monospace; color: #3d5a26;"
+                           style="width: 100%; padding: 8px; background: #f9f9f9; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; font-family: monospace; color: var(--accent);"
                            aria-label="URL append preview">
                 </div>
                 <div style="display: flex; gap: 8px; justify-content: center;">
@@ -818,6 +830,10 @@ $db->close();
                 document.querySelector('select[name="cost_tracking_method"]').value = template.cost_tracking_method || 'manual_token';
             }
             document.querySelector('input[name="cost_param_key"]').value = template.cost_param_key || '';
+            const postbackField = document.getElementById('postback_template');
+            if (postbackField) {
+                postbackField.value = template.postback_template || '';
+            }
             const currencySelect = document.querySelector('select[name="cost_currency"]');
             if (currencySelect) {
                 currencySelect.value = template.cost_currency || 'USD';
@@ -876,7 +892,7 @@ $db->close();
                         <input type="text" class="ts-url-append-display" 
                                value="${urlAppend}"
                                readonly
-                               style="width: 100%; padding: 8px; background: #f9f9f9; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; font-family: monospace; color: #3d5a26;"
+                               style="width: 100%; padding: 8px; background: #f9f9f9; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; font-family: monospace; color: var(--accent);"
                                aria-label="URL append preview">
                     </div>
                     <div style="display: flex; gap: 8px; justify-content: center;">

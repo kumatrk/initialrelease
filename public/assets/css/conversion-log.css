@@ -5,7 +5,7 @@
 .conversion-log-table-wrapper {
     overflow-x: auto;
     max-width: 100%;
-    border: 1px solid #d8e0d0;
+    border: 1px solid var(--border-color);
     border-radius: 6px;
     background: #fff;
 }
@@ -38,8 +38,8 @@
 
 .conversion-log-table tbody td {
     padding: 8px 12px;
-    border-right: 1px solid #e8ece4;
-    border-bottom: 1px solid #e8ece4;
+    border-right: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
     vertical-align: middle;
     max-width: 220px;
     overflow: hidden;
@@ -79,7 +79,7 @@
 
 .conversion-log-table .conversion-revenue {
     font-weight: 700;
-    color: #2e7d32;
+    color: var(--accent-hover);
 }
 
 .conversion-log-table .click-id-row {
@@ -88,7 +88,7 @@
 }
 
 .conversion-log-card .card-header {
-    border-bottom: 1px solid #e8ece4;
+    border-bottom: 1px solid var(--border-color);
 }
 
 .badge-warning {
@@ -97,8 +97,8 @@
 }
 
 .badge-success {
-    background: #d4edda;
-    color: #155724;
+    background: var(--accent-soft);
+    color: var(--accent-hover);
 }
 
 .badge-danger {

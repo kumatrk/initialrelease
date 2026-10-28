@@ -223,7 +223,8 @@ class TrafficSourceTemplates
                 'cost_param_key' => 'cost',
                 'cost_currency' => 'USD',
                 'cost_tier' => TrafficSourceCostStatus::TIER_MANUAL_URL,
-                'blurb' => 'Push and pop traffic tokens',
+                'blurb' => 'Push and pop tokens, plus a conversion postback',
+                'postback_template' => 'https://trk.roller.ad/conversion/aid/YOUR_ACCOUNT_NUMBER/YOUR_TRACKING_KEY?click_id={ts:RollerAds:click_id}&payout={payout}&goal=1',
                 'tokens' => [
                     self::tok('Target/Keyword', 'zone_id', '{zoneId}'),
                     self::tok('Cost', 'cost', '{cost}'),
@@ -341,11 +342,14 @@ class TrafficSourceTemplates
             ],
             'newsbreak' => [
                 'name' => 'NewsBreak',
+                'provider_key' => 'newsbreak',
                 'cost_tracking_method' => 'integrated_api',
                 'cost_param_key' => '',
                 'cost_currency' => 'USD',
-                'cost_tier' => TrafficSourceCostStatus::TIER_VARIABLES_ONLY,
-                'blurb' => 'NewsBreak Ads — API cost sync coming soon',
+                'cost_tier' => TrafficSourceCostStatus::TIER_LIVE_API,
+                'blurb' => 'NewsBreak Ads — hourly API cost + conversion postback',
+                // event_type must match Tools → Event Management (edit if you use another event).
+                'postback_template' => 'https://business.newsbreak.com/tracking/attribute?callback={ts:NewsBreak:click_id}&event_type=complete_payment&nb_value={payout}',
                 'tokens' => [
                     self::tok('Target/Keyword', 'creative_name', '__CREATIVE_NAME__'),
                     self::tok('External ID', 'click_id', '__CALLBACK_PARAM__'),
@@ -366,8 +370,8 @@ class TrafficSourceTemplates
         return [
             [
                 'title' => 'Live API cost (built-in)',
-                'description' => 'Facebook and Google/YouTube cost sync is built into Kuma (Settings → Integrations).',
-                'template_keys' => ['facebook', 'google', 'youtube'],
+                'description' => 'Facebook and Google/YouTube cost sync under Settings → Integrations. NewsBreak uses an Access Token under Settings → API Cost Updates (hourly report + conversion postback).',
+                'template_keys' => ['facebook', 'google', 'youtube', 'newsbreak'],
             ],
             [
                 'title' => 'Honeycomb live API cost',
@@ -382,7 +386,7 @@ class TrafficSourceTemplates
             [
                 'title' => 'API integrations — cost sync coming soon',
                 'description' => 'Token maps for API-based networks. Clicks and breakdowns work; automatic cost pull is not built in yet (report cost may stay at zero).',
-                'template_keys' => ['bing', 'rumble', 'outbrain', 'newsbreak'],
+                'template_keys' => ['bing', 'rumble', 'outbrain'],
                 'warning' => true,
             ],
         ];

@@ -12,6 +12,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../config/config.php';
 
 use SimpleKuma\Database\DbTimezone;
+use SimpleKuma\Tracking\ConversionPostbackParams;
 use SimpleKuma\Tracking\ConversionTracker;
 
 $params = array_merge($_GET, $_POST);
@@ -61,7 +62,7 @@ if ($db->connect_error) {
 DbTimezone::init($db);
 
 $tracker = new ConversionTracker($db);
-$result = $tracker->trackConversion($clickId, [
+$result = $tracker->trackConversion($clickId, array_merge([
     'source' => 's2s',
     'txid' => $txid,
     'event_id' => $eventId,
@@ -72,7 +73,7 @@ $result = $tracker->trackConversion($clickId, [
     'et' => $et,
     'event_type' => $params['event_type'] ?? null,
     'event' => $params['event'] ?? null,
-]);
+], ConversionPostbackParams::extractExtras($params)));
 
 $db->close();
 

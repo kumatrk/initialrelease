@@ -30,6 +30,13 @@ try {
     $gaStats = null;
 }
 
+$apiFailures = null;
+try {
+    $apiFailures = \SimpleKuma\Support\ApiFailureLog::recent($db, 40);
+} catch (Throwable $e) {
+    $apiFailures = null;
+}
+
 $fbActive = 0;
 foreach ($allFacebookMarketingIntegrations ?? [] as $fm) {
     if (($fm['status'] ?? '') === 'active') {
@@ -231,6 +238,58 @@ if ($fbToday === $gaToday) {
                 </div>
             </div>
         </div>
+
+        <section class="api-failure-log" id="api-failure-log">
+            <h3 class="api-failure-log__title">Recent API failures</h3>
+            <p class="api-failure-log__hint">Copy a row when you report a problem. The line has the time, which API, what it was doing, the HTTP code, and the vendor message. Tokens are not stored. The same failure is kept once every 15 minutes, and rows older than 14 days are dropped.</p>
+            <?php if ($apiFailures === null): ?>
+                <p class="api-usage-provider__empty">Failure log is not available yet. Use Settings → Updates → Update database, then refresh.</p>
+            <?php elseif ($apiFailures === []): ?>
+                <p class="api-usage-provider__empty">No API failures in the last 14 days.</p>
+            <?php else: ?>
+                <div class="api-failure-log__table-wrap">
+                    <table class="api-failure-log__table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>API</th>
+                                <th>What it was doing</th>
+                                <th>Code</th>
+                                <th>Message</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach ($apiFailures as $fail): ?>
+                            <?php
+                            $copyParts = [
+                                (string) $fail['called_at'],
+                                (string) $fail['label'],
+                            ];
+                            if (($fail['source'] ?? '') !== '') {
+                                $copyParts[] = (string) $fail['source'];
+                            }
+                            $copyParts[] = (string) $fail['action'];
+                            if (!empty($fail['http_code'])) {
+                                $copyParts[] = 'HTTP ' . (int) $fail['http_code'];
+                            }
+                            $copyParts[] = (string) $fail['message'];
+                            $copyLine = implode(' | ', $copyParts);
+                            ?>
+                            <tr>
+                                <td class="api-failure-log__time"><?= htmlspecialchars((string) $fail['called_at']) ?></td>
+                                <td><?= htmlspecialchars((string) $fail['label']) ?><?php if (($fail['source'] ?? '') !== ''): ?><span class="api-failure-log__source"><?= htmlspecialchars((string) $fail['source']) ?></span><?php endif; ?></td>
+                                <td><?= htmlspecialchars((string) $fail['action']) ?></td>
+                                <td><?= !empty($fail['http_code']) ? (int) $fail['http_code'] : '—' ?></td>
+                                <td class="api-failure-log__message"><?= htmlspecialchars((string) $fail['message']) ?></td>
+                                <td><button type="button" class="btn btn-sm btn-secondary api-failure-copy" data-copy="<?= htmlspecialchars($copyLine, ENT_QUOTES) ?>">Copy</button></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
+        </section>
     </div>
 </div>
 
@@ -377,6 +436,34 @@ if ($fbToday === $gaToday) {
     });
     document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape' && !modal.hidden) closeModal();
+    });
+})();
+</script>
+<script>
+(function () {
+    document.querySelectorAll('.api-failure-copy').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var text = btn.getAttribute('data-copy') || '';
+            var done = function () {
+                var prev = btn.textContent;
+                btn.textContent = 'Copied';
+                window.setTimeout(function () { btn.textContent = prev; }, 1500);
+            };
+            var fallback = function () {
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                ta.setAttribute('readonly', 'readonly');
+                document.body.appendChild(ta);
+                ta.select();
+                try { document.execCommand('copy'); done(); } catch (e) {}
+                ta.remove();
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(done).catch(fallback);
+            } else {
+                fallback();
+            }
+        });
     });
 })();
 </script>

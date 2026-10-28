@@ -17,7 +17,7 @@ $gaCost = $editingGoogleAdsCostIntegration ?? [];
                     Pulls campaign spend from the Google Ads API (<code>metrics.cost_micros</code>) hourly.
                     Ensure traffic sources capture <strong>{CampaignId}</strong> as <code>campid</code> so costs match clicks.
                     Conversion reporting stays on <strong>CSV / Data Manager</strong> under
-                    <a href="?page=settings&tab=integrations" style="color: #3d5a26; font-weight: 600;">Integrations</a>
+                    <a href="?page=settings&tab=integrations" style="color: var(--accent); font-weight: 600;">Integrations</a>
                     (same integration row; a conversion key is auto-created when you add cost credentials here).
                 </p>
             </div>
@@ -66,12 +66,12 @@ $gaCost = $editingGoogleAdsCostIntegration ?? [];
                                         <?= !empty($integration['customer_id']) ? htmlspecialchars($integration['customer_id']) : '<span style="color:#999;">—</span>' ?>
                                     </td>
                                     <td style="padding: 12px;">
-                                        <span style="display: inline-block; padding: 4px 10px; background: <?= $costReady ? '#d4edda' : '#fff3cd' ?>; color: <?= $costReady ? '#155724' : '#856404' ?>; border-radius: 12px; font-size: 12px; font-weight: 500;">
+                                        <span style="display: inline-block; padding: 4px 10px; background: <?= $costReady ? 'var(--accent-soft)' : '#fff3cd' ?>; color: <?= $costReady ? 'var(--accent-hover)' : '#856404' ?>; border-radius: 12px; font-size: 12px; font-weight: 500;">
                                             <?= $costReady ? 'Ready' : 'Incomplete' ?>
                                         </span>
                                     </td>
                                     <td style="padding: 12px;">
-                                        <span style="display: inline-block; padding: 4px 10px; background: <?= ($integration['status'] ?? 'active') === 'active' ? '#d4edda' : '#fff3cd' ?>; color: <?= ($integration['status'] ?? 'active') === 'active' ? '#155724' : '#856404' ?>; border-radius: 12px; font-size: 12px; font-weight: 500; text-transform: capitalize;">
+                                        <span style="display: inline-block; padding: 4px 10px; background: <?= ($integration['status'] ?? 'active') === 'active' ? 'var(--accent-soft)' : '#fff3cd' ?>; color: <?= ($integration['status'] ?? 'active') === 'active' ? 'var(--accent-hover)' : '#856404' ?>; border-radius: 12px; font-size: 12px; font-weight: 500; text-transform: capitalize;">
                                             <?= htmlspecialchars($integration['status'] ?? 'active') ?>
                                         </span>
                                     </td>

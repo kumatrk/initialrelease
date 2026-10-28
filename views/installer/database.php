@@ -531,7 +531,64 @@
                         <?php if (isset($errors['admin_email'])): ?>
                             <div class="form-error">⚠ <?= htmlspecialchars($errors['admin_email']) ?></div>
                         <?php endif; ?>
+                        <div class="form-help"><?= htmlspecialchars($mailStatusLine ?? '') ?></div>
+                        <?php if (isset($errors['mail'])): ?>
+                            <div class="form-error">⚠ <?= htmlspecialchars($errors['mail']) ?></div>
+                        <?php endif; ?>
                     </div>
+
+                    <?php if (empty($phpMailAvailable)): ?>
+                    <div class="form-group">
+                        <label class="form-label">How should password reset links be sent? <span class="required">*</span></label>
+                        <?php $installResetVia = (string) ($data['install_reset_via'] ?? 'smtp'); ?>
+                        <label style="display:block; margin: 6px 0;"><input type="radio" name="install_reset_via" value="smtp" <?= $installResetVia === 'smtp' ? 'checked' : '' ?>> SMTP email</label>
+                        <label style="display:block; margin: 6px 0;"><input type="radio" name="install_reset_via" value="discord" <?= $installResetVia === 'discord' ? 'checked' : '' ?>> Discord webhook</label>
+                        <label style="display:block; margin: 6px 0;"><input type="radio" name="install_reset_via" value="slack" <?= $installResetVia === 'slack' ? 'checked' : '' ?>> Slack webhook</label>
+                        <label style="display:block; margin: 6px 0;"><input type="radio" name="install_reset_via" value="ntfy" <?= $installResetVia === 'ntfy' ? 'checked' : '' ?>> ntfy topic</label>
+                        <div class="form-help">This server cannot send mail on its own. Install continues only after SMTP connects, or the webhook accepts a test message. Telegram can be added later under Settings, Account.</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="smtp_host">SMTP host</label>
+                        <input type="text" id="smtp_host" name="smtp_host" class="form-input" value="<?= htmlspecialchars((string) ($data['smtp_host'] ?? '')) ?>" placeholder="smtp.example.com" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="smtp_port">SMTP port</label>
+                        <input type="number" id="smtp_port" name="smtp_port" class="form-input" value="<?= htmlspecialchars((string) ($data['smtp_port'] ?? '587')) ?>">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="smtp_encryption">Encryption</label>
+                        <select id="smtp_encryption" name="smtp_encryption" class="form-input">
+                            <?php $smtpEncryption = (string) ($data['smtp_encryption'] ?? 'tls'); ?>
+                            <option value="tls" <?= $smtpEncryption === 'tls' ? 'selected' : '' ?>>TLS</option>
+                            <option value="ssl" <?= $smtpEncryption === 'ssl' ? 'selected' : '' ?>>SSL</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="smtp_username">SMTP username</label>
+                        <input type="text" id="smtp_username" name="smtp_username" class="form-input" value="<?= htmlspecialchars((string) ($data['smtp_username'] ?? '')) ?>" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="smtp_password">SMTP password</label>
+                        <input type="password" id="smtp_password" name="smtp_password" class="form-input" value="" autocomplete="new-password">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="smtp_from">From address</label>
+                        <input type="email" id="smtp_from" name="smtp_from" class="form-input" value="<?= htmlspecialchars((string) ($data['smtp_from'] ?? '')) ?>" placeholder="noreply@example.com">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="install_discord_url">Discord webhook URL</label>
+                        <input type="url" id="install_discord_url" name="install_discord_url" class="form-input" value="<?= htmlspecialchars((string) ($data['install_discord_url'] ?? '')) ?>" placeholder="https://discord.com/api/webhooks/…" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="install_slack_url">Slack webhook URL</label>
+                        <input type="url" id="install_slack_url" name="install_slack_url" class="form-input" value="<?= htmlspecialchars((string) ($data['install_slack_url'] ?? '')) ?>" placeholder="https://hooks.slack.com/services/…" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="install_ntfy_topic">ntfy topic</label>
+                        <input type="text" id="install_ntfy_topic" name="install_ntfy_topic" class="form-input" value="<?= htmlspecialchars((string) ($data['install_ntfy_topic'] ?? '')) ?>" placeholder="a long unguessable name" autocomplete="off">
+                        <div class="form-help">Subscribe to this topic in the ntfy app. A short or obvious name can be read by other people.</div>
+                    </div>
+                    <?php endif; ?>
 
                     <div class="form-group">
                         <label class="form-label" for="admin_password">

@@ -26,7 +26,7 @@
     font-size: 0.9375rem;
     font-weight: 700;
     color: #fff !important;
-    background: var(--color-forest, #3d5a26);
+    background: var(--color-forest, var(--accent));
     border: none;
     border-radius: 8px;
     text-decoration: none !important;
@@ -99,13 +99,13 @@
 }
 
 .campaign-preset-btn:hover {
-    border-color: var(--color-forest, #3d5a26);
-    color: var(--color-forest, #3d5a26);
+    border-color: var(--color-forest, var(--accent));
+    color: var(--color-forest, var(--accent));
 }
 
 .campaign-preset-btn.is-active {
-    background: var(--color-forest, #3d5a26);
-    border-color: var(--color-forest, #3d5a26);
+    background: var(--color-forest, var(--accent));
+    border-color: var(--color-forest, var(--accent));
     color: #fff;
     font-weight: 600;
 }
@@ -191,8 +191,8 @@
 }
 
 .campaign-filter-reset:hover {
-    border-color: var(--color-forest, #3d5a26);
-    color: var(--color-forest, #3d5a26) !important;
+    border-color: var(--color-forest, var(--accent));
+    color: var(--color-forest, var(--accent)) !important;
     text-decoration: none !important;
 }
 
@@ -248,8 +248,8 @@
 }
 
 .campaign-status-card.is-checked .campaign-status-check {
-    background: var(--color-forest, #3d5a26);
-    border-color: var(--color-forest, #3d5a26);
+    background: var(--color-forest, var(--accent));
+    border-color: var(--color-forest, var(--accent));
 }
 
 .campaign-status-card.is-checked .campaign-status-check::after {
@@ -264,7 +264,7 @@
 }
 
 .campaign-status-card:focus-within {
-    outline: 2px solid var(--color-forest, #3d5a26);
+    outline: 2px solid var(--color-forest, var(--accent));
     outline-offset: 1px;
 }
 
@@ -279,7 +279,7 @@
     font-size: 0.9375rem;
     font-weight: 700;
     color: #fff;
-    background: var(--color-forest, #3d5a26);
+    background: var(--color-forest, var(--accent));
     border: none;
     border-radius: 8px;
     cursor: pointer;
@@ -478,7 +478,7 @@
         margin: 0;
         pointer-events: auto;
         order: -1;
-        accent-color: var(--color-forest, #3d5a26);
+        accent-color: var(--color-forest, var(--accent));
         cursor: pointer;
     }
 
@@ -535,7 +535,7 @@
 
 [data-theme-base="dark"] .campaign-filter-create-mobile,
 [data-theme-base="dark"] .campaign-filter-apply {
-    background: var(--color-forest, #6abf69);
+    background: var(--color-forest, var(--accent));
     color: #1a1d21 !important;
 }
 
@@ -546,8 +546,8 @@
 }
 
 [data-theme-base="dark"] .campaign-preset-btn.is-active {
-    background: var(--color-forest, #6abf69);
-    border-color: var(--color-forest, #6abf69);
+    background: var(--color-forest, var(--accent));
+    border-color: var(--color-forest, var(--accent));
     color: #1a1d21;
 }
 
@@ -576,8 +576,8 @@
 }
 
 [data-theme-base="dark"] .campaign-status-card.is-checked .campaign-status-check {
-    background: var(--color-forest, #6abf69);
-    border-color: var(--color-forest, #6abf69);
+    background: var(--color-forest, var(--accent));
+    border-color: var(--color-forest, var(--accent));
 }
 
 [data-theme-base="dark"] .campaign-status-card.is-checked .campaign-status-check::after {

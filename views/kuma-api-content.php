@@ -19,7 +19,7 @@ $apiTableMissing = !$apiKeyEntity->tableExists();
 
 <div class="kuma-api-page">
 <?php if (!empty($success)): ?>
-<div class="alert alert-success" style="margin-bottom: 20px; padding: 12px 16px; background: #d4edda; color: #155724; border-radius: 6px;">
+<div class="alert alert-success" style="margin-bottom: 20px; padding: 12px 16px; background: var(--accent-soft); color: var(--accent-hover); border-radius: 6px;">
     <?= htmlspecialchars($success) ?>
 </div>
 <?php endif; ?>
@@ -295,6 +295,7 @@ $apiTableMissing = !$apiKeyEntity->tableExists();
 
         <section id="api-endpoints" class="api-doc-section">
             <h3>Endpoint reference</h3>
+            <div class="api-endpoint-table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;">
             <table class="table api-endpoint-table">
                 <thead>
                     <tr><th>Method</th><th>Path</th><th>Permission</th><th>Description</th></tr>
@@ -310,6 +311,7 @@ $apiTableMissing = !$apiKeyEntity->tableExists();
                     <?php endforeach; ?>
                 </tbody>
             </table>
+            </div>
         </section>
 
         <section id="api-examples" class="api-doc-section">

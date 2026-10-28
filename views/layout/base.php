@@ -17,6 +17,7 @@ $themeClientConfig = ThemeRegistry::toClientConfig();
 $themeCsrfToken = Csrf::ensureToken();
 $sidebarCollapsed = !empty($GLOBALS['sidebarCollapsed']);
 $dashboardChartsHidden = !empty($GLOBALS['dashboardChartsHidden']);
+$dashboardPeriodHidden = !array_key_exists('dashboardPeriodHidden', $GLOBALS) || !empty($GLOBALS['dashboardPeriodHidden']);
 ?>
 <!DOCTYPE html>
 <html lang="en" data-theme="<?= htmlspecialchars($userTheme) ?>" data-theme-base="<?= htmlspecialchars($themeBase) ?>"<?= $sidebarCollapsed ? ' class="sidebar-collapsed"' : '' ?>>
@@ -40,6 +41,12 @@ $dashboardChartsHidden = !empty($GLOBALS['dashboardChartsHidden']);
     </script>
     <title><?= htmlspecialchars($pageTitle ?? 'Simple KUMA') ?> - Simple KUMA</title>
     <link rel="icon" type="image/x-icon" href="<?= ASSETS_BASE_URL ?>/assets/images/favicon.ico">
+    <link rel="manifest" href="<?= ASSETS_BASE_URL ?>/manifest.webmanifest">
+    <meta name="theme-color" content="#2563eb">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="KUMA">
+    <link rel="apple-touch-icon" href="<?= ASSETS_BASE_URL ?>/assets/images/pwa-192.png">
     <?php
     // Prefer shared helper (bootstrap_web_paths.php); keep local fallback for safety.
     $skCssHref = static function (string $relativeUnderPublic): string {
@@ -80,7 +87,9 @@ $dashboardChartsHidden = !empty($GLOBALS['dashboardChartsHidden']);
     <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/mobile-billing.css')) ?>">
     <!-- MOBILE SETTINGS STYLES - To remove mobile styles, delete the line below and delete public/assets/css/mobile-settings.css -->
     <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/mobile-settings.css')) ?>">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/mobile-layout-gaps.css')) ?>">
     <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/settings-layout.css')) ?>">
+    <link rel="stylesheet" href="<?= htmlspecialchars($skCssHref('assets/css/pwa.css')) ?>">
 </head>
 <body>
     <div class="app-wrapper">
@@ -351,21 +360,30 @@ $dashboardChartsHidden = !empty($GLOBALS['dashboardChartsHidden']);
                 </div>
                 <div class="navbar-right">
                     <div class="navbar-user">
-                        <span><?= htmlspecialchars($_SESSION['username'] ?? 'Admin') ?></span>
-                        <div class="navbar-avatar">
+                        <span class="navbar-username"><?= htmlspecialchars($_SESSION['username'] ?? 'Admin') ?></span>
+                        <div class="navbar-avatar" aria-hidden="true">
                             <?= strtoupper(substr($_SESSION['username'] ?? 'A', 0, 1)) ?>
                         </div>
+                        <button type="button" id="pwa-install-btn" class="pwa-install-btn" hidden aria-expanded="false" aria-controls="pwa-install-tip">
+                            <span class="pwa-install-label-full">Install app</span>
+                            <span class="pwa-install-label-short">Install</span>
+                        </button>
                         <select id="theme-select" class="theme-select" aria-label="Theme">
                             <?php foreach ($themeOptions as $themeId => $themeLabel): ?>
                             <option value="<?= htmlspecialchars($themeId) ?>"<?= $userTheme === $themeId ? ' selected' : '' ?>><?= htmlspecialchars($themeLabel) ?></option>
                             <?php endforeach; ?>
                         </select>
                         <a href="<?= APP_BASE_URL ?>/logout.php" class="navbar-logout-btn">
-                            Logout
+                            <span class="navbar-logout-full">Logout</span>
+                            <span class="navbar-logout-short">Out</span>
                         </a>
                     </div>
                 </div>
             </nav>
+            <div id="pwa-install-tip" class="pwa-install-tip" hidden role="status">
+                <span class="pwa-install-tip-ios">iPhone can’t install from this button. In <strong>Safari</strong>, look at the <strong>bottom toolbar</strong> for the Share icon (square with an arrow up) — tap it, then scroll and tap <strong>Add to Home Screen</strong>. Chrome/in-app browsers on iPhone usually don’t show that option.</span>
+                <span class="pwa-install-tip-other">Use your browser menu, then <strong>Install app</strong> or <strong>Add to Home screen</strong>.</span>
+            </div>
             
             <!-- Update Notification Banner (cache-only on render; GitHub refresh is async) -->
             <?php
@@ -842,11 +860,42 @@ $dashboardChartsHidden = !empty($GLOBALS['dashboardChartsHidden']);
         apiUrl: <?= json_encode(APP_BASE_URL . '/api-user-ui-prefs.php', JSON_THROW_ON_ERROR) ?>,
         csrfToken: <?= json_encode($themeCsrfToken, JSON_THROW_ON_ERROR) ?>,
         sidebarCollapsed: <?= $sidebarCollapsed ? 'true' : 'false' ?>,
-        dashboardChartsHidden: <?= $dashboardChartsHidden ? 'true' : 'false' ?>
+        dashboardChartsHidden: <?= $dashboardChartsHidden ? 'true' : 'false' ?>,
+        dashboardPeriodHidden: <?= $dashboardPeriodHidden ? 'true' : 'false' ?>,
+        reportColumns: <?= json_encode(
+            \SimpleKuma\Stats\ReportColumnPrefs::clientPayload(
+                is_string($GLOBALS['currentUser']['report_columns_json'] ?? null)
+                    ? $GLOBALS['currentUser']['report_columns_json']
+                    : null
+            ),
+            JSON_THROW_ON_ERROR
+        ) ?>
+    };
+    </script>
+    <script>
+    <?php
+    $kumaPwaVapid = '';
+    try {
+        $kumaPwaDb = $GLOBALS['db'] ?? ($db ?? null);
+        if ($kumaPwaDb instanceof \mysqli) {
+            $kumaPwaVapid = \SimpleKuma\Notify\WebPushSender::publicKey(new \SimpleKuma\Settings\SettingsManager($kumaPwaDb));
+        }
+    } catch (\Throwable $e) {
+        $kumaPwaVapid = '';
+    }
+    ?>
+    window.KUMA_PWA = {
+        swUrl: <?= json_encode(rtrim(ASSETS_BASE_URL, '/') . '/sw.js', JSON_THROW_ON_ERROR) ?>,
+        scope: <?= json_encode(rtrim(ASSETS_BASE_URL, '/') . '/', JSON_THROW_ON_ERROR) ?>,
+        pushApiUrl: <?= json_encode(rtrim(ASSETS_BASE_URL, '/') . '/api-push-subscription.php', JSON_THROW_ON_ERROR) ?>,
+        vapidPublicKey: <?= json_encode($kumaPwaVapid, JSON_THROW_ON_ERROR) ?>,
+        csrfToken: <?= json_encode(\SimpleKuma\Auth\Csrf::ensureToken(), JSON_THROW_ON_ERROR) ?>,
+        csrfField: 'app_csrf'
     };
     </script>
     <script src="<?= ASSETS_BASE_URL ?>/assets/js/theme-switcher.js"></script>
-    <script src="<?= ASSETS_BASE_URL ?>/assets/js/ui-prefs.js"></script>
+    <script src="<?= ASSETS_BASE_URL ?>/assets/js/ui-prefs.js?v=<?= htmlspecialchars((string)(@filemtime(__DIR__ . '/../../public/assets/js/ui-prefs.js') ?: 1)) ?>"></script>
+    <script src="<?= ASSETS_BASE_URL ?>/assets/js/pwa.js?v=<?= htmlspecialchars((string)(@filemtime(__DIR__ . '/../../public/assets/js/pwa.js') ?: 1)) ?>"></script>
 </body>
 </html>
 

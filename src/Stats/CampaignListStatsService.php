@@ -104,11 +104,13 @@ final class CampaignListStatsService
         $fbCostMap = [];
         $gaCostMap = [];
         $honeyCostMap = [];
+        $nbCostMap = [];
         if ($includeApiCosts) {
             $costMaps = $this->batchApiCosts($idsForCost, $utcFrom, $utcTo, $userTimezone);
             $fbCostMap = $costMaps['fb'];
             $gaCostMap = $costMaps['ga'];
             $honeyCostMap = $costMaps['honey'] ?? [];
+            $nbCostMap = $costMaps['newsbreak'] ?? [];
         }
 
         $out = $empty;
@@ -134,6 +136,9 @@ final class CampaignListStatsService
             }
             if (isset($honeyCostMap[$id])) {
                 $cost += (float)$honeyCostMap[$id];
+            }
+            if (isset($nbCostMap[$id])) {
+                $cost += (float)$nbCostMap[$id];
             }
             $profit = $revenue - $cost;
             $roi = $cost > 0
@@ -237,7 +242,20 @@ final class CampaignListStatsService
             error_log('CampaignListStatsService: batch Honeycomb cost error: ' . $e->getMessage());
         }
 
-        return ['fb' => $fbMap, 'ga' => $gaMap, 'honey' => $honeyMap];
+        $nbMap = [];
+        try {
+            $apiNb = (new \SimpleKuma\NewsBreak\NewsBreakCostAggregator($this->db))
+                ->getCostsByCampaignIds($campaignIds, $utcFrom, $utcTo);
+            foreach ($apiNb as $cid => $amount) {
+                if ((float)$amount > 0) {
+                    $nbMap[(int)$cid] = (float)$amount;
+                }
+            }
+        } catch (\Exception $e) {
+            error_log('CampaignListStatsService: batch NewsBreak cost error: ' . $e->getMessage());
+        }
+
+        return ['fb' => $fbMap, 'ga' => $gaMap, 'honey' => $honeyMap, 'newsbreak' => $nbMap];
     }
 
     /**

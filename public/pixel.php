@@ -11,6 +11,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../config/config.php';
 
 use SimpleKuma\Database\DbTimezone;
+use SimpleKuma\Tracking\ConversionPostbackParams;
 use SimpleKuma\Tracking\ConversionTracker;
 
 // Get parameters
@@ -44,7 +45,7 @@ DbTimezone::init($db);
 
 // Track conversion
 $tracker = new ConversionTracker($db);
-$result = $tracker->trackConversion((string)$clickId, [
+$result = $tracker->trackConversion((string)$clickId, array_merge([
     'source' => 'pixel',
     'value' => $value,
     'currency' => $currency,
@@ -52,7 +53,7 @@ $result = $tracker->trackConversion((string)$clickId, [
     'et' => $params['et'] ?? null,
     'event_type' => $params['event_type'] ?? null,
     'event' => $params['event'] ?? null,
-]);
+], ConversionPostbackParams::extractExtras($params)));
 
 $db->close();
 

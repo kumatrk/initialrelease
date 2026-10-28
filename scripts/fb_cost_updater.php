@@ -20,6 +20,8 @@ use SimpleKuma\Entity\FacebookMarketingAdAccount;
 use SimpleKuma\Facebook\FacebookTrafficSourceIdentifier;
 use SimpleKuma\Facebook\FacebookClickExtractor;
 use SimpleKuma\Facebook\FacebookInsightsClient;
+use SimpleKuma\Facebook\MetaDeliveryStore;
+use SimpleKuma\Facebook\MetaEntityStatus;
 use SimpleKuma\Facebook\FacebookApiCallTracker;
 use SimpleKuma\Entity\FacebookAdsetCampaignMap;
 use SimpleKuma\Http\ProxyHandler;
@@ -346,6 +348,8 @@ foreach ($adAccountIds as $adAccountInternalId) {
     $apiClient->setAdAccountId($apiAdAccountId);
 
     $metaCampaignIdsForAccount = [];
+    $allMappedMetaIds = [];
+    $metaStatusSynced = false;
     $metaCampaignIdByKumaCampaign = [];
     $mappedMetaCampaignTotal = 0;
     $skippedInactiveMetaCampaigns = 0;
@@ -371,6 +375,9 @@ foreach ($adAccountIds as $adAccountInternalId) {
                 continue;
             }
             $mappedMetaCampaignTotal++;
+            if (ctype_digit($metaId)) {
+                $allMappedMetaIds[$metaId] = $metaId;
+            }
             $metaEffectiveStatus = strtoupper((string)($metaRow['effective_status'] ?? ''));
             // Only include Meta-live ACTIVE campaigns in Insights scope; paused/archived Meta
             // campaigns still linked to ACTIVE tracker campaigns must not drive API traffic.
@@ -741,6 +748,7 @@ foreach ($adAccountIds as $adAccountInternalId) {
         // Use ad account timezone date for API query
         // CRITICAL: Initialize accountAdsetSpend to empty array so foreach always runs (matches test script)
         $accountAdsetSpend = [];
+        $deliveryReady = false;
 
         if ($skipInsightsBecauseMetaPaused) {
             $logger->logDetail('Skipping Insights — mapped Meta campaigns are not ACTIVE', [
@@ -770,6 +778,7 @@ foreach ($adAccountIds as $adAccountInternalId) {
                 null,
                 $useScopedMetaCampaignFetch ? $metaCampaignIdsForAccount : null
             );
+            $deliveryReady = true;
 
             $adsetCampaignMap = new FacebookAdsetCampaignMap($db);
             if ($adsetCampaignMap->tableExists()) {
@@ -817,6 +826,7 @@ foreach ($adAccountIds as $adAccountInternalId) {
                         null,
                         null
                     );
+                    $deliveryReady = true;
                     $useScopedMetaCampaignFetch = false;
                 } catch (\Exception $fallbackEx) {
                     $logger->logDetail("Account-wide fallback also failed, will use direct queries", [
@@ -837,7 +847,63 @@ foreach ($adAccountIds as $adAccountInternalId) {
             }
         }
         } // end else (!$skipInsightsBecauseMetaPaused)
-        
+
+        if ($deliveryReady) {
+            try {
+                MetaDeliveryStore::saveInsights(
+                    $db,
+                    $integrationId,
+                    $processDateForApi,
+                    'adset',
+                    $apiClient->getLastAdsetInsights()
+                );
+            } catch (\Throwable $deliveryEx) {
+                $logger->error('Meta ad set delivery snapshot was not saved', [
+                    'integration_name' => $adAccountName,
+                    'message' => $deliveryEx->getMessage(),
+                ]);
+            }
+            try {
+                $adCampaignFilter = ($useScopedMetaCampaignFetch && $metaCampaignIdsForAccount !== [])
+                    ? $metaCampaignIdsForAccount
+                    : null;
+                if ($useScopedMetaCampaignFetch && $metaCampaignIdsForAccount === []) {
+                    $adDelivery = [];
+                } else {
+                    $adDelivery = $apiClient->fetchAccountAdSpend(
+                        $apiAdAccountId,
+                        $processDateForApi,
+                        null,
+                        null,
+                        $adCampaignFilter
+                    );
+                }
+                MetaDeliveryStore::saveInsights($db, $integrationId, $processDateForApi, 'ad', $adDelivery);
+            } catch (\Throwable $deliveryEx) {
+                $logger->error('Meta ad delivery snapshot was not saved', [
+                    'integration_name' => $adAccountName,
+                    'message' => $deliveryEx->getMessage(),
+                ]);
+            }
+        }
+
+        if ($allMappedMetaIds !== [] && !$metaStatusSynced) {
+            $metaStatusSynced = true;
+            try {
+                $statusRows = $apiClient->fetchEntityStatuses($apiAdAccountId, array_values($allMappedMetaIds));
+                MetaEntityStatus::saveRows($db, $integrationId, $statusRows);
+                $logger->logDetail('Stored Meta ad and ad set status', [
+                    'integration_name' => $adAccountName,
+                    'rows' => count($statusRows),
+                ]);
+            } catch (\Throwable $statusEx) {
+                $logger->error('Meta ad status was not saved', [
+                    'integration_name' => $adAccountName,
+                    'message' => $statusEx->getMessage(),
+                ]);
+            }
+        }
+
         // SPEND-ONLY FIX: Merge adsets from clicks with adsets from account-level API (spend >= 0).
         // Include spend >= 0 (not just > 0) so we process and overwrite with 0 when API returns 0 (fixes stale cost e.g. Scale Bid Cap).
         // Also include adsets that have existing rows in adset_hourly_costs for today so we can zero them out when API returns 0.

@@ -60,6 +60,7 @@ class RequirementsChecker
         $this->checkPasswordHashing();
         $this->checkFilePermissions();
         $this->checkPhpSettings();
+        $this->checkMail();
         $this->checkCommandExecution(); // Check exec() BEFORE composer dependencies
         $this->checkComposerDependencies();
 
@@ -185,6 +186,19 @@ class RequirementsChecker
                 $this->errors[] = "Directory '{$dir}' is not writable. Please set permissions to 755 or higher";
             }
         }
+    }
+
+    /**
+     * Password reset by email needs PHP mail() or SMTP entered on the next step.
+     */
+    private function checkMail(): void
+    {
+        if (\SimpleKuma\Notify\MailCapability::phpMailAvailable()) {
+            $this->passed[] = \SimpleKuma\Notify\MailCapability::statusLine();
+            return;
+        }
+
+        $this->warnings[] = \SimpleKuma\Notify\MailCapability::statusLine();
     }
 
     /**

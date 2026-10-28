@@ -134,7 +134,7 @@ $db->close();
 </div>
 
 <?php if ($success): ?>
-<div style="background: #d4edda; color: #155724; padding: 15px; border-radius: 4px; margin-bottom: 20px; border-left: 4px solid #28a745;">
+<div style="background: var(--accent-soft); color: var(--accent-hover); padding: 15px; border-radius: 4px; margin-bottom: 20px; border-left: 4px solid var(--color-success);">
     ✅ <?= htmlspecialchars($success) ?>
 </div>
 <?php endif; ?>
@@ -303,7 +303,7 @@ $db->close();
                         <div class="mobile-offer-card" data-search="<?= htmlspecialchars($searchData, ENT_QUOTES) ?>" style="background: var(--color-white); border: 1px solid var(--color-gray-200); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-md); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                             <!-- Header: Name -->
                             <div style="margin-bottom: var(--spacing-sm); border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: var(--spacing-xs);">
-                                <div style="font-weight: 600; font-size: 16px; color: #3d5a26;">
+                                <div style="font-weight: 600; font-size: 16px; color: var(--accent);">
                                     <?= htmlspecialchars($off['name']) ?>
                                 </div>
                                 <?php if (!empty($off['tags'])): ?>
@@ -462,7 +462,7 @@ $db->close();
                         </label>
                         <select id="traffic_source_selector_for_tokens" 
                                 onchange="updateTrafficSourceTokenLabels()"
-                                style="width: 100%; padding: 6px; border: 1px solid #66bb6a; border-radius: 3px; font-size: 12px;">
+                                style="width: 100%; padding: 6px; border: 1px solid var(--accent); border-radius: 3px; font-size: 12px;">
                             <option value="">-- None selected (show generic ts_token1-ts_token20) --</option>
                             <?php
                             foreach ($allTrafficSourcesForTokens as $ts):
@@ -494,7 +494,7 @@ $db->close();
                         border: 1.5px solid #e2e8f0;
                     }
                     .token-heading--builtin, .token-heading--custom {
-                        color: #166534;
+                        color: var(--accent-hover);
                         font-size: 12px;
                         display: block;
                         margin-bottom: 8px;
@@ -537,16 +537,16 @@ $db->close();
                         transform: translateY(1px) scale(0.98) !important;
                     }
                     .custom-token-btn.token-btn--builtin, .custom-token-btn {
-                        background: #f0fdf4 !important;
-                        border-color: #86efac !important;
-                        color: #166534 !important;
+                        background: var(--accent-soft) !important;
+                        border-color: var(--accent-muted) !important;
+                        color: var(--accent-hover) !important;
                     }
                     .custom-token-btn.token-btn--builtin:hover, .custom-token-btn:hover {
-                        background: #166534 !important;
-                        border-color: #166534 !important;
+                        background: var(--accent-hover) !important;
+                        border-color: var(--accent-hover) !important;
                         color: #ffffff !important;
                         transform: translateY(-1px) !important;
-                        box-shadow: 0 3px 6px rgba(22, 101, 52, 0.25) !important;
+                        box-shadow: 0 3px 6px color-mix(in srgb, var(--accent-hover) 25%, transparent) !important;
                     }
                     .custom-token-btn.token-btn--campaign {
                         background: #eff6ff !important;
@@ -581,13 +581,13 @@ $db->close();
                         border-color: #244b2c !important;
                     }
                     [data-theme-base="dark"] .token-selector-box label, [data-theme="dark"] .token-selector-box label {
-                        color: #86efac !important;
+                        color: var(--accent-muted) !important;
                     }
                     [data-theme-base="dark"] .token-selector-box .token-selector-hint, [data-theme="dark"] .token-selector-box .token-selector-hint {
                         color: #94a3b8 !important;
                     }
                     [data-theme-base="dark"] .token-heading--builtin, [data-theme-base="dark"] .token-heading--custom, [data-theme="dark"] .token-heading--builtin, [data-theme="dark"] .token-heading--custom {
-                        color: #86efac !important;
+                        color: var(--accent-muted) !important;
                     }
                     [data-theme-base="dark"] .token-heading--campaign, [data-theme="dark"] .token-heading--campaign {
                         color: #93c5fd !important;
@@ -597,13 +597,13 @@ $db->close();
                     }
                     [data-theme-base="dark"] .custom-token-btn.token-btn--builtin, [data-theme-base="dark"] .custom-token-btn, [data-theme="dark"] .custom-token-btn.token-btn--builtin, [data-theme="dark"] .custom-token-btn {
                         background: #142e1b !important;
-                        border-color: #22c55e !important;
-                        color: #86efac !important;
+                        border-color: var(--accent) !important;
+                        color: var(--accent-muted) !important;
                         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
                     }
                     [data-theme-base="dark"] .custom-token-btn.token-btn--builtin:hover, [data-theme-base="dark"] .custom-token-btn:hover, [data-theme-base="dark"] .custom-token-btn.token-btn--builtin:hover, [data-theme-base="dark"] .custom-token-btn:hover {
-                        background: #22c55e !important;
-                        border-color: #86efac !important;
+                        background: var(--accent) !important;
+                        border-color: var(--accent-muted) !important;
                         color: #052e16 !important;
                         transform: translateY(-1px) !important;
                         box-shadow: 0 3px 8px rgba(34, 197, 94, 0.4) !important;
@@ -1153,24 +1153,24 @@ $db->close();
         </div>
         <div class="card-body">
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
-                <div style="padding: 16px; background: #f9f9f9; border-radius: 4px; border-left: 4px solid #3d5a26;">
-                    <strong style="color: #3d5a26; font-size: 16px; display: block; margin-bottom: 8px;">CPA - Cost Per Action</strong>
+                <div style="padding: 16px; background: #f9f9f9; border-radius: 4px; border-left: 4px solid var(--accent);">
+                    <strong style="color: var(--accent); font-size: 16px; display: block; margin-bottom: 8px;">CPA - Cost Per Action</strong>
                     <p style="font-size: 14px; color: #666; line-height: 1.6;">
                         Commission paid when a user completes a specific action (purchase, signup, download, etc.).
                         Most common for e-commerce and subscription offers.
                     </p>
                 </div>
 
-                <div style="padding: 16px; background: #f9f9f9; border-radius: 4px; border-left: 4px solid #3d5a26;">
-                    <strong style="color: #3d5a26; font-size: 16px; display: block; margin-bottom: 8px;">CPL - Cost Per Lead</strong>
+                <div style="padding: 16px; background: #f9f9f9; border-radius: 4px; border-left: 4px solid var(--accent);">
+                    <strong style="color: var(--accent); font-size: 16px; display: block; margin-bottom: 8px;">CPL - Cost Per Lead</strong>
                     <p style="font-size: 14px; color: #666; line-height: 1.6;">
                         Commission paid when a user submits their contact information (email, phone, form submission).
                         Common for lead generation campaigns.
                     </p>
                 </div>
 
-                <div style="padding: 16px; background: #f9f9f9; border-radius: 4px; border-left: 4px solid #3d5a26;">
-                    <strong style="color: #3d5a26; font-size: 16px; display: block; margin-bottom: 8px;">CPS - Cost Per Sale</strong>
+                <div style="padding: 16px; background: #f9f9f9; border-radius: 4px; border-left: 4px solid var(--accent);">
+                    <strong style="color: var(--accent); font-size: 16px; display: block; margin-bottom: 8px;">CPS - Cost Per Sale</strong>
                     <p style="font-size: 14px; color: #666; line-height: 1.6;">
                         Commission paid based on the sale amount, usually a percentage. 
                         Payout value represents the percentage or fixed amount per sale.
@@ -1185,7 +1185,7 @@ $db->close();
 <div id="campaigns-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(2px);">
     <div style="background: #fff; border-radius: 12px; padding: 0; max-width: 600px; width: 100%; box-shadow: 0 8px 32px rgba(0,0,0,0.2); animation: modalSlideIn 0.3s ease-out; max-height: 90vh; overflow-y: auto;">
         <!-- Header -->
-        <div style="padding: 20px 24px; border-bottom: 2px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, #3d5a26 0%, #5a7a3a 100%); border-radius: 12px 12px 0 0;">
+        <div style="padding: 20px 24px; border-bottom: 2px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, var(--accent) 0%, var(--accent-muted) 100%); border-radius: 12px 12px 0 0;">
             <h2 id="campaigns-modal-title" style="margin: 0; font-size: 20px; font-weight: 600; color: #fff;">Campaigns</h2>
             <button onclick="closeCampaignsModal()" 
                     style="background: rgba(255,255,255,0.2); border: none; color: #fff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; transition: background 0.2s;"
@@ -1230,7 +1230,7 @@ function showCampaignsModal(id, name, campaigns) {
         
         campaigns.forEach(function(campaign) {
             const statusBadge = campaign.status === 'active' 
-                ? '<span style="background: #4caf50; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600;">Active</span>'
+                ? '<span style="background: var(--accent); color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600;">Active</span>'
                 : campaign.status === 'paused'
                 ? '<span style="background: #ff9800; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600;">Paused</span>'
                 : '<span style="background: #999; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600;">' + campaign.status + '</span>';

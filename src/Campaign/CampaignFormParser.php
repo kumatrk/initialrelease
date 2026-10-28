@@ -78,7 +78,7 @@ class CampaignFormParser
             'custom_tokens' => self::parseCustomTokens($post),
             'redirect_rules' => self::parseRedirectRules($post),
         ];
-        $data = array_merge($data, InactiveRedirectParser::fromInput($post));
+        $data = array_merge($data, InactiveRedirectParser::fromInput($post), \SimpleKuma\Tracking\BotRoute::fromInput($post), \SimpleKuma\Guard\GrizzlyGuardCampaign::fromInput($post));
         if (!$isCreate && $origCampaign && !empty($origCampaign['id'])) {
             $data['_editing_campaign_id'] = (int) $origCampaign['id'];
         }
@@ -197,7 +197,7 @@ class CampaignFormParser
             'custom_tokens' => $customTokens,
             'redirect_rules' => $redirectRules,
         ];
-        $data = array_merge($data, InactiveRedirectParser::fromInput($input));
+        $data = array_merge($data, InactiveRedirectParser::fromInput($input), \SimpleKuma\Tracking\BotRoute::fromInput($input), \SimpleKuma\Guard\GrizzlyGuardCampaign::fromInput($input));
         if (!$isCreate && $origCampaign && !empty($origCampaign['id'])) {
             $data['_editing_campaign_id'] = (int) $origCampaign['id'];
         }
@@ -357,7 +357,190 @@ class CampaignFormParser
             ];
         }
 
+        if ($flowType === 'DeepFunnel') {
+            return self::parseDeepFunnelRotation($post, $offers);
+        }
+
         return $offers;
+    }
+
+    /**
+     * Deep Funnel: levels from deep_funnel_json (addon UI) + unified offers with slots + opaque link_keys.
+     *
+     * @param list<array<string,mixed>> $offers
+     * @return array{deep_funnel: array{levels: list<array>, offers: list<array>, links?: list<array{from: string, to: string}>}}
+     */
+    public static function parseDeepFunnelRotation(array $post, array $offers): array
+    {
+        $usedKeys = [];
+        $levels = [];
+        $raw = $post['deep_funnel_json'] ?? '';
+        if (is_string($raw) && $raw !== '') {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded) && isset($decoded['levels']) && is_array($decoded['levels'])) {
+                foreach (array_values($decoded['levels']) as $levelIdx => $level) {
+                    if ($levelIdx >= 5) {
+                        break;
+                    }
+                    $items = [];
+                    foreach (array_values($level['items'] ?? []) as $itemIdx => $item) {
+                        if ($itemIdx >= 5 || !is_array($item)) {
+                            break;
+                        }
+                        $id = (int) ($item['id'] ?? 0);
+                        if ($id < 1) {
+                            continue;
+                        }
+                        $slot = isset($item['slot']) ? (int) $item['slot'] : ($itemIdx + 1);
+                        $slot = max(1, min(5, $slot));
+                        $linkKey = self::uniqueDeepFunnelLinkKey(
+                            isset($item['link_key']) ? (string) $item['link_key'] : null,
+                            $usedKeys
+                        );
+                        $items[] = [
+                            'type' => 'landing_page',
+                            'id' => $id,
+                            'weight' => (int) ($item['weight'] ?? 0),
+                            'slot' => $slot,
+                            'link_key' => $linkKey,
+                            'enabled' => !isset($item['enabled']) || $item['enabled'] !== false,
+                        ];
+                    }
+                    if ($items !== []) {
+                        $levelKey = self::uniqueDeepFunnelLinkKey(
+                            isset($level['level_key']) ? (string) $level['level_key'] : null,
+                            $usedKeys
+                        );
+                        $levels[] = [
+                            'level_key' => $levelKey,
+                            'items' => $items,
+                        ];
+                    }
+                }
+            }
+        }
+
+        // Offer link_keys may also be posted inside deep_funnel_json.offers
+        $jsonOffers = [];
+        if (is_string($raw) && $raw !== '') {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded) && isset($decoded['offers']) && is_array($decoded['offers'])) {
+                foreach ($decoded['offers'] as $jo) {
+                    if (!is_array($jo)) {
+                        continue;
+                    }
+                    $oid = (int) ($jo['id'] ?? 0);
+                    if ($oid > 0 && !empty($jo['link_key'])) {
+                        $jsonOffers[$oid] = (string) $jo['link_key'];
+                    }
+                }
+            }
+        }
+
+        $offersWithSlots = [];
+        foreach (array_values($offers) as $idx => $offer) {
+            $offer['slot'] = isset($offer['slot']) ? (int) $offer['slot'] : ($idx + 1);
+            $oid = (int) ($offer['id'] ?? 0);
+            $fromJson = $oid > 0 && isset($jsonOffers[$oid]) ? $jsonOffers[$oid] : null;
+            $fromOffer = isset($offer['link_key']) ? (string) $offer['link_key'] : null;
+            $offer['link_key'] = self::uniqueDeepFunnelLinkKey($fromJson ?? $fromOffer, $usedKeys);
+            $offersWithSlots[] = $offer;
+        }
+
+        $deepFunnel = [
+            'levels' => $levels,
+            'offers' => $offersWithSlots,
+        ];
+        $links = self::parseDeepFunnelLinks($raw, $levels, $offersWithSlots);
+        if ($links !== []) {
+            $deepFunnel['links'] = $links;
+        }
+
+        return [
+            'deep_funnel' => $deepFunnel,
+        ];
+    }
+
+    /**
+     * Editor arrows. Hop tracking does not read these; it follows the pasted snippet.
+     *
+     * @param list<array<string, mixed>> $levels
+     * @param list<array<string, mixed>> $offers
+     * @return list<array{from: string, to: string}>
+     */
+    private static function parseDeepFunnelLinks(mixed $raw, array $levels, array $offers): array
+    {
+        if (!is_string($raw) || $raw === '') {
+            return [];
+        }
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded) || !isset($decoded['links']) || !is_array($decoded['links'])) {
+            return [];
+        }
+
+        $fromOk = [];
+        $destOk = ['offer_rotate' => true];
+        foreach ($levels as $level) {
+            $levelKey = (string) ($level['level_key'] ?? '');
+            if ($levelKey !== '') {
+                $destOk['level:' . $levelKey] = true;
+            }
+            foreach ($level['items'] ?? [] as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                $key = (string) ($item['link_key'] ?? '');
+                if ($key !== '' && (int) ($item['id'] ?? 0) > 0) {
+                    $fromOk[$key] = true;
+                    $destOk['lp:' . $key] = true;
+                }
+            }
+        }
+        foreach ($offers as $offer) {
+            if (!is_array($offer) || ($offer['enabled'] ?? true) === false) {
+                continue;
+            }
+            $key = (string) ($offer['link_key'] ?? '');
+            if ($key !== '') {
+                $destOk['offer:' . $key] = true;
+            }
+        }
+
+        $links = [];
+        $seen = [];
+        foreach ($decoded['links'] as $link) {
+            if (!is_array($link) || count($links) >= 50) {
+                continue;
+            }
+            $from = strtolower(trim((string) ($link['from'] ?? '')));
+            $to = trim((string) ($link['to'] ?? ''));
+            if (!isset($fromOk[$from]) || !isset($destOk[$to])) {
+                continue;
+            }
+            $id = $from . '>' . $to;
+            if (isset($seen[$id])) {
+                continue;
+            }
+            $seen[$id] = true;
+            $links[] = ['from' => $from, 'to' => $to];
+        }
+
+        return $links;
+    }
+
+    /**
+     * @param array<string, true> $usedKeys
+     */
+    private static function uniqueDeepFunnelLinkKey(?string $preferred, array &$usedKeys): string
+    {
+        $key = \SimpleKuma\Tracking\FunnelRotation::normalizeLinkKey($preferred);
+        $guard = 0;
+        while (isset($usedKeys[$key]) && $guard < 20) {
+            $key = \SimpleKuma\Tracking\FunnelRotation::generateLinkKey();
+            $guard++;
+        }
+        $usedKeys[$key] = true;
+        return $key;
     }
 
     private static function parseOffers(array $post): array
@@ -382,10 +565,13 @@ class CampaignFormParser
                 $offerEnabled[$idx] === 'true' ||
                 $offerEnabled[$idx] === true
             );
+            $slotRaw = ($post['offer_slot'] ?? [])[$idx] ?? null;
+            $slot = $slotRaw !== null && $slotRaw !== '' ? (int) $slotRaw : (count($offers) + 1);
             $offers[] = [
                 'type' => 'offer',
                 'id' => (int)$offerId,
                 'weight' => (int)($offerWeights[$idx] ?? 0),
+                'slot' => max(1, min(5, $slot > 0 ? $slot : (count($offers) + 1))),
                 'enabled' => $isEnabled,
             ];
         }

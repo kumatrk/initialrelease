@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SimpleKuma\Tracking;
 
 use mysqli;
+use SimpleKuma\Database\SchemaProbe;
 use SimpleKuma\Entity\CustomPostback;
 
 /**
@@ -102,7 +103,7 @@ class PostbackDispatcher
             return;
         }
 
-        // Traffic-source postback templates removed — outbound URLs use campaign Custom Postbacks
+        $this->fireTrafficSourcePostback($conversion);
 
         // Fire Facebook CAPI
         if ($conversion['facebook_capi_json']) {
@@ -210,25 +211,15 @@ class PostbackDispatcher
         // Prefer clicks_unified so archived clicks still resolve for manual/re-fire postbacks
         $clicksTable = \SimpleKuma\Database\ClicksTableResolver::getStatsTable($this->db);
 
-        // Check if clicks.traffic_source_id column exists (added in migration 033)
-        $columnCheck = $this->db->query("SHOW COLUMNS FROM `{$clicksTable}` LIKE 'traffic_source_id'");
-        $hasTrafficSourceId = ($columnCheck && $columnCheck->num_rows > 0);
-        
-        // Check if clicks.offer_id column exists (added in migration 020)
-        $offerIdCheck = $this->db->query("SHOW COLUMNS FROM `{$clicksTable}` LIKE 'offer_id'");
-        $hasOfferId = ($offerIdCheck && $offerIdCheck->num_rows > 0);
-
-        // Check if clicks.postal column exists (migration 052)
-        $postalCheck = $this->db->query("SHOW COLUMNS FROM `{$clicksTable}` LIKE 'postal'");
-        $hasPostal = ($postalCheck && $postalCheck->num_rows > 0);
+        $hasTrafficSourceId = SchemaProbe::columnExists($this->db, $clicksTable, 'traffic_source_id');
+        $hasOfferId = SchemaProbe::columnExists($this->db, $clicksTable, 'offer_id');
+        $hasPostal = SchemaProbe::columnExists($this->db, $clicksTable, 'postal');
         $postalSelect = $hasPostal ? "cl.postal," : "NULL as postal,";
 
-        $minPayoutCheck = $this->db->query("SHOW COLUMNS FROM campaigns LIKE 'min_postback_payout'");
-        $hasMinPayoutColumn = ($minPayoutCheck && $minPayoutCheck->num_rows > 0);
+        $hasMinPayoutColumn = SchemaProbe::columnExists($this->db, 'campaigns', 'min_postback_payout');
         $minPayoutSelect = $hasMinPayoutColumn ? 'cp.min_postback_payout,' : 'NULL as min_postback_payout,';
 
-        $mappingCheck = $this->db->query("SHOW COLUMNS FROM facebook_capi_integrations LIKE 'event_mapping_json'");
-        $hasMappingColumn = ($mappingCheck && $mappingCheck->num_rows > 0);
+        $hasMappingColumn = SchemaProbe::columnExists($this->db, 'facebook_capi_integrations', 'event_mapping_json');
         $mappingSelect = $hasMappingColumn
             ? 'fci.event_mapping_json as fb_event_mapping_json,'
             : 'NULL as fb_event_mapping_json,';
@@ -342,12 +333,16 @@ class PostbackDispatcher
         $stmt->close();
 
         if ($data) {
-            $data['extra_json'] = json_decode($data['extra_json'], true);
+            $extraRaw = $data['extra_json'] ?? null;
+            $data['extra_json'] = is_string($extraRaw) && $extraRaw !== ''
+                ? (json_decode($extraRaw, true) ?: [])
+                : (is_array($extraRaw) ? $extraRaw : []);
             
             // Decode traffic_source_postbacks_json if present
-            $data['traffic_source_postbacks_json'] = $data['traffic_source_postbacks_json'] 
-                ? json_decode($data['traffic_source_postbacks_json'], true) 
-                : [];
+            $pbRaw = $data['traffic_source_postbacks_json'] ?? null;
+            $data['traffic_source_postbacks_json'] = is_string($pbRaw) && $pbRaw !== ''
+                ? (json_decode($pbRaw, true) ?: [])
+                : (is_array($pbRaw) ? $pbRaw : []);
             
             // Determine which traffic source to use for postbacks
             $effectiveTrafficSourceId = null;
@@ -421,10 +416,7 @@ class PostbackDispatcher
                 if ($tsPostbackConfig) {
                     // Override Facebook CAPI integration if specified for this traffic source group
                     if (!empty($tsPostbackConfig['facebook_capi_integration_id'])) {
-                        $mappingColCheck = $this->db->query(
-                            "SHOW COLUMNS FROM facebook_capi_integrations LIKE 'event_mapping_json'"
-                        );
-                        $hasMapCol = ($mappingColCheck && $mappingColCheck->num_rows > 0);
+                        $hasMapCol = SchemaProbe::columnExists($this->db, 'facebook_capi_integrations', 'event_mapping_json');
                         $fbSelect = $hasMapCol
                             ? "SELECT pixel_id, access_token, test_code, event_type, event_mapping_json FROM facebook_capi_integrations WHERE id = ?"
                             : "SELECT pixel_id, access_token, test_code, event_type FROM facebook_capi_integrations WHERE id = ?";
@@ -484,49 +476,26 @@ class PostbackDispatcher
             return; // Not configured
         }
 
-        // CRITICAL: Calculate event_time FIRST (before constructing fbc)
-        // Use conversion_epoch_ms (same microtime clock as fbclid_first_seen_epoch_ms) when available
+        // event_time first (same clock as fbclid_first_seen when available)
         $eventTimeMs = MetaCapiTimestamps::resolveEventTimeMs($conversion);
         $eventTime = (int) floor($eventTimeMs / 1000);
 
-        // Build event source URL - use the offer/landing page domain origin (not tracker URL)
-        // CRITICAL: Meta uses event_source_url to determine the "website" source for attribution
-        // We must send the actual offer/landing page domain (e.g., vervesolarnow.org), not our tracker domain
-        // Format: scheme + host + port (if present) + "/" (no path, no query string, no fragments)
+        // event_source_url = offer/landing origin only (scheme+host+port+/), never tracker query strings
         $eventSourceUrl = null;
-        $originalUrl = null;
-        
-        // Priority 1: Use offer URL if available (user went to an offer)
+
         if (!empty($conversion['offer_id']) && !empty($conversion['offer_url'])) {
-            $originalUrl = $conversion['offer_url'];
             $eventSourceUrl = $this->extractUrlOrigin($conversion['offer_url']);
-            if ($eventSourceUrl) {
-                error_log("Facebook CAPI: Using offer URL origin for conversion {$conversion['id']}: {$originalUrl} → {$eventSourceUrl}");
-            }
         }
-        
-        // Priority 2: Use landing page URL if no offer (user went to landing page)
+
         if (empty($eventSourceUrl) && !empty($conversion['landing_page_id']) && !empty($conversion['landing_page_url'])) {
-            $originalUrl = $conversion['landing_page_url'];
             $eventSourceUrl = $this->extractUrlOrigin($conversion['landing_page_url']);
-            if ($eventSourceUrl) {
-                error_log("Facebook CAPI: Using landing page URL origin for conversion {$conversion['id']}: {$originalUrl} → {$eventSourceUrl}");
-            }
         }
-        
-        // Priority 3: Fallback to referrer or landing page URL (extract base domain only)
-        // CRITICAL: Per CPVLab parity, we should NOT send tracker URLs with query strings
-        // Only send base domain (scheme + host + port + "/")
+
         if (empty($eventSourceUrl)) {
-            // Try referrer first (extract base domain)
             if (!empty($conversion['referrer']) && filter_var($conversion['referrer'], FILTER_VALIDATE_URL)) {
                 $eventSourceUrl = $this->extractUrlOrigin($conversion['referrer']);
-                if ($eventSourceUrl) {
-                    error_log("Facebook CAPI: Using referrer origin for conversion {$conversion['id']}: {$conversion['referrer']} → {$eventSourceUrl}");
-                }
             }
-            
-            // Try to get landing page URL from campaign (extract base domain)
+
             if (empty($eventSourceUrl) && !empty($conversion['campaign_id'])) {
                 $lpStmt = $this->db->prepare(
                     "SELECT lp.url FROM landing_pages lp
@@ -540,95 +509,42 @@ class PostbackDispatcher
                         $lpRow = $lpResult->fetch_assoc();
                         if ($lpRow && !empty($lpRow['url'])) {
                             $eventSourceUrl = $this->extractUrlOrigin($lpRow['url']);
-                            if ($eventSourceUrl) {
-                                error_log("Facebook CAPI: Using campaign landing page origin for conversion {$conversion['id']}: {$lpRow['url']} → {$eventSourceUrl}");
-                            }
                         }
                     }
                     $lpStmt->close();
                 }
             }
-            
-            // Final fallback: use tracker domain base URL only (no paths, no query strings)
-            // This is a last resort - ideally we should always have offer/landing page URL
+
             if (empty($eventSourceUrl)) {
-                $trackingDomainUrl = null;
-                if (!empty($conversion['tracking_domain'])) {
-                    $trackingDomainUrl = $conversion['tracking_domain'];
-                } else {
-                    $trackingDomainUrl = BASE_URL;
-                }
-                // Extract base domain only (no paths, no query strings)
+                $trackingDomainUrl = !empty($conversion['tracking_domain'])
+                    ? $conversion['tracking_domain']
+                    : BASE_URL;
                 $eventSourceUrl = $this->extractUrlOrigin($trackingDomainUrl);
-                error_log("Facebook CAPI WARNING: Using tracker domain base URL as final fallback for conversion {$conversion['id']} (no offer/landing page URL available): {$eventSourceUrl}");
             }
         }
-        
-        // CRITICAL: Ensure event_source_url is base domain only (strip any query strings or paths if present)
-        // This ensures parity with CPVLab which only sends base domain
+
         if (!empty($eventSourceUrl)) {
             $parsed = parse_url($eventSourceUrl);
             if ($parsed && !empty($parsed['scheme']) && !empty($parsed['host'])) {
-                // Rebuild as base domain only (scheme + host + port + "/")
                 $cleanUrl = $parsed['scheme'] . '://' . $parsed['host'];
                 if (!empty($parsed['port'])) {
                     $cleanUrl .= ':' . $parsed['port'];
                 }
                 $cleanUrl .= '/';
-                
-                // Only update if URL was modified (had query string or path)
-                if ($cleanUrl !== $eventSourceUrl) {
-                    error_log("Facebook CAPI: Cleaned event_source_url for conversion {$conversion['id']}: {$eventSourceUrl} → {$cleanUrl}");
-                    $eventSourceUrl = $cleanUrl;
-                }
+                $eventSourceUrl = $cleanUrl;
             }
         }
         
-        // Log the final event_source_url for debugging
-        if ($originalUrl) {
-            error_log("Facebook CAPI event_source_url for conversion {$conversion['id']}: Original URL: {$originalUrl} → Meta URL: {$eventSourceUrl}");
-        } else {
-            error_log("Facebook CAPI event_source_url for conversion {$conversion['id']}: {$eventSourceUrl}");
-        }
-        
-        // Prepare user data (Facebook SDK format)
-        // Note: IP and UA are sent as plain text (Facebook hashes them server-side)
-        // Email and phone must be hashed client-side with SHA256
-        // CRITICAL: IP and UA are REQUIRED for proper attribution matching
+        // Prepare user data (Facebook hashes IP/UA server-side; email/phone hashed client-side).
+        // Omit empty or invalid fields — do not send null.
         $userData = [];
-        
-        // IP address (sent as plain text, Facebook hashes it)
-        // CRITICAL: Without IP, Facebook cannot match the conversion to the click
-        // Facebook CAPI supports both IPv4 and IPv6 addresses
-        // CRITICAL: Do NOT send null - either include valid IP or omit the field entirely
-        // Reference: https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/server-event
-        if (!empty($conversion['ip'])) {
-            // Validate IP address (supports both IPv4 and IPv6)
-            // Facebook accepts both formats, so we validate but don't convert
-            if (filter_var($conversion['ip'], FILTER_VALIDATE_IP)) {
+
+        if (!empty($conversion['ip']) && filter_var($conversion['ip'], FILTER_VALIDATE_IP)) {
             $userData['client_ip_address'] = $conversion['ip'];
-                
-                // Log IP version for debugging
-                if (filter_var($conversion['ip'], FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
-                    error_log("Facebook CAPI: Using IPv6 address for conversion {$conversion['id']}: " . substr($conversion['ip'], 0, 20) . "...");
-                } else {
-                    error_log("Facebook CAPI: Using IPv4 address for conversion {$conversion['id']}: {$conversion['ip']}");
-                }
-            } else {
-                error_log("Facebook CAPI ERROR: Invalid IP address format for conversion {$conversion['id']}: {$conversion['ip']}");
-                // Don't include invalid IP - Facebook will reject it (field will be omitted)
-            }
-        } else {
-            error_log("Facebook CAPI WARNING: No IP address available for conversion {$conversion['id']} - attribution may fail! (Field will be omitted, not sent as null)");
         }
-        
-        // User agent (sent as plain text, Facebook hashes it)
-        // CRITICAL: Without UA, Facebook has less data to match the conversion
-        // CRITICAL: Do NOT send null - either include valid UA or omit the field entirely
+
         if (!empty($conversion['ua'])) {
             $userData['client_user_agent'] = $conversion['ua'];
-        } else {
-            error_log("Facebook CAPI WARNING: No user agent available for conversion {$conversion['id']} - attribution may be less accurate! (Field will be omitted, not sent as null)");
         }
         
         // Extract email/phone/fbclid from extra_json if available (for better matching)
@@ -697,90 +613,60 @@ class PostbackDispatcher
             }
             
             if ($fbpCookie && $fbpCookie !== '') {
-                // _fbp cookie format: fb.1.{timestamp}.{browser_id}
-                // Use it directly (do NOT hash or modify - send as-is, just like fbc)
-                // CRITICAL: Do NOT hash _fbp - Meta requires it in plain text format
+                // Meta requires plain-text _fbp (fb.1.{timestamp}.{browser_id}), not hashed
                 $userData['fbp'] = $fbpCookie;
-                error_log("Facebook CAPI: Using _fbp cookie value for conversion {$conversion['id']}");
             }
         }
-        
-        // CRITICAL: Add hashed geo data for improved Event Match Quality (matches CPVLab)
-        // Meta uses hashed location data (ct=city, st=state, country) as match keys.
-        // Per Meta docs, these fields must be normalized before hashing:
-        // - ct: lowercase, no punctuation/special characters/spaces (e.g. "new york" -> "newyork")
-        // - st: US states should use 2-letter ANSI code (e.g. "California" -> "ca") when possible
-        // - country: ISO 3166-1 alpha-2 lowercase (e.g. "US" -> "us")
+
+        // Hashed geo match keys (ct/st/country/zp) — normalize then SHA-256 per Meta docs
         if (!empty($conversion['city'])) {
             $ctNormalized = $this->normalizeMetaCity($conversion['city']);
             if ($ctNormalized !== null) {
                 $userData['ct'] = hash('sha256', $ctNormalized);
-                error_log("Facebook CAPI: Added hashed city (ct) for conversion {$conversion['id']}");
             }
         }
         if (!empty($conversion['region'])) {
             $stNormalized = $this->normalizeMetaState($conversion['region'], $conversion['country'] ?? null);
             if ($stNormalized !== null) {
                 $userData['st'] = hash('sha256', $stNormalized);
-                error_log("Facebook CAPI: Added hashed state/region (st) for conversion {$conversion['id']}");
             }
         }
         if (!empty($conversion['country'])) {
             $countryNormalized = $this->normalizeMetaCountryCode($conversion['country']);
             if ($countryNormalized !== null) {
                 $userData['country'] = hash('sha256', $countryNormalized);
-                error_log("Facebook CAPI: Added hashed country for conversion {$conversion['id']}");
             }
         }
-        // zp (zip/postal): Meta requires lowercase, no spaces, no dash; US use first 5 digits only
         if (!empty($conversion['postal'])) {
             $zpNormalized = $this->normalizeMetaZip($conversion['postal'], $conversion['country'] ?? null);
             if ($zpNormalized !== null) {
                 $userData['zp'] = hash('sha256', $zpNormalized);
-                error_log("Facebook CAPI: Added hashed zip (zp) for conversion {$conversion['id']}");
             }
         }
-        
-        // Prepare custom data (value and currency)
-        // Facebook CAPI requires value and currency to be present in custom_data for Purchase events
-        // Reference: https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/custom-data
+
         $customData = [];
-        
-        // Always include value - must be numeric (float)
-        // CRITICAL: Use 'value' field first, but fallback to 'payout' if value is NULL/empty
-        // This is because conversions may store the monetary amount in 'payout' instead of 'value'
+
         $conversionValue = $conversion['value'] ?? null;
-        
-        // If value is NULL/empty, use payout as fallback (payout is the actual revenue amount)
         if (($conversionValue === null || $conversionValue === '' || $conversionValue === false) && !empty($conversion['payout'])) {
             $conversionValue = $conversion['payout'];
         }
-        
+
         if ($conversionValue === null || $conversionValue === '' || $conversionValue === false) {
             $customData['value'] = 0.0;
         } else {
-            // Cast to float - handles string "0", "0.00", numeric 0, etc.
-            $floatValue = (float)$conversionValue;
-            // Ensure it's a valid number (not NaN or Infinity)
+            $floatValue = (float) $conversionValue;
             $customData['value'] = is_finite($floatValue) ? $floatValue : 0.0;
         }
-        
-        // Always include currency - must be ISO 4217 three-letter code (uppercase)
-        // Default to USD if NULL or empty
+
         $conversionCurrency = $conversion['currency'] ?? null;
         if (empty($conversionCurrency) || !is_string($conversionCurrency)) {
             $customData['currency'] = 'USD';
         } else {
-            // Convert to uppercase and ensure it's exactly 3 characters (ISO 4217 format)
             $currencyUpper = strtoupper(trim($conversionCurrency));
             $customData['currency'] = (strlen($currencyUpper) === 3) ? $currencyUpper : 'USD';
         }
-        
-        // CRITICAL: Add order_id for identity consistency
-        // Prefer txid / conv:{id} so multi-step funnels on one click do not collide
-        $customData['order_id'] = MetaCapiEventResolver::resolveOrderId($conversion);
 
-        // Build event data matching Facebook SDK structure
+        $customData['order_id'] = MetaCapiEventResolver::resolveOrderId($conversion);
 
         $decodedMapping = MetaCapiEventResolver::decodeMapping($config['event_mapping_json'] ?? null);
         if ($decodedMapping['error'] !== null) {
@@ -789,12 +675,12 @@ class PostbackDispatcher
             );
         }
         $eventKey = isset($conversion['event_key']) && $conversion['event_key'] !== ''
-            ? (string)$conversion['event_key']
+            ? (string) $conversion['event_key']
             : null;
         if ($eventKey === null && !empty($conversion['source_json'])) {
             $source = is_array($conversion['source_json'])
                 ? $conversion['source_json']
-                : (json_decode((string)$conversion['source_json'], true) ?: []);
+                : (json_decode((string) $conversion['source_json'], true) ?: []);
             if (!empty($source['event_key']) && is_string($source['event_key'])) {
                 $eventKey = ConversionEventKey::canonicalize($source['event_key']);
             }
@@ -812,33 +698,6 @@ class PostbackDispatcher
         $eventType = $resolved['event_name'];
         $metaEventId = MetaCapiEventResolver::resolveMetaEventId($conversion);
 
-        error_log(
-            "Facebook CAPI resolve conversion_id={$conversion['id']} event_key="
-            . ($eventKey ?? 'null')
-            . " mapped=" . ($resolved['mapped'] ? '1' : '0')
-            . " event_name={$eventType} meta_event_id={$metaEventId}"
-        );
-
-        // CRITICAL: Meta's Conversions API Requirements for Web Events (action_source = "website")
-        // Reference: https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/server-event
-        // REQUIRED parameters:
-        // - action_source: "website" ✅
-        // - event_source_url: URL where event occurred ✅ (now using offer/landing page domain origin, not tracker URL)
-        // - client_user_agent: Browser user agent string (REQUIRED for web events)
-        // - client_ip_address: User IP address (highly recommended for matching)
-        // 
-        // Validate required fields
-        if (empty($userData['client_user_agent'])) {
-            error_log("Facebook CAPI CRITICAL ERROR: client_user_agent is REQUIRED for web events (action_source='website') but is missing for conversion {$conversion['id']}!");
-            error_log("Facebook CAPI: Event may be rejected or have poor matching without client_user_agent");
-        }
-        if (empty($userData['client_ip_address'])) {
-            error_log("Facebook CAPI WARNING: client_ip_address is highly recommended but missing for conversion {$conversion['id']} - matching may be poor!");
-        }
-        if (empty($eventSourceUrl) || $eventSourceUrl === 'https://www.website.com/') {
-            error_log("Facebook CAPI WARNING: event_source_url is using placeholder/default for conversion {$conversion['id']} - this may reduce attribution quality");
-        }
-        
         $eventData = [
             'data' => [[
                 'event_name' => $eventType,
@@ -857,18 +716,8 @@ class PostbackDispatcher
             $eventData['test_event_code'] = $config['test_event_code'];
         }
 
-        // CRITICAL: Log fbc parameter for debugging (always log to help diagnose attribution issues)
-        $fbcValue = $userData['fbc'] ?? 'NOT SET';
-        error_log("Facebook CAPI fbc parameter for conversion {$conversion['id']}: " . $fbcValue);
-        
-        // Log event structure without secrets (access_token redacted)
-        $eventDataForLog = $eventData;
-        $eventDataForLog['access_token'] = '[REDACTED]';
         $eventDataJson = json_encode($eventData);
-        $eventDataPreview = json_encode($eventDataForLog);
-        $eventDataPreview = strlen($eventDataPreview) > 500 ? substr($eventDataPreview, 0, 500) . '...' : $eventDataPreview;
-        error_log("Facebook CAPI event data for conversion {$conversion['id']}: " . $eventDataPreview);
-        
+
         // Send POST request to Facebook Graph API
         $url = "https://graph.facebook.com/v21.0/{$config['pixel_id']}/events";
         $this->sendHttpRequest($url, 'facebook_capi', $conversion['id'], 'POST', $eventDataJson, 1);
@@ -914,7 +763,7 @@ class PostbackDispatcher
      * Extract the origin (base domain) from a URL for Meta event_source_url
      * Format: scheme + "://" + host + (port ? ":" + port : "") + "/"
      * Examples:
-     *   https://vervesolarnow.org/quote/?sub3=123 → https://vervesolarnow.org/
+     *   https://offer.example.com/quote/?sub3=123 → https://offer.example.com/
      *   http://sub.example.com:8443/path → http://sub.example.com:8443/
      * 
      * @param string $url The full URL (may include path, query string, fragments)
@@ -1123,12 +972,6 @@ class PostbackDispatcher
         ?string $body = null,
         int $attempt = 1
     ): void {
-        // Log request body for Facebook CAPI to help diagnose attribution issues
-        if ($type === 'facebook_capi' && $body) {
-            $bodyPreview = strlen($body) > 1000 ? substr($body, 0, 1000) . '...' : $body;
-            error_log("Facebook CAPI REQUEST for conversion {$conversionId} (attempt {$attempt}): " . $bodyPreview);
-        }
-        
         $ch = curl_init($url);
         
         curl_setopt_array($ch, [
@@ -1251,6 +1094,20 @@ class PostbackDispatcher
             
             // Determine success (HTTP 200-299)
             $success = ($httpCode >= 200 && $httpCode < 300) ? 1 : 0;
+            $gaveUp = $success === 0 && ($httpCode >= 400 || $attempt >= self::MAX_RETRIES);
+            if ($gaveUp) {
+                $host = (string) parse_url($url, PHP_URL_HOST);
+                $action = $type === 'facebook_capi' ? 'Meta conversion API' : 'Traffic source postback';
+                $detail = ($error !== null && $error !== '') ? $error : ('HTTP ' . $httpCode);
+                \SimpleKuma\Support\ApiFailureLog::record(
+                    $this->db,
+                    'postback',
+                    $action,
+                    $httpCode > 0 ? $httpCode : null,
+                    $detail,
+                    $host
+                );
+            }
             
             // Truncate response body if too long (max 5000 chars)
             $responseBody = null;
@@ -1274,12 +1131,7 @@ class PostbackDispatcher
                 }
             }
             
-            // Check if request_body column exists
-            $requestBodyColumnExists = false;
-            $columnCheck = $this->db->query("SHOW COLUMNS FROM postback_logs LIKE 'request_body'");
-            if ($columnCheck && $columnCheck->num_rows > 0) {
-                $requestBodyColumnExists = true;
-            }
+            $requestBodyColumnExists = SchemaProbe::columnExists($this->db, 'postback_logs', 'request_body');
             
             // Insert into database
             $columns = "postback_type, conversion_id, click_id, url, http_method, http_code, success, attempt_number, error_message, response_body";
@@ -1331,6 +1183,90 @@ class PostbackDispatcher
             // Log error but don't break postback execution
             error_log("Failed to log postback to database: " . $e->getMessage() . " | Trace: " . $e->getTraceAsString());
         }
+    }
+
+    /**
+     * Fire the traffic source conversion postback when one is saved and ready.
+     * RollerAds is the built-in template that uses this. A URL that still has
+     * YOUR_ACCOUNT_NUMBER or YOUR_TRACKING_KEY is not sent.
+     */
+    private function fireTrafficSourcePostback(array $conversion): void
+    {
+        $tsId = (int) ($conversion['click_traffic_source_id'] ?? 0);
+        if ($tsId <= 0) {
+            $tsId = (int) ($conversion['campaign_traffic_source_id'] ?? 0);
+        }
+        if ($tsId <= 0 || !SchemaProbe::columnExists($this->db, 'traffic_sources', 'postback_template')) {
+            return;
+        }
+
+        $stmt = $this->db->prepare(
+            'SELECT name, provider_key, postback_template, tokens_json FROM traffic_sources WHERE id = ?'
+        );
+        if (!$stmt) {
+            return;
+        }
+        $stmt->bind_param('i', $tsId);
+        $stmt->execute();
+        $source = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!is_array($source)) {
+            return;
+        }
+
+        $provider = strtolower(trim((string) ($source['provider_key'] ?? '')));
+        $name = strtolower(trim((string) ($source['name'] ?? '')));
+        $allowed = in_array($provider, ['rollerads', 'newsbreak'], true)
+            || $name === 'rollerads'
+            || $name === 'newsbreak'
+            || str_contains($name, 'newsbreak');
+        if (!$allowed) {
+            return;
+        }
+
+        $template = trim((string) ($source['postback_template'] ?? ''));
+        if ($template === ''
+            || str_contains($template, 'YOUR_ACCOUNT_NUMBER')
+            || str_contains($template, 'YOUR_TRACKING_KEY')
+            || str_contains($template, '__CALLBACK_PARAM__')
+        ) {
+            return;
+        }
+
+        $click = [
+            'click_id' => $conversion['click_id'] ?? '',
+            'country' => $conversion['country'] ?? null,
+            'region' => $conversion['region'] ?? null,
+            'city' => $conversion['city'] ?? null,
+            'extra_json' => is_string($conversion['extra_json'] ?? null)
+                ? $conversion['extra_json']
+                : json_encode($conversion['extra_json'] ?? []),
+        ];
+        $campaign = [
+            'id' => $conversion['campaign_id'] ?? '',
+            'campaign_key' => $conversion['campaign_key'] ?? '',
+            'name' => $conversion['campaign_name'] ?? '',
+            'traffic_source_tokens' => json_decode((string) ($source['tokens_json'] ?? '[]'), true) ?: [],
+        ];
+        $allTrafficSources = [[
+            'id' => $tsId,
+            'name' => $source['name'] ?? 'RollerAds',
+            'tokens_json' => $source['tokens_json'] ?? '[]',
+        ]];
+
+        $url = (new TokenReplacer())->replace($template, [
+            'click' => $click,
+            'campaign' => $campaign,
+            'conversion' => $conversion,
+            'all_traffic_sources' => $allTrafficSources,
+        ]);
+        $skipReason = $this->customPostbackSkipReason($url);
+        if ($skipReason !== null) {
+            $this->logPostback('traffic_source', (int) $conversion['id'], $url, 0, null, $skipReason, 1);
+            return;
+        }
+
+        $this->sendHttpRequest($url, 'traffic_source', (int) $conversion['id'], 'GET');
     }
 
     /**
@@ -1475,7 +1411,7 @@ class PostbackDispatcher
         }
 
         parse_str($query, $params);
-        foreach (['visitor_id', 'clickid', 'click_id', 'external_id', 'subid', 'cid'] as $key) {
+        foreach (['visitor_id', 'clickid', 'click_id', 'external_id', 'subid', 'cid', 'callback'] as $key) {
             if (array_key_exists($key, $params) && trim((string) $params[$key]) === '') {
                 return "Empty {$key} in postback URL";
             }

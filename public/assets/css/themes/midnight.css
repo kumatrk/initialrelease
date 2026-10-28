@@ -1,0 +1,109 @@
+/**
+ * Midnight: refined navy dark with ice-blue actions.
+ * Stored id: midnight. Base polarity is dark.
+ */
+[data-theme="midnight"] {
+    --accent: #38bdf8;
+    --accent-hover: #7dd3fc;
+    --accent-muted: #7dd3fc;
+    --accent-soft: #1a2637;
+
+    --color-forest-dark: var(--accent-hover);
+    --color-forest: var(--accent);
+    --color-forest-light: var(--accent-muted);
+    --color-bark: #7dd3fc;
+    --color-bark-dark: #38bdf8;
+    --color-cream: #111827;
+    --color-cream-dark: #1a2637;
+
+    --color-white: #222e40;
+    --color-gray-100: #1a2637;
+    --color-gray-200: #38485d;
+    --color-gray-300: #4b6078;
+    --color-gray-600: #aab8ca;
+    --color-gray-800: #e2e8f0;
+    --color-black: #e2e8f0;
+
+    --heading-color: #e2e8f0;
+    --link-color: #7dd3fc;
+    --link-hover: #bae6fd;
+
+    --color-success: #4ade80;
+    --color-success-bg: #14352a;
+    --color-warning: #fbbf24;
+    --color-warning-bg: #3a3018;
+    --color-error: #fb7185;
+    --color-error-bg: #3f1d28;
+    --color-info: #38bdf8;
+    --color-info-bg: #1a2f4a;
+
+    --sidebar-bg: #192335;
+    --sidebar-text: #e2e8f0;
+    --sidebar-text-muted: #94a3b8;
+    --sidebar-hover-bg: #243246;
+    --sidebar-active-bg: #2b3c54;
+    --sidebar-active-border: #38bdf8;
+    --sidebar-active-text: #e2e8f0;
+    --sidebar-scrollbar-track: #141c2b;
+    --sidebar-scrollbar-thumb: #4b6078;
+    --sidebar-scrollbar-thumb-hover: #7dd3fc;
+    --sidebar-border: #38485d;
+
+    --page-bg: #111827;
+    --surface: #222e40;
+    --surface-raised: #1a2637;
+    --text-primary: #e2e8f0;
+    --text-muted: #aab8ca;
+    --border-color: #38485d;
+    --navbar-bg: #192335;
+    --navbar-border: #38485d;
+    --card-header-border: #38485d;
+
+    --input-bg: #192335;
+    --input-border: #38485d;
+    --input-text: #e2e8f0;
+    --input-placeholder: rgba(170, 184, 202, 0.8);
+
+    --table-bg: #222e40;
+    --table-header-bg: #1a2637;
+    --table-header-text: #e2e8f0;
+    --table-header-accent: inset 0 -2px 0 #38bdf8;
+    --table-row-hover: #2b3a50;
+    --table-border: #38485d;
+
+    --btn-on-primary-text: #0b1725;
+    --btn-outline-hover-text: #0b1725;
+    --btn-radius: 4px;
+    --btn-padding-y: 8px;
+    --btn-padding-x: 24px;
+    --badge-warning-text: #fbbf24;
+
+    --logo-max-width: 64px;
+    --logo-max-height: 60px;
+    --auth-logo-max-height: 140px;
+
+    --auth-page-bg: #111827;
+    --auth-header-bg: #192335;
+    --auth-header-text: #e2e8f0;
+    --auth-container-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+    --auth-tagline-text: #aab8ca;
+    --auth-tagline-shadow: none;
+
+    --chart-grid: rgba(226, 232, 240, 0.08);
+    --chart-tick: #aab8ca;
+    --chart-legend: #aab8ca;
+    --chart-point-border: #222e40;
+    --chart-clicks: #38bdf8;
+    --chart-clicks-fill: rgba(56, 189, 248, 0.15);
+    --chart-tooltip-border: #38bdf8;
+    --chart-tooltip-bg: rgba(25, 35, 53, 0.96);
+
+    --shadow-sm: none;
+    --shadow-md: none;
+    --shadow-lg: none;
+}
+
+[data-theme="midnight"] .card {
+    box-shadow: none;
+    border: 1px solid var(--border-color);
+}

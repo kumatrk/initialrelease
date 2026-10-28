@@ -280,14 +280,14 @@
     text-decoration: none;
 }
 
-.kuma-member-name:hover,
-.kuma-member-name:focus-visible {
+a.kuma-member-name:hover,
+a.kuma-member-name:focus-visible {
     color: var(--about-gold);
     text-decoration: underline;
     text-underline-offset: 4px;
 }
 
-.kuma-member-name:focus-visible {
+a.kuma-member-name:focus-visible {
     border-radius: 4px;
     outline: 3px solid color-mix(in srgb, var(--about-gold) 35%, transparent);
 }

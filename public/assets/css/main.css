@@ -6,7 +6,7 @@
 
 /* CSS Variables - Earthy Color Palette + semantic surfaces */
 :root {
-    /* Primary Colors */
+    /* Primary Colors — Original defaults. Theme packs override these. */
     --color-forest-dark: #2d5016;
     --color-forest: #3d5a26;
     --color-forest-light: #4a7c2c;
@@ -26,7 +26,7 @@
 
     /* Status Colors */
     --color-success: #28a745;
-    --color-success-bg: #d4edda;
+    --color-success-bg: var(--accent-soft);
     --color-warning: #ffc107;
     --color-warning-bg: #fff3cd;
     --color-error: #d32f2f;
@@ -72,7 +72,7 @@
     --btn-outline-hover-text: #f5f1e8;
     --badge-warning-text: #856404;
 
-    --auth-page-bg: linear-gradient(135deg, #2d5016 0%, #4a7c2c 100%);
+    --auth-page-bg: linear-gradient(135deg, var(--accent-hover) 0%, var(--accent-muted) 100%);
     --auth-header-bg: var(--color-forest);
     --auth-container-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
 
@@ -80,9 +80,9 @@
     --chart-tick: #666666;
     --chart-legend: #666666;
     --chart-point-border: #ffffff;
-    --chart-clicks: #3d5a26;
-    --chart-clicks-fill: rgba(61, 90, 38, 0.1);
-    --chart-tooltip-border: #3d5a26;
+    --chart-clicks: var(--accent);
+    --chart-clicks-fill: color-mix(in srgb, var(--accent) 10%, transparent);
+    --chart-tooltip-border: var(--accent);
     --chart-tooltip-bg: rgba(0, 0, 0, 0.8);
 
     /* Spacing */
@@ -117,6 +117,22 @@
     --radius-sm: 4px;
     --radius-md: 8px;
     --radius-lg: 12px;
+
+    /* Theme packs override these. Defaults match Original. */
+    --accent: #3d5a26;
+    --accent-hover: #2d5016;
+    --accent-muted: #4a7c2c;
+    --accent-soft: #eef3ea;
+    --heading-color: var(--accent);
+    --link-color: var(--accent);
+    --link-hover: var(--accent-hover);
+    --sidebar-active-text: var(--sidebar-text);
+    --logo-max-width: 220px;
+    --logo-max-height: 220px;
+    --auth-logo-max-height: 140px;
+    --btn-radius: var(--radius-sm);
+    --btn-padding-y: var(--spacing-sm);
+    --btn-padding-x: var(--spacing-lg);
     --radius-full: 9999px;
 }
 
@@ -142,18 +158,18 @@ body {
 
 /* Links */
 a {
-    color: var(--color-forest);
+    color: var(--link-color);
     text-decoration: none;
     transition: color 0.2s;
 }
 
 a:hover {
-    color: var(--color-forest-dark);
+    color: var(--link-hover);
 }
 
 /* Headings */
 h1, h2, h3, h4, h5, h6 {
-    color: var(--color-forest);
+    color: var(--heading-color);
     font-weight: 600;
     line-height: 1.2;
     margin-bottom: var(--spacing-md);
@@ -403,7 +419,7 @@ h6 { font-size: var(--font-size-sm); }
 .sidebar-nav-link.active {
     background: var(--sidebar-active-bg);
     border-left-color: var(--sidebar-active-border);
-    color: var(--sidebar-text);
+    color: var(--sidebar-active-text, var(--sidebar-text));
     font-weight: 500;
 }
 
@@ -455,7 +471,7 @@ h6 { font-size: var(--font-size-sm); }
 
 .navbar-title {
     font-size: var(--font-size-xl);
-    color: var(--color-forest);
+    color: var(--heading-color);
     font-weight: 600;
 }
 
@@ -484,7 +500,7 @@ h6 { font-size: var(--font-size-sm); }
     width: 36px;
     height: 36px;
     border-radius: var(--radius-full);
-    background: var(--color-forest);
+    background: var(--accent);
     color: var(--btn-on-primary-text);
     display: flex;
     align-items: center;
@@ -508,7 +524,7 @@ h6 { font-size: var(--font-size-sm); }
 
 .page-title {
     font-size: var(--font-size-3xl);
-    color: var(--color-forest);
+    color: var(--heading-color);
     margin-bottom: var(--spacing-sm);
 }
 
@@ -537,7 +553,7 @@ h6 { font-size: var(--font-size-sm); }
 
 .card-title {
     font-size: var(--font-size-xl);
-    color: var(--color-forest);
+    color: var(--heading-color);
     margin: 0;
 }
 
@@ -550,23 +566,23 @@ h6 { font-size: var(--font-size-sm); }
     display: inline-flex;
     align-items: center;
     gap: var(--spacing-xs);
-    padding: var(--spacing-sm) var(--spacing-lg);
+    padding: var(--btn-padding-y) var(--btn-padding-x);
     font-size: var(--font-size-base);
     font-weight: 500;
     border: none;
-    border-radius: var(--radius-sm);
+    border-radius: var(--btn-radius);
     cursor: pointer;
     transition: all 0.2s;
     text-decoration: none;
 }
 
 .btn-primary {
-    background: var(--color-forest);
+    background: var(--accent);
     color: var(--btn-on-primary-text);
 }
 
 .btn-primary:hover {
-    background: var(--color-forest-dark);
+    background: var(--accent-hover);
     color: var(--btn-on-primary-text);
 }
 
@@ -587,12 +603,12 @@ h6 { font-size: var(--font-size-sm); }
 
 .btn-outline {
     background: transparent;
-    border: 2px solid var(--color-forest);
-    color: var(--color-forest);
+    border: 2px solid var(--accent);
+    color: var(--accent);
 }
 
 .btn-outline:hover {
-    background: var(--color-forest);
+    background: var(--accent);
     color: var(--btn-outline-hover-text);
 }
 
@@ -689,13 +705,13 @@ h6 { font-size: var(--font-size-sm); }
 
 /* Campaign Editor Edge Redirect Box */
 .campaign-edge-redirect-box {
-    background: #f7faf4;
-    border: 1px solid #c5d4b0;
+    background: var(--accent-soft);
+    border: 1px solid var(--border-color);
     color: var(--text-primary);
 }
 
 .campaign-edge-redirect-box .edge-box-title {
-    color: #2e5b1e;
+    color: var(--accent-hover);
     font-weight: 600;
 }
 
@@ -704,7 +720,7 @@ h6 { font-size: var(--font-size-sm); }
 }
 
 .campaign-edge-redirect-box .edge-box-link {
-    color: #2e7d32;
+    color: var(--accent-hover);
     font-weight: 500;
     text-decoration: none;
 }
@@ -722,7 +738,7 @@ h6 { font-size: var(--font-size-sm); }
 }
 
 .campaign-edge-redirect-box .edge-status-synced {
-    color: #2e7d32;
+    color: var(--accent-hover);
 }
 
 .campaign-edge-redirect-box .edge-status-waiting {
@@ -735,9 +751,9 @@ h6 { font-size: var(--font-size-sm); }
 .token-selector-box {
     margin-bottom: 12px;
     padding: 10px 12px;
-    background: #f0fdf4;
+    background: var(--accent-soft);
     border-radius: 6px;
-    border: 1.5px solid #86efac;
+    border: 1.5px solid var(--accent-muted);
 }
 
 .token-selector-box label {
@@ -745,12 +761,12 @@ h6 { font-size: var(--font-size-sm); }
     font-weight: 600;
     margin-bottom: 6px;
     font-size: 12px;
-    color: #166534;
+    color: var(--accent-hover);
 }
 
 .token-selector-box .token-selector-hint {
     font-size: 11px;
-    color: #4ade80;
+    color: var(--accent-muted);
     margin-top: 4px;
 }
 
@@ -763,7 +779,7 @@ h6 { font-size: var(--font-size-sm); }
 
 .token-heading--builtin,
 .token-heading--custom {
-    color: #166534;
+    color: var(--accent-hover);
     font-size: 12px;
     display: block;
     margin-bottom: 8px;
@@ -813,18 +829,18 @@ h6 { font-size: var(--font-size-sm); }
 /* Built-in Tokens (Green) */
 .custom-token-btn,
 .custom-token-btn.token-btn--builtin {
-    background: #f0fdf4;
-    border-color: #86efac;
-    color: #166534;
+    background: var(--accent-soft);
+    border-color: var(--accent-muted);
+    color: var(--accent-hover);
 }
 
 .custom-token-btn:hover,
 .custom-token-btn.token-btn--builtin:hover {
-    background: #166534;
-    border-color: #166534;
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
     color: #ffffff;
     transform: translateY(-1px);
-    box-shadow: 0 3px 6px rgba(22, 101, 52, 0.25);
+    box-shadow: 0 3px 6px color-mix(in srgb, var(--accent-hover) 25%, transparent);
 }
 
 /* Campaign Tokens (Blue) */

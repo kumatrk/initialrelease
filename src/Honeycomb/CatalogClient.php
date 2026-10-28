@@ -72,6 +72,7 @@ final class CatalogClient
             );
             return $payload;
         } catch (Throwable $e) {
+            \SimpleKuma\Support\ApiFailureLog::record($this->db, 'honeycomb', 'Catalog download', null, $e->getMessage(), 'catalog');
             $this->settings->set(
                 HoneycombConfig::SETTING_LAST_CHECK,
                 json_encode([

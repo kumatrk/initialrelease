@@ -1,0 +1,76 @@
+/* Install app control in the admin navbar */
+
+.pwa-install-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--btn-on-primary-text, #fff);
+  background: var(--accent, #2563eb);
+  border: 1px solid transparent;
+  border-radius: var(--btn-radius, 6px);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pwa-install-btn:hover {
+  background: var(--accent-hover, #1d4ed8);
+}
+
+.pwa-install-btn[hidden] {
+  display: none !important;
+}
+
+.pwa-install-label-short {
+  display: none;
+}
+
+.pwa-install-tip {
+  display: none;
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--text-primary, #1f2937);
+  background: var(--surface, #fff);
+  border-bottom: 1px solid var(--navbar-border, #e5e7eb);
+}
+
+.pwa-install-tip:not([hidden]) {
+  display: block;
+}
+
+.pwa-install-tip-other {
+  display: inline;
+}
+
+.pwa-install-tip-ios {
+  display: none;
+}
+
+html.kuma-ios .pwa-install-tip-ios {
+  display: inline;
+}
+
+html.kuma-ios .pwa-install-tip-other {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .pwa-install-label-full {
+    display: none;
+  }
+
+  .pwa-install-label-short {
+    display: inline;
+  }
+
+  .pwa-install-btn {
+    order: -1;
+    padding: 6px 9px;
+    font-size: 12px;
+  }
+}

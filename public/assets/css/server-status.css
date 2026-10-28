@@ -3,7 +3,7 @@
 .server-status-page {
     max-width: 1100px;
     --ss-ok: var(--color-forest-light, #7cb342);
-    --ss-ok-deep: var(--color-forest, #5a7a3a);
+    --ss-ok-deep: var(--color-forest, var(--accent-muted));
     --ss-elevated: #d4a017;
     --ss-warn: #e53935;
     --ss-track: color-mix(in srgb, var(--text-muted, #888) 22%, var(--surface, #fff));

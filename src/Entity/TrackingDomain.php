@@ -168,7 +168,7 @@ class TrackingDomain
     public static function statusDisplay(string $status): array
     {
         $map = [
-            'verified' => ['label' => 'Verified', 'bg' => '#d4edda', 'text' => '#155724', 'border' => '#28a745'],
+            'verified' => ['label' => 'Verified', 'bg' => 'var(--color-success-bg)', 'text' => 'var(--accent-hover)', 'border' => 'var(--color-success)'],
             'verified_manual' => ['label' => 'Verified (Manual)', 'bg' => '#cce5ff', 'text' => '#004085', 'border' => '#007bff'],
             'pending' => ['label' => 'Pending', 'bg' => '#fff3cd', 'text' => '#856404', 'border' => '#ffc107'],
             'failed' => ['label' => 'Failed', 'bg' => '#f8d7da', 'text' => '#721c24', 'border' => '#dc3545'],
@@ -191,6 +191,56 @@ class TrackingDomain
             'status' => 'verified_manual',
             'verified_at' => date('Y-m-d H:i:s'),
         ]);
+    }
+
+    /**
+     * Ask the hostname for this install's domain-check token.
+     * Succeeds when a proxied name still reaches this tracker.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    private function probeOriginProof(string $host): array
+    {
+        $host = strtolower(trim($host));
+        if (preg_match('/^[a-z0-9.-]+$/', $host) !== 1 || !function_exists('curl_init')) {
+            return ['ok' => false, 'message' => ''];
+        }
+
+        $token = DomainOriginProof::ensureToken($this->db);
+        $url = 'https://' . $host . DomainOriginProof::ENDPOINT_PATH;
+        $ch = curl_init($url);
+        if ($ch === false) {
+            return ['ok' => false, 'message' => ''];
+        }
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HEADER => true,
+            CURLOPT_NOBODY => false,
+            CURLOPT_TIMEOUT => 8,
+            CURLOPT_CONNECTTIMEOUT => 4,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_HTTPHEADER => ['Accept: application/json'],
+        ]);
+        $raw = curl_exec($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $headerSize = (int) curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        curl_close($ch);
+        if (!is_string($raw)) {
+            return ['ok' => false, 'message' => ''];
+        }
+        $headers = substr($raw, 0, $headerSize);
+        $body = substr($raw, $headerSize);
+        if (!DomainOriginProof::matchesResponse($httpCode, $body, $token)) {
+            return ['ok' => false, 'message' => ''];
+        }
+        $proxied = stripos($headers, 'cf-ray:') !== false || stripos($headers, 'server: cloudflare') !== false;
+        $message = $proxied
+            ? 'DNS OK - Cloudflare-proxied hostname answers this tracker'
+            : 'DNS OK - hostname answers this tracker';
+
+        return ['ok' => true, 'message' => $message];
     }
 
     /**
@@ -327,6 +377,14 @@ class TrackingDomain
                 if (!$dnsOk && (empty($serverIps) && empty($baseHost))) {
                     $dnsError = "DNS records found (" . count($records) . " record(s)), but unable to verify if domain points to this tracker. BASE_URL is set to localhost or not configured. For localhost installations, you must manually verify the domain points to your server's IP address.";
                 }
+            }
+        }
+
+        if (!$dnsOk && $host !== '') {
+            $proof = $this->probeOriginProof($host);
+            if ($proof['ok']) {
+                $dnsOk = true;
+                $dnsError = $proof['message'];
             }
         }
         

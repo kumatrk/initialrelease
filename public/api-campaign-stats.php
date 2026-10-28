@@ -18,6 +18,7 @@ use SimpleKuma\Entity\Campaign;
 use SimpleKuma\Stats\CampaignStatsQueryFilters;
 use SimpleKuma\Stats\CampaignStatsResponseCache;
 use SimpleKuma\Stats\CampaignStatsV2Service;
+use SimpleKuma\Stats\FunnelStatsService;
 use SimpleKuma\Stats\ReportingBusyException;
 use SimpleKuma\Stats\ReportingConcurrencyGuard;
 use SimpleKuma\Stats\ReportingQueryCancel;
@@ -75,7 +76,8 @@ if ($campaignId < 1) {
 }
 
 $campaignEntity = new Campaign($db);
-if ($campaignEntity->getById($campaignId) === null) {
+$campaignRow = $campaignEntity->getById($campaignId);
+if ($campaignRow === null) {
     http_response_code(404);
     echo json_encode(['ok' => false, 'error' => 'Campaign not found']);
     exit;
@@ -229,6 +231,7 @@ try {
             $perPage = max(1, min(200, (int)($_GET['per_page'] ?? 25)));
             $sort = trim((string)($_GET['sort'] ?? 'clicks'));
             $order = trim((string)($_GET['order'] ?? 'desc'));
+            $metaDelivery = (string)($_GET['meta_delivery'] ?? '') === '1';
 
             $cacheParts['dimensions'] = $dimensions;
             $cacheParts['parent_path'] = $parentPath;
@@ -236,6 +239,7 @@ try {
             $cacheParts['per_page'] = $perPage;
             $cacheParts['sort'] = $sort;
             $cacheParts['order'] = $order;
+            $cacheParts['meta_delivery'] = $metaDelivery ? 1 : 0;
 
             $cacheKey = CampaignStatsResponseCache::makeKey($userId, 'breakdown', $cacheParts);
             $payload = CampaignStatsResponseCache::remember($cacheKey, static function () use (
@@ -250,7 +254,8 @@ try {
                 $perPage,
                 $sort,
                 $order,
-                $filters
+                $filters,
+                $metaDelivery
             ) {
                 return ReportingConcurrencyGuard::run(static function () use (
                     $service,
@@ -264,7 +269,8 @@ try {
                     $perPage,
                     $sort,
                     $order,
-                    $filters
+                    $filters,
+                    $metaDelivery
                 ) {
                     return $service->getBreakdown(
                         $campaignId,
@@ -277,7 +283,43 @@ try {
                         $perPage,
                         $sort,
                         $order,
-                        $filters
+                        $filters,
+                        $metaDelivery
+                    );
+                });
+            }, StatsResponseCache::TTL_BREAKDOWN);
+            echo json_encode(['ok' => true, 'data' => $payload]);
+            break;
+
+        case 'funnel':
+            if (($campaignRow['flow_type'] ?? '') !== 'DeepFunnel') {
+                http_response_code(422);
+                echo json_encode(['ok' => false, 'error' => 'Funnel report is only available for Deep Funnel campaigns']);
+                break;
+            }
+            $nodePrefix = trim((string) ($_GET['node'] ?? ''));
+            $cacheParts['node'] = $nodePrefix;
+            $cacheKey = CampaignStatsResponseCache::makeKey($userId, 'funnel', $cacheParts);
+            $payload = CampaignStatsResponseCache::remember($cacheKey, static function () use (
+                $db,
+                $campaignId,
+                $dateFrom,
+                $dateTo,
+                $nodePrefix
+            ) {
+                return ReportingConcurrencyGuard::run(static function () use (
+                    $db,
+                    $campaignId,
+                    $dateFrom,
+                    $dateTo,
+                    $nodePrefix
+                ) {
+                    $funnel = new FunnelStatsService($db);
+                    return $funnel->getFunnelReport(
+                        $campaignId,
+                        $dateFrom,
+                        $dateTo,
+                        $nodePrefix !== '' ? $nodePrefix : null
                     );
                 });
             }, StatsResponseCache::TTL_BREAKDOWN);

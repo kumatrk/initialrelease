@@ -279,8 +279,23 @@
         max-width: 100%;
     }
     
+    /* Keep wide tables scrollable inside a wrapper — do not force page overflow */
+    .card-body .table-responsive,
+    .card-body [style*="overflow-x: auto"],
+    .card-body [style*="overflow-x:auto"] {
+        max-width: 100%;
+        -webkit-overflow-scrolling: touch;
+    }
+
     .card-body table {
-        min-width: 600px;
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .card-body .table-responsive table,
+    .card-body [style*="overflow-x: auto"] table,
+    .card-body [style*="overflow-x:auto"] table {
+        min-width: 560px;
     }
     
     /* About Kuma Section - Mobile Optimizations */

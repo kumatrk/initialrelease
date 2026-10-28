@@ -1,6 +1,7 @@
 <?php
 /** Campaign Stats — main reporting workspace. */
 
+use SimpleKuma\Auth\Csrf;
 use SimpleKuma\Entity\Campaign;
 use SimpleKuma\Utils\Formatter;
 
@@ -38,7 +39,9 @@ $statsJsVer = file_exists($statsJsPath) ? (string)filemtime($statsJsPath) : '1';
      data-date-to="<?= htmlspecialchars($dateTo) ?>"
      data-today="<?= htmlspecialchars($today) ?>"
      data-user-timezone="<?= htmlspecialchars($userTimezone) ?>"
-     data-currency="<?= htmlspecialchars($userCurrency) ?>">
+     data-currency="<?= htmlspecialchars($userCurrency) ?>"
+     data-meta-api="<?= htmlspecialchars(APP_BASE_URL . '/api-meta-entity.php') ?>"
+     data-csrf="<?= htmlspecialchars(Csrf::ensureToken()) ?>">
 
     <div class="stats-v2-header">
         <div>
@@ -55,7 +58,9 @@ $statsJsVer = file_exists($statsJsPath) ? (string)filemtime($statsJsPath) : '1';
                 <label for="stats-v2-campaign">Campaign</label>
                 <select id="stats-v2-campaign">
                     <?php foreach ($allCampaigns as $camp): ?>
-                        <option value="<?= (int)$camp['id'] ?>" <?= $selectedCampaignId === (int)$camp['id'] ? 'selected' : '' ?>>
+                        <option value="<?= (int)$camp['id'] ?>"
+                                data-flow-type="<?= htmlspecialchars((string)($camp['flow_type'] ?? ''), ENT_QUOTES) ?>"
+                                <?= $selectedCampaignId === (int)$camp['id'] ? 'selected' : '' ?>>
                             #<?= (int)$camp['id'] ?> - <?= htmlspecialchars($camp['name']) ?>
                         </option>
                     <?php endforeach; ?>
@@ -133,6 +138,7 @@ $statsJsVer = file_exists($statsJsPath) ? (string)filemtime($statsJsPath) : '1';
         <button type="button" class="stats-v2-tab active" data-tab="overview">Overview</button>
         <button type="button" class="stats-v2-tab" data-tab="breakdown">Breakdown</button>
         <button type="button" class="stats-v2-tab" data-tab="chart">Chart</button>
+        <button type="button" class="stats-v2-tab hidden" data-tab="funnel" id="stats-v2-tab-funnel">Funnel</button>
     </div>
 
     <div class="stats-v2-panel stats-v2-panel-overview active" data-panel="overview">
@@ -198,8 +204,13 @@ $statsJsVer = file_exists($statsJsPath) ? (string)filemtime($statsJsPath) : '1';
             </div>
             <div id="stats-v2-column-picker" class="stats-v2-column-picker hidden">
                 <label><input type="checkbox" class="col-toggle" data-col="visitors" checked> Visitors</label>
+                <label><input type="checkbox" class="col-toggle" data-col="lp_only"> LP clicks</label>
                 <label><input type="checkbox" class="col-toggle" data-col="lp_clicks" checked> Clicks</label>
                 <label><input type="checkbox" class="col-toggle" data-col="ctr" checked> CTR</label>
+                <label><input type="checkbox" class="col-toggle" data-col="cpc"> CPC</label>
+                <label><input type="checkbox" class="col-toggle" data-col="cpm"> CPM</label>
+                <label><input type="checkbox" class="col-toggle" data-col="ecpm"> eCPM</label>
+                <label><input type="checkbox" class="col-toggle" data-col="epc"> EPC</label>
                 <label><input type="checkbox" class="col-toggle" data-col="conversions" checked> Conversions</label>
                 <label><input type="checkbox" class="col-toggle" data-col="optins" checked> Opt-ins</label>
                 <label><input type="checkbox" class="col-toggle" data-col="cr" checked> CR</label>
@@ -209,7 +220,16 @@ $statsJsVer = file_exists($statsJsPath) ? (string)filemtime($statsJsPath) : '1';
                 <label><input type="checkbox" class="col-toggle" data-col="roi" checked> ROI</label>
                 <label><input type="checkbox" class="col-toggle" data-col="bot_pct" checked> Bot %</label>
                 <label><input type="checkbox" class="col-toggle" data-col="bot_clicks"> Bots</label>
+                <span class="stats-v2-col-note">Meta columns stay off until you check them. Numbers show on mapped Ad and Ad set rows.</span>
+                <label><input type="checkbox" class="col-toggle" data-col="meta_impressions"> Meta impressions</label>
+                <label><input type="checkbox" class="col-toggle" data-col="meta_reach"> Meta reach</label>
+                <label><input type="checkbox" class="col-toggle" data-col="meta_clicks"> Meta clicks</label>
+                <label><input type="checkbox" class="col-toggle" data-col="meta_ctr"> Meta CTR</label>
+                <label><input type="checkbox" class="col-toggle" data-col="meta_cpc"> Meta CPC</label>
+                <label><input type="checkbox" class="col-toggle" data-col="meta_cpm"> Meta CPM</label>
+                <label><input type="checkbox" class="col-toggle" data-col="meta_spend"> Meta spend</label>
             </div>
+            <p id="stats-v2-meta-controls-note" class="stats-v2-meta-note" hidden>Pause and Activate change the whole ad or ad set in Meta, including traffic that is not in this row.</p>
             <div id="stats-v2-breakdown-message" class="stats-v2-message"></div>
             <div class="stats-v2-table-scroll">
                 <table class="stats-v2-table" id="stats-v2-breakdown-table">
@@ -228,6 +248,18 @@ $statsJsVer = file_exists($statsJsPath) ? (string)filemtime($statsJsPath) : '1';
                             <th class="num" data-col="roi">ROI</th>
                             <th class="num" data-col="bot_pct">Bot %</th>
                             <th class="num" data-col="bot_clicks">Bots</th>
+                            <th class="num" data-col="lp_only" title="Landing page clicks">LP clicks</th>
+                            <th class="num" data-col="cpc" title="Cost divided by clicks">CPC</th>
+                            <th class="num" data-col="cpm" title="Cost per 1,000 visitors">CPM</th>
+                            <th class="num" data-col="ecpm" title="Revenue per 1,000 visitors">eCPM</th>
+                            <th class="num" data-col="epc" title="Revenue divided by clicks">EPC</th>
+                            <th class="num" data-col="meta_impressions" title="Impressions reported by Meta">Meta impressions</th>
+                            <th class="num" data-col="meta_reach" title="People reached on a single day. A range of days stays blank.">Meta reach</th>
+                            <th class="num" data-col="meta_clicks" title="Clicks reported by Meta. These are not Kuma visitors.">Meta clicks</th>
+                            <th class="num" data-col="meta_ctr" title="Meta clicks divided by Meta impressions">Meta CTR</th>
+                            <th class="num" data-col="meta_cpc" title="Meta spend divided by Meta clicks">Meta CPC</th>
+                            <th class="num" data-col="meta_cpm" title="Meta spend per 1,000 Meta impressions">Meta CPM</th>
+                            <th class="num" data-col="meta_spend" title="Spend reported by Meta">Meta spend</th>
                         </tr>
                     </thead>
                     <tbody id="stats-v2-breakdown-body">
@@ -315,6 +347,26 @@ $statsJsVer = file_exists($statsJsPath) ? (string)filemtime($statsJsPath) : '1';
             </article>
 
             <div class="stats-v2-insights-status hidden" id="stats-v2-insights-status" role="status"></div>
+        </div>
+    </div>
+
+    <div class="stats-v2-panel stats-v2-panel-funnel" data-panel="funnel">
+        <div class="card" style="margin-bottom:16px;">
+            <h3 style="margin:0 0 8px;">Funnel levels</h3>
+            <p style="margin:0 0 12px;font-size:13px;color:#666;">Drop-off by level. Click a step chip to focus paths through that node.</p>
+            <div id="stats-v2-funnel-levels" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+        </div>
+        <div class="card" style="margin-bottom:16px;">
+            <h3 style="margin:0 0 8px;">Steps (LP / offer slots)</h3>
+            <div id="stats-v2-funnel-steps" style="overflow-x:auto;"></div>
+        </div>
+        <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px;">
+                <h3 style="margin:0;">User paths</h3>
+                <button type="button" class="btn btn-sm btn-secondary" id="stats-v2-funnel-clear-node">Clear node filter</button>
+            </div>
+            <p id="stats-v2-funnel-node-label" style="margin:0 0 12px;font-size:13px;color:#666;">Showing all paths for the date range.</p>
+            <div id="stats-v2-funnel-paths" style="overflow-x:auto;"></div>
         </div>
     </div>
     <?php endif; ?>

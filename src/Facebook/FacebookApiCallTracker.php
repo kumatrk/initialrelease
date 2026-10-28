@@ -405,6 +405,10 @@ class FacebookApiCallTracker
             'adset_fallback' => 'Per-adset Insights fallback',
             'adset_recovery' => 'Adset recovery (batch ads)',
             'ad_insights' => 'Per-ad Insights',
+            'entity_status' => 'Ad and ad set status',
+            'entity_status_page' => 'Ad and ad set status pagination',
+            'entity_status_update' => 'Pause or activate an ad or ad set',
+            'entity_status_read' => 'Read ad or ad set status',
             'campaign_list' => 'Meta campaign list (UI sync)',
             'campaign_list_page' => 'Meta campaign list pagination',
             'rate_limit_retry' => 'Rate-limit retry',
@@ -704,6 +708,16 @@ class FacebookApiCallTracker
             }
         }
         return $out;
+    }
+
+    /**
+     * Store a user-visible failure. The call count stays on facebook_api_calls.
+     */
+    public function noteFailure(string $purpose, ?int $httpCode, string $message): void
+    {
+        $labels = self::purposeLabels();
+        $action = $labels[$purpose] ?? $purpose;
+        \SimpleKuma\Support\ApiFailureLog::record($this->db, 'meta', $action, $httpCode, $message);
     }
 }
 

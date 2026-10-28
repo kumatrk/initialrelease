@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace SimpleKuma\Enrichment;
 
 use DeviceDetector\DeviceDetector as MatomoDeviceDetector;
-use DeviceDetector\Cache\StaticCache;
 
 /**
  * Device Detector
@@ -49,6 +48,13 @@ class DeviceDetector
             return self::$staticCache[$uaHash];
         }
 
+        $persisted = DeviceDetectorPersistentCache::getUa($uaHash);
+        if ($persisted !== null) {
+            self::$staticCache[$uaHash] = $persisted;
+
+            return $persisted;
+        }
+
         // Check if Matomo DeviceDetector is available
         if (!class_exists('DeviceDetector\DeviceDetector')) {
             // Fallback to basic detection if library not installed
@@ -57,11 +63,7 @@ class DeviceDetector
 
         // Initialize Matomo DeviceDetector
         $dd = new MatomoDeviceDetector($this->userAgent);
-
-        // Use static cache adapter for better performance
-        if (class_exists('DeviceDetector\Cache\StaticCache')) {
-            $dd->setCache(new StaticCache());
-        }
+        $dd->setCache(DeviceDetectorPersistentCache::regexCache());
 
         // Parse the user agent once
         $dd->parse();
@@ -107,8 +109,8 @@ class DeviceDetector
             'bot_category' => $botCategory,
         ];
 
-        // Cache the result
         self::$staticCache[$uaHash] = $result;
+        DeviceDetectorPersistentCache::putUa($uaHash, $result);
 
         return $result;
     }

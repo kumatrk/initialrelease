@@ -53,9 +53,6 @@ if (!$campaignKey) {
     die('Campaign not found');
 }
 
-// Log for debugging (can be removed in production)
-error_log("KM Redirector: Processing request - key: {$campaignKey}, slug param: " . ($slugParam ?? 'none') . ", REQUEST_URI: " . ($_SERVER['REQUEST_URI'] ?? 'N/A'));
-
 // Minimal bootstrap (if not already loaded for path fallback)
 if (!class_exists(\SimpleKuma\Tracking\Redirector::class)) {
     require_once __DIR__ . '/../vendor/autoload.php';
@@ -75,7 +72,7 @@ try {
     if (!headers_sent()) {
         header('Content-Type: text/plain; charset=utf-8');
     }
-    die("Database connection failed: " . htmlspecialchars($e->getMessage()));
+    die('Service unavailable');
 }
 
 if ($db->connect_error) {

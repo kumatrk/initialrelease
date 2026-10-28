@@ -139,7 +139,7 @@
     .mobile-offer-performance-card .offer-name {
         font-weight: 600;
         font-size: 14px;
-        color: #3d5a26;
+        color: var(--accent);
         margin-bottom: 8px;
     }
     
@@ -193,7 +193,7 @@
     .mobile-landing-page-performance-card .lp-name {
         font-weight: 600;
         font-size: 14px;
-        color: #3d5a26;
+        color: var(--accent);
         margin-bottom: 8px;
     }
     
@@ -239,7 +239,7 @@
     .mobile-campaign-performance-card .campaign-name {
         font-weight: 600;
         font-size: 14px;
-        color: #3d5a26;
+        color: var(--accent);
         margin-bottom: 4px;
     }
     
@@ -253,7 +253,7 @@
     }
     
     .mobile-campaign-performance-card .campaign-status.active {
-        background: #28a745;
+        background: var(--color-success);
         color: #fff;
     }
     
@@ -348,7 +348,7 @@
     
     .mobile-token-breakdown .token-name {
         font-weight: 600 !important;
-        color: #3d5a26 !important;
+        color: var(--accent) !important;
         font-size: 13px !important;
         margin-bottom: 10px !important;
         padding-bottom: 6px !important;
@@ -363,7 +363,7 @@
     .mobile-landing-page-performance-card > .mobile-token-breakdown.token-level-0 {
         margin-left: 16px !important;
         background: #f0f5f0 !important;
-        border-left: 3px solid #5a7a3a !important;
+        border-left: 3px solid var(--accent-muted) !important;
     }
     
     /* Group 3 (Second level, level 1) - Light blue tint */
@@ -400,7 +400,7 @@
     .mobile-offer-performance-card > .mobile-token-breakdown:first-of-type,
     .mobile-landing-page-performance-card > .mobile-token-breakdown:first-of-type {
         margin-top: 16px !important;
-        border-top: 2px solid #3d5a26 !important;
+        border-top: 2px solid var(--accent) !important;
         padding-top: 16px !important;
     }
 }

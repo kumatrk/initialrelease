@@ -3,13 +3,22 @@
  * Only CSS variables — components consume semantic tokens from main.css.
  */
 [data-theme="dark"] {
-    --color-forest-dark: #4e9a4d;
-    --color-forest: #6abf69;
-    --color-forest-light: #7fd67e;
+    --accent: #6abf69;
+    --accent-hover: #4e9a4d;
+    --accent-muted: #7fd67e;
+    --accent-soft: #1e2a1a;
+
+    --color-forest-dark: var(--accent-hover);
+    --color-forest: var(--accent);
+    --color-forest-light: var(--accent-muted);
     --color-bark: #c9a66b;
     --color-bark-dark: #a8844f;
     --color-cream: #1a1d21;
     --color-cream-dark: #252a30;
+
+    --heading-color: #e8edf3;
+    --link-color: var(--accent);
+    --link-hover: var(--accent-hover);
 
     --color-white: #2d333b;
     --color-gray-100: #22272e;
@@ -30,6 +39,7 @@
     --sidebar-hover-bg: rgba(255, 255, 255, 0.08);
     --sidebar-active-bg: rgba(255, 255, 255, 0.12);
     --sidebar-active-border: var(--color-bark);
+    --sidebar-active-text: var(--sidebar-text);
     --sidebar-scrollbar-track: #14181d;
     --sidebar-scrollbar-thumb: rgba(255, 255, 255, 0.25);
     --sidebar-scrollbar-thumb-hover: rgba(255, 255, 255, 0.35);
@@ -53,16 +63,24 @@
     --table-bg: var(--color-white);
     --table-header-bg: #252a30;
     --table-header-text: var(--color-gray-600);
-    --table-header-accent: inset 0 -2px 0 var(--color-forest-dark);
+    --table-header-accent: inset 0 -2px 0 var(--accent-hover);
     --table-row-hover: var(--color-gray-100);
     --table-border: var(--color-gray-200);
 
     --btn-on-primary-text: #f5f1e8;
     --btn-outline-hover-text: #1a1d21;
+    --btn-radius: 4px;
+    --btn-padding-y: 8px;
+    --btn-padding-x: 24px;
+
+    --logo-max-width: 64px;
+    --logo-max-height: 60px;
+    --auth-logo-max-height: 140px;
     --badge-warning-text: #f0d78c;
 
     --auth-page-bg: linear-gradient(135deg, #14181d 0%, #1e2329 100%);
     --auth-header-bg: #252a30;
+    --auth-header-text: #f5f1e8;
     --auth-container-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
     --auth-tagline-text: #f5f1e8;
     --auth-tagline-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8), 0 0 3px rgba(200, 255, 200, 0.35);

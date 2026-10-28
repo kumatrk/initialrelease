@@ -55,6 +55,11 @@ server {
         fastcgi_pass unix:/var/run/php/php8.1-fpm.sock;  # adjust socket / php version
     }
 
+    # Cost-sync logs must not be downloadable if an older build wrote public/logs
+    location ^~ /logs/ {
+        deny all;
+    }
+
     location ~ /\. {
         deny all;
     }

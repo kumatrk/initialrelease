@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SimpleKuma\Tracking;
 
 use mysqli;
+use SimpleKuma\Database\SchemaProbe;
 use SimpleKuma\Settings\SettingsManager;
 use SimpleKuma\Stats\CampaignStatsExpressions;
 use SimpleKuma\Stats\StatsExclusionFlag;
@@ -33,9 +34,10 @@ class RedirectlessTracker
      * @param int $landingPageId Landing page ID
      * @param array $params Tracking parameters (GET/POST)
      * @param string|null $failureReason Optional; when track returns null, set to the reason (campaign_not_found, campaign_not_active, lp_not_in_rotation)
+     * @param array{mode: string, url: string|null}|null $botRoute Set when this visit is routed off the live destination
      * @return string|null Returns the click_id if successful, null otherwise
      */
-    public function track(int $campaignId, int $landingPageId, array $params, ?string &$failureReason = null): ?string
+    public function track(int $campaignId, int $landingPageId, array $params, ?string &$failureReason = null, ?array &$botRoute = null): ?string
     {
         // Load campaign
         $campaign = $this->getCampaign($campaignId);
@@ -50,10 +52,12 @@ class RedirectlessTracker
             return null;
         }
 
-        // Reuse redirect-stamped click_id before LP-rotation checks (visit already recorded)
-        $existingClickId = $this->resolveExistingClickId($campaignId, $landingPageId, $params);
-        if ($existingClickId !== null) {
-            return $existingClickId;
+        // Reuse redirect-stamped click_id before LP-rotation checks (visit already recorded).
+        // Still report the bot/proxy decision so a later hit can leave for the safe URL.
+        $existingClick = $this->resolveExistingClick($campaignId, $landingPageId, $params);
+        if ($existingClick !== null) {
+            $botRoute = BotRoute::decision($campaign, BotRoute::visitFromClick($existingClick));
+            return (string) $existingClick['click_id'];
         }
 
         // Verify landing page is in campaign rotation
@@ -87,9 +91,11 @@ class RedirectlessTracker
         // Capture cost
         $cost = $this->captureCost($campaign, $trackingParams, $detectedTrafficSourceId);
 
-        // Store click in database
-        $this->storeClick($campaignId, $clickId, $trackingParams, $cost, $campaign, $landingPageId, $detectedTrafficSourceId, $slugId);
-        
+        // Store click in database. The landing page is already open; the route
+        // tells the caller to leave it (safe URL) or to keep the offer hop closed.
+        $visit = $this->storeClick($campaignId, $clickId, $trackingParams, $cost, $campaign, $landingPageId, $detectedTrafficSourceId, $slugId);
+        $botRoute = BotRoute::decision($campaign, $visit);
+
         return $clickId;
     }
 
@@ -210,8 +216,21 @@ class RedirectlessTracker
     /**
      * If request already carries a redirect click_id for this campaign (+ LP when set), reuse it.
      * Unknown / wrong-campaign IDs return null so a new click is created as usual.
+     *
+     * @param array<string, mixed> $params
      */
     private function resolveExistingClickId(int $campaignId, int $landingPageId, array $params): ?string
+    {
+        $row = $this->resolveExistingClick($campaignId, $landingPageId, $params);
+
+        return $row === null ? null : (string) $row['click_id'];
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     * @return array<string, mixed>|null
+     */
+    private function resolveExistingClick(int $campaignId, int $landingPageId, array $params): ?array
     {
         $raw = $params['click_id'] ?? '';
         if (!is_string($raw) && !is_numeric($raw)) {
@@ -223,10 +242,15 @@ class RedirectlessTracker
         }
 
         $stmt = $this->db->prepare(
-            'SELECT click_id, landing_page_id FROM clicks WHERE click_id = ? AND campaign_id = ? LIMIT 1'
+            'SELECT click_id, landing_page_id, connection_type, extra_json FROM clicks WHERE click_id = ? AND campaign_id = ? LIMIT 1'
         );
         if (!$stmt) {
-            error_log('RedirectlessTracker::resolveExistingClickId prepare failed: ' . $this->db->error);
+            $stmt = $this->db->prepare(
+                'SELECT click_id, landing_page_id, extra_json FROM clicks WHERE click_id = ? AND campaign_id = ? LIMIT 1'
+            );
+        }
+        if (!$stmt) {
+            error_log('RedirectlessTracker::resolveExistingClick prepare failed: ' . $this->db->error);
             return null;
         }
         $stmt->bind_param('si', $clickId, $campaignId);
@@ -245,7 +269,7 @@ class RedirectlessTracker
         }
 
         $this->debugLog("RedirectlessTracker: reusing existing click_id=$clickId for campaign_id=$campaignId (skipped INSERT)");
-        return $clickId;
+        return $row;
     }
 
     /**
@@ -384,7 +408,10 @@ class RedirectlessTracker
         return $row ? (int)$row['id'] : null;
     }
 
-    private function storeClick(int $campaignId, string $clickId, array $params, ?array $cost, array $campaign, int $landingPageId, ?int $trafficSourceId = null, ?int $slugId = null): void
+    /**
+     * @return array{classification: string, exclude_from_stats: bool, connection_type: ?string}
+     */
+    private function storeClick(int $campaignId, string $clickId, array $params, ?array $cost, array $campaign, int $landingPageId, ?int $trafficSourceId = null, ?int $slugId = null): array
     {
         // Get real IP address
         $ip = $_SERVER['REMOTE_ADDR'] ?? null;
@@ -447,6 +474,13 @@ class RedirectlessTracker
             $this->getBotDetectionOptions()
         );
         $extraData['bot'] = \SimpleKuma\Enrichment\BotDetector::toExtraJson($botDetection);
+        $visit = [
+            'classification' => (string) ($botDetection['classification'] ?? \SimpleKuma\Enrichment\BotDetector::CLASS_HUMAN),
+            'exclude_from_stats' => !empty($botDetection['exclude_from_stats']),
+            'connection_type' => isset($geoData['connection_type']) && is_string($geoData['connection_type']) && $geoData['connection_type'] !== ''
+                ? $geoData['connection_type']
+                : null,
+        ];
         
         // Capture Facebook cookies (_fbc and _fbp) for Conversions API
         // Meta's best practice: Use _fbc cookie directly if available
@@ -513,19 +547,8 @@ class RedirectlessTracker
             }
         }
 
-        // Check if traffic_source_id column exists (added in migration 033)
-        $trafficSourceColumnExists = false;
-        $checkResult = $this->db->query("SHOW COLUMNS FROM clicks LIKE 'traffic_source_id'");
-        if ($checkResult && $checkResult->num_rows > 0) {
-            $trafficSourceColumnExists = true;
-        }
-
-        // Check if clicks.postal column exists (migration 052)
-        $postalColumnExists = false;
-        $postalCheck = $this->db->query("SHOW COLUMNS FROM clicks LIKE 'postal'");
-        if ($postalCheck && $postalCheck->num_rows > 0) {
-            $postalColumnExists = true;
-        }
+        $trafficSourceColumnExists = SchemaProbe::columnExists($this->db, 'clicks', 'traffic_source_id');
+        $postalColumnExists = SchemaProbe::columnExists($this->db, 'clicks', 'postal');
         $statsFlagColumnExists = StatsExclusionFlag::columnExists($this->db);
         $excludeFromStats = CampaignStatsExpressions::shouldExcludeClickFromStats(
             $trafficSourceId,
@@ -547,10 +570,7 @@ class RedirectlessTracker
             $geoBind[] = $geoData['postal'] ?? null;
         }
         $geoAppend = ClickNetworkEnrichment::appendOptionalColumns(
-            function (string $table, string $column): bool {
-                $check = $this->db->query("SHOW COLUMNS FROM `{$table}` LIKE '" . $this->db->real_escape_string($column) . "'");
-                return $check && $check->num_rows > 0;
-            },
+            fn (string $table, string $column): bool => SchemaProbe::columnExists($this->db, $table, $column),
             $geoCols,
             $geoPlaceholders,
             $geoParamTypes,
@@ -656,6 +676,8 @@ class RedirectlessTracker
         } catch (\Throwable $e) {
             error_log("RedirectlessTracker::storeClick Exception: " . $e->getMessage());
         }
+
+        return $visit;
     }
 
     /**

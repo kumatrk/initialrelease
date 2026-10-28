@@ -9,6 +9,8 @@ use SimpleKuma\Database\ClicksTableResolver;
 use SimpleKuma\Entity\Campaign;
 use SimpleKuma\Entity\TrafficSource;
 use SimpleKuma\Facebook\FacebookCostAggregator;
+use SimpleKuma\Facebook\MetaDeliveryStore;
+use SimpleKuma\Facebook\MetaEntityStatus;
 use SimpleKuma\Honeycomb\BindingStore;
 use SimpleKuma\Honeycomb\HoneycombCostAggregator;
 use SimpleKuma\Utils\Formatter;
@@ -218,7 +220,12 @@ class CampaignStatsV2Service
                 $utcRange['to'],
                 $timezone
             );
-            $totalCost = $manualCost + $fbCost + $gaCost + $honeyCost;
+            $nbCost = (new \SimpleKuma\NewsBreak\NewsBreakCostAggregator($this->db))->getCampaignTotalCost(
+                $campaignId,
+                $utcRange['from'],
+                $utcRange['to']
+            );
+            $totalCost = $manualCost + $fbCost + $gaCost + $honeyCost + $nbCost;
         }
 
         return $this->buildSummaryFromTotals(
@@ -281,7 +288,12 @@ class CampaignStatsV2Service
                 $utcRange['to'],
                 $timezone
             );
-            $totalCost = $manualCost + $fbCost + $gaCost + $honeyCost;
+            $nbCost = (new \SimpleKuma\NewsBreak\NewsBreakCostAggregator($this->db))->getCampaignTotalCost(
+                $campaignId,
+                $utcRange['from'],
+                $utcRange['to']
+            );
+            $totalCost = $manualCost + $fbCost + $gaCost + $honeyCost + $nbCost;
         }
 
         $visitorsCount = (int)($totals['visitors'] ?? 0);
@@ -560,6 +572,20 @@ class CampaignStatsV2Service
                 $parentPath,
                 $filters
             );
+        } elseif ($parentPath === [] && $this->isTokenBreakdownDimension($groupBy)) {
+            // Token daily is already one row per name. A non-UTC "today" must not
+            // replace those costs with a visitor share of the campaign total.
+            $rows = $this->preAggregateReader->queryBreakdownRows(
+                $campaignId,
+                $groupBy,
+                $dateFrom,
+                $dateTo,
+                $parentPath,
+                $filters
+            );
+            if ($rows === null || $rows === []) {
+                return null;
+            }
         } else {
             $segments = TimezoneSummaryBlend::segments($utcFrom, $utcTo);
             // Edges-only non-UTC windows have no full UTC summary days — fall through to
@@ -605,6 +631,11 @@ class CampaignStatsV2Service
     /**
      * @param list<array{dimension: string, value: string}> $parentPath
      */
+    private function isTokenBreakdownDimension(string $groupBy): bool
+    {
+        return !in_array($groupBy, ['offer', 'landing', 'date', 'week', 'day_of_week', 'hour'], true);
+    }
+
     private function isTokenHourlyBreakdownNest(string $groupBy, array $parentPath): bool
     {
         if (count($parentPath) !== 1) {
@@ -1196,7 +1227,8 @@ class CampaignStatsV2Service
         int $perPage,
         string $sort = 'clicks',
         string $order = 'desc',
-        ?CampaignStatsQueryFilters $filters = null
+        ?CampaignStatsQueryFilters $filters = null,
+        bool $metaDelivery = false
     ): array {
         ReportingQueryCancel::throwIfAborted();
         $filters ??= new CampaignStatsQueryFilters();
@@ -1272,6 +1304,24 @@ class CampaignStatsV2Service
             ];
         }
 
+        if ($metaDelivery) {
+            $delivery = MetaDeliveryStore::overlay(
+                $this->db,
+                $campaign,
+                $dimension,
+                $result['rows'],
+                $dateFrom,
+                $dateTo
+            );
+            $result['rows'] = $delivery['rows'];
+            if ($level === 0 && $parentPath === [] && !$filters->hasActiveFilters() && $delivery['totals'] !== null) {
+                $totals = array_merge($totals, $delivery['totals']);
+            }
+        }
+
+        $controls = MetaEntityStatus::attach($this->db, $campaign, $dimension, $result['rows']);
+        $result['rows'] = $controls['rows'];
+
         return [
             'rows' => $result['rows'],
             'total' => $result['total'],
@@ -1281,6 +1331,7 @@ class CampaignStatsV2Service
             'dimension' => $dimension,
             'level' => $level,
             'has_children' => $level + 1 < count($dimensions),
+            'meta_controls' => $controls['enabled'],
         ];
     }
 
@@ -2112,10 +2163,15 @@ class CampaignStatsV2Service
     {
         $dim = CampaignStatsExpressions::unwrapDimensionKey($groupBy);
         $index = match ($dim) {
-            'region', 'country', 'city' => 'idx_clicks_region_ts',
+            // Cover index is for count/cost aggregates whose columns it includes.
             'landing', 'offer', 'date', 'hour', 'week', 'day_of_week' => 'idx_clicks_ts_stats_cover',
             'adset_name' => 'idx_clicks_campaign_ts_adset_name_value',
             'ad_name' => 'idx_clicks_campaign_ts_ad_name_value',
+            // Built-in click columns are not in the ts-leading cover or the
+            // region-leading geo index. Forcing those scanned every campaign
+            // in the window. (campaign_id, ts) keeps the read on one campaign.
+            'browser', 'browser_version', 'os', 'os_version', 'device', 'device_brand', 'device_model',
+            'language', 'isp', 'connection_type', 'country', 'region', 'city', 'ip' => 'idx_campaign_ts',
             default => 'idx_clicks_ts_stats_cover',
         };
         $check = $this->db->query(

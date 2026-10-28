@@ -103,7 +103,7 @@ $db->close();
 </div>
 
 <?php if ($success): ?>
-<div style="background: #d4edda; color: #155724; padding: 15px; border-radius: 4px; margin-bottom: 20px; border-left: 4px solid #28a745;">
+<div style="background: var(--accent-soft); color: var(--accent-hover); padding: 15px; border-radius: 4px; margin-bottom: 20px; border-left: 4px solid var(--color-success);">
     ✅ <?= htmlspecialchars($success) ?>
 </div>
 <?php endif; ?>
@@ -200,7 +200,7 @@ $db->close();
                         <div class="mobile-network-card" style="background: var(--color-white); border: 1px solid var(--color-gray-200); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-md); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                             <!-- Header: Name -->
                             <div style="margin-bottom: var(--spacing-sm); border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: var(--spacing-xs);">
-                                <div style="font-weight: 600; font-size: 16px; color: #3d5a26;">
+                                <div style="font-weight: 600; font-size: 16px; color: var(--accent);">
                                     <?= htmlspecialchars($net['name']) ?>
                                 </div>
                                 <div style="font-size: 11px; color: #666; margin-top: 4px;">

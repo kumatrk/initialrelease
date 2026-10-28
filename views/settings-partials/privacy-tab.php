@@ -17,7 +17,7 @@ $advancedLifecycleEnabled = ($allSettings['advanced_data_lifecycle'] ?? '0') ===
                 </p>
 
                 <div style="margin-bottom: 28px;">
-                    <h3 style="margin: 0 0 16px 0; color: #3d5a26; font-size: 18px; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px;">Privacy</h3>
+                    <h3 style="margin: 0 0 16px 0; color: var(--accent); font-size: 18px; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px;">Privacy</h3>
                     <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                         <input type="checkbox" name="ip_anonymization"
                                <?= ($allSettings['ip_anonymization'] ?? '0') === '1' ? 'checked' : '' ?>
@@ -30,7 +30,7 @@ $advancedLifecycleEnabled = ($allSettings['advanced_data_lifecycle'] ?? '0') ===
                 </div>
 
                 <div style="margin-bottom: 28px;">
-                    <h3 style="margin: 0 0 16px 0; color: #3d5a26; font-size: 18px; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px;">Conversion attribution</h3>
+                    <h3 style="margin: 0 0 16px 0; color: var(--accent); font-size: 18px; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px;">Conversion attribution</h3>
                     <label style="display: block; font-weight: 600; margin-bottom: 8px;">Attribution window</label>
                     <?php
                     $attrStored = (string) ($allSettings['attribution_window_days'] ?? '30');

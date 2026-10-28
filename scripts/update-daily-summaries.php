@@ -20,6 +20,7 @@ require_once __DIR__ . '/../config/config.php';
 
 use SimpleKuma\Stats\CampaignStatsExpressions;
 use SimpleKuma\Stats\StatsViewExclusions;
+use SimpleKuma\Tracking\ConversionOptInClassifier;
 
 $db = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
 
@@ -108,55 +109,137 @@ foreach ($datesToProcess as $summaryDate) {
         $deleteStmt->close();
 
         // WHERE exclusions match DailySummaryUpdater / list / dashboard (FB approval + hidden IPs).
-        // COUNT(DISTINCT id) after filter keeps parity with historical CASE semantics.
+        // Rebuild must preserve bot_clicks + optins (same split as on-write DailySummaryUpdater).
         $fromSql = $hasArchive
             ? '(SELECT * FROM clicks WHERE DATE(ts) = ?
                 UNION ALL
                 SELECT * FROM clicks_archive WHERE DATE(ts) = ?) as cl'
             : '(SELECT * FROM clicks WHERE DATE(ts) = ?) as cl';
 
-        $convJoin = CampaignStatsExpressions::conversionsCountJoinAllEvents();
+        $hasBotClicksCol = false;
+        $hasOptinsCol = false;
+        $colBot = $db->query("SHOW COLUMNS FROM clicks_daily_summary LIKE 'bot_clicks'");
+        if ($colBot && $colBot->num_rows > 0) {
+            $hasBotClicksCol = true;
+        }
+        $colOpt = $db->query("SHOW COLUMNS FROM clicks_daily_summary LIKE 'optins'");
+        if ($colOpt && $colOpt->num_rows > 0) {
+            $hasOptinsCol = true;
+        }
+
+        $fbUa = CampaignStatsExpressions::FACEBOOK_CRAWLER_UA_FRAGMENT;
+        $metaUa = CampaignStatsExpressions::META_EXTERNAL_ADS_UA_FRAGMENT;
+        $botCond = "(cl.ua LIKE '%{$fbUa}%' OR cl.ua LIKE '%{$metaUa}%'
+            OR cl.extra_json LIKE '%\"classification\":\"known_bot\"%'
+            OR cl.extra_json LIKE '%\"classification\":\"suspected_bot\"%'
+            OR cl.extra_json LIKE '%\"exclude_from_stats\":true%')";
+
+        $optInList = ConversionOptInClassifier::sqlInList();
+        if ($hasOptinsCol) {
+            $convJoin = "LEFT JOIN (
+                SELECT click_id,
+                       SUM(CASE WHEN event_key IS NULL OR event_key NOT IN ({$optInList}) THEN 1 ELSE 0 END) AS conversion_count,
+                       SUM(CASE WHEN event_key IN ({$optInList}) THEN 1 ELSE 0 END) AS optin_count,
+                       SUM(CASE WHEN event_key IS NULL OR event_key NOT IN ({$optInList}) THEN COALESCE(payout, value) ELSE 0 END) AS revenue_sum
+                FROM conversions
+                GROUP BY click_id
+            ) conv ON conv.click_id = cl.click_id";
+        } else {
+            $convJoin = CampaignStatsExpressions::conversionsCountJoinAllEvents();
+        }
+
+        $clicksExpr = $hasBotClicksCol
+            ? "COUNT(DISTINCT CASE WHEN NOT {$botCond} THEN cl.id END)"
+            : 'COUNT(DISTINCT cl.id)';
+        $lpExpr = $hasBotClicksCol
+            ? "COUNT(DISTINCT CASE WHEN NOT {$botCond} AND cl.lp_click = 1 AND cl.landing_page_id IS NOT NULL THEN cl.id END)"
+            : 'COUNT(DISTINCT CASE WHEN cl.lp_click = 1 AND cl.landing_page_id IS NOT NULL THEN cl.id END)';
+        $directExpr = $hasBotClicksCol
+            ? "COUNT(DISTINCT CASE WHEN NOT {$botCond} AND cl.lp_click = 1 AND cl.landing_page_id IS NULL THEN cl.id END)"
+            : 'COUNT(DISTINCT CASE WHEN cl.lp_click = 1 AND cl.landing_page_id IS NULL THEN cl.id END)';
+        $botExpr = $hasBotClicksCol
+            ? "COUNT(DISTINCT CASE WHEN {$botCond} THEN cl.id END)"
+            : null;
+        $optinsExpr = $hasOptinsCol ? 'COALESCE(SUM(conv.optin_count), 0)' : null;
+
+        // Column order matches table: … conversions, optins, revenue… then bot_clicks after optins in schema,
+        // but INSERT lists only selected columns so order must match SELECT exactly.
+        $insertCols = [
+            'campaign_id',
+            'traffic_source_id',
+            'offer_id',
+            'landing_page_id',
+            'summary_date',
+            'clicks',
+            'lp_clicks',
+            'direct_clicks',
+            'conversions',
+        ];
+        $selectParts = [
+            'cl.campaign_id',
+            'cl.traffic_source_id',
+            'cl.offer_id',
+            'cl.landing_page_id',
+            'DATE(cl.ts) as summary_date',
+            "{$clicksExpr} as clicks",
+            "{$lpExpr} as lp_clicks",
+            "{$directExpr} as direct_clicks",
+            'COALESCE(SUM(conv.conversion_count), 0) as conversions',
+        ];
+        $dupParts = [
+            'clicks = VALUES(clicks)',
+            'lp_clicks = VALUES(lp_clicks)',
+            'direct_clicks = VALUES(direct_clicks)',
+            'conversions = VALUES(conversions)',
+        ];
+
+        if ($hasOptinsCol) {
+            $insertCols[] = 'optins';
+            $selectParts[] = "{$optinsExpr} as optins";
+            $dupParts[] = 'optins = VALUES(optins)';
+        }
+
+        $roiSql = CampaignStatsExpressions::storedRoiPercentSql(
+            'COALESCE(SUM(conv.revenue_sum), 0)',
+            'COALESCE(SUM(cl.cost), 0)'
+        );
+        $insertCols = array_merge($insertCols, ['revenue', 'cost', 'profit', 'roi']);
+        $selectParts = array_merge($selectParts, [
+            'COALESCE(SUM(conv.revenue_sum), 0) as revenue',
+            'COALESCE(SUM(cl.cost), 0) as cost',
+            'COALESCE(SUM(conv.revenue_sum), 0) - COALESCE(SUM(cl.cost), 0) as profit',
+            "{$roiSql} as roi",
+        ]);
+        $dupParts = array_merge($dupParts, [
+            'revenue = VALUES(revenue)',
+            'cost = VALUES(cost)',
+            'profit = VALUES(profit)',
+            'roi = VALUES(roi)',
+        ]);
+
+        if ($hasBotClicksCol) {
+            $insertCols[] = 'bot_clicks';
+            $selectParts[] = "{$botExpr} as bot_clicks";
+            $dupParts[] = 'bot_clicks = VALUES(bot_clicks)';
+        }
+
+        $dupParts[] = 'updated_at = NOW()';
+        $insertColSql = implode(', ', $insertCols);
+        $selectSql = implode(",\n                ", $selectParts);
+        $dupSql = implode(",\n                ", $dupParts);
+
         $insertStmt = $db->prepare("
             INSERT INTO clicks_daily_summary
-            (campaign_id, traffic_source_id, offer_id, landing_page_id, summary_date,
-             clicks, lp_clicks, direct_clicks, conversions, revenue, cost, profit, roi)
+            ({$insertColSql})
             SELECT
-                cl.campaign_id,
-                cl.traffic_source_id,
-                cl.offer_id,
-                cl.landing_page_id,
-                DATE(cl.ts) as summary_date,
-                COUNT(DISTINCT cl.id) as clicks,
-                COUNT(DISTINCT CASE
-                    WHEN cl.lp_click = 1 AND cl.landing_page_id IS NOT NULL THEN cl.id
-                END) as lp_clicks,
-                COUNT(DISTINCT CASE
-                    WHEN cl.lp_click = 1 AND cl.landing_page_id IS NULL THEN cl.id
-                END) as direct_clicks,
-                COALESCE(SUM(conv.conversion_count), 0) as conversions,
-                COALESCE(SUM(conv.revenue_sum), 0) as revenue,
-                COALESCE(SUM(cl.cost), 0) as cost,
-                COALESCE(SUM(conv.revenue_sum), 0) - COALESCE(SUM(cl.cost), 0) as profit,
-                CASE
-                    WHEN COALESCE(SUM(cl.cost), 0) > 0
-                    THEN ((COALESCE(SUM(conv.revenue_sum), 0) - COALESCE(SUM(cl.cost), 0)) / COALESCE(SUM(cl.cost), 0)) * 100
-                    ELSE NULL
-                END as roi
+                {$selectSql}
             FROM {$fromSql}
             {$convJoin}
             WHERE 1=1
               {$excl}
             GROUP BY cl.campaign_id, cl.traffic_source_id, cl.offer_id, cl.landing_page_id, DATE(cl.ts)
             ON DUPLICATE KEY UPDATE
-                clicks = VALUES(clicks),
-                lp_clicks = VALUES(lp_clicks),
-                direct_clicks = VALUES(direct_clicks),
-                conversions = VALUES(conversions),
-                revenue = VALUES(revenue),
-                cost = VALUES(cost),
-                profit = VALUES(profit),
-                roi = VALUES(roi),
-                updated_at = NOW()
+                {$dupSql}
         ");
         if ($hasArchive) {
             $insertStmt->bind_param('ss', $summaryDate, $summaryDate);

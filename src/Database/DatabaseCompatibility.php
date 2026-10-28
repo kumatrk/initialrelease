@@ -39,7 +39,7 @@ class DatabaseCompatibility
      */
     public static function getRequirementLabel(): string
     {
-        return 'MySQL 8.0+ or MariaDB 10.3+ (required for performance migrations)';
+        return 'MySQL 8.0+ or MariaDB 10.3+ (required for performance migrations). On a dedicated database server, set innodb_buffer_pool_size well above the 128MB default (about half of RAM).';
     }
 
     /**

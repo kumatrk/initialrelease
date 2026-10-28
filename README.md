@@ -173,6 +173,7 @@ php scripts/apply-release-upgrade.php --migrations
 
 - PHP **8.2+**
 - MySQL **8.0+** or MariaDB **10.3+** (JSON generated columns)
+- On a dedicated database server, set `innodb_buffer_pool_size` well above the 128MB default (about half of RAM). The hourly summary rebuild competes with click ingest when the buffer pool is left at the default.
 - Apache or Nginx
 - Extensions: `mysqli`, `pdo_mysql`, `json`, `mbstring`, `curl`, `openssl`, `fileinfo`, `filter`
 

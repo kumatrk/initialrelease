@@ -59,12 +59,12 @@
 }
 
 .click-id-row.is-copied {
-    background: #e8f5e9;
-    border-color: #66bb6a;
+    background: var(--accent-soft);
+    border-color: var(--accent);
 }
 
 .click-id-row.is-copied .click-id-copyable {
-    color: #1b5e20 !important;
+    color: var(--accent-hover) !important;
     font-weight: 600;
 }
 
@@ -84,7 +84,7 @@
 }
 
 .visitor-row--converted {
-    background-color: #e8f5e9;
+    background-color: var(--accent-soft);
 }
 
 .mobile-visitor-card.visitor-row {
@@ -102,8 +102,8 @@
 }
 
 .mobile-visitor-card.visitor-row--converted {
-    background: #e8f5e9;
-    border-left-color: #4caf50;
+    background: var(--accent-soft);
+    border-left-color: var(--accent);
 }
 
 .visitor-empty {

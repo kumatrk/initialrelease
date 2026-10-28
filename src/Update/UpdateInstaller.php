@@ -144,11 +144,13 @@ final class UpdateInstaller
                 'backup_location' => $backupPath,
             ];
         } catch (Throwable $e) {
+            // updateLogStatus stores a capped copy and writes the short form to the PHP log.
+            // The raw message can be hundreds of KB of filesystem paths.
             $this->updateLogStatus($logId, 'failed', $e->getMessage());
             return [
                 'success' => false,
                 'log_id' => $logId,
-                'errors' => [$e->getMessage()],
+                'errors' => [self::capFlashError($e->getMessage())],
             ];
         } finally {
             $this->removeDirectory($workspace);
@@ -360,17 +362,58 @@ final class UpdateInstaller
 
     private function updateLogStatus(int $logId, string $status, ?string $error = null): void
     {
+        if (is_string($error) && $error !== '') {
+            error_log('UpdateInstaller ' . $status . ': ' . self::capFlashError($error));
+            $error = self::capErrorLog($error);
+        }
         $completedSql = in_array($status, ['success', 'failed', 'rolled_back'], true)
             ? ', completed_at = NOW()'
             : '';
-        $stmt = $this->db->prepare(
-            "UPDATE update_logs SET status = ?, error_log = ?{$completedSql} WHERE id = ?"
-        );
-        if ($stmt === false) {
-            return;
+        try {
+            $stmt = $this->db->prepare(
+                "UPDATE update_logs SET status = ?, error_log = ?{$completedSql} WHERE id = ?"
+            );
+            if ($stmt === false) {
+                return;
+            }
+            $stmt->bind_param('ssi', $status, $error, $logId);
+            $stmt->execute();
+            $stmt->close();
+        } catch (Throwable $e) {
+            error_log('UpdateInstaller: could not store update status: ' . $e->getMessage());
         }
-        $stmt->bind_param('ssi', $status, $error, $logId);
-        $stmt->execute();
+    }
+
+    /**
+     * Keep the stored failure inside TEXT and MEDIUMTEXT limits.
+     */
+    public static function capErrorLog(string $error): string
+    {
+        $max = 60000;
+        if (strlen($error) <= $max) {
+            return $error;
+        }
+
+        return substr($error, 0, $max) . "\n… truncated";
+    }
+
+    /**
+     * Settings banner: the first lines of the real failure, not a 64KB dump.
+     */
+    public static function capFlashError(string $error): string
+    {
+        $lines = preg_split('/\R/', $error) ?: [$error];
+        $shown = array_slice($lines, 0, 8);
+        $text = implode("\n", $shown);
+        if (strlen($text) > 1200) {
+            $text = substr($text, 0, 1200) . '…';
+        }
+        $extra = count($lines) - count($shown);
+        if ($extra > 0) {
+            $text .= "\n… and {$extra} more line" . ($extra === 1 ? '' : 's');
+        }
+
+        return $text;
     }
 
     /**

@@ -1,6 +1,153 @@
 # Simple Kuma Tracker — Unreleased
 
-> Next catalog-only work (not part of this core zip unless noted). **TikTok Cost 1.2.0** / **Ringba 1.2.0** catalog publish to `kumatrk/honeycomb-addons` remains on hold until explicitly resumed.
+> Catalog-only hold: **TikTok Cost 1.2.0** / **Ringba 1.2.0** remain unpublished on `kumatrk/honeycomb-addons` until explicitly resumed. Live catalog still shows older Ringba (e.g. 1.1.1) where present.
+
+---
+
+# Simple Kuma Tracker Version 1.1.5.29
+
+## Changes in 1.1.5.29
+
+### NewsBreak built-in traffic source 
+- Create from Template → NewsBreak includes click macros (`__CALLBACK_PARAM__`, campaign/flight/creative, OS) and a conversion postback to `business.newsbreak.com/tracking/attribute` (edit `event_type` to match Event Management).
+- Settings → API Cost Updates → NewsBreak API Integrations: Access Token (encrypted), report timezone, optional ad account filter, Test connection.
+- Hourly cost sync via `getIntegratedReport` (`DATE`+`HOUR`+`CAMPAIGN`, cost in cents → dollars) into `newsbreak_campaign_hourly_costs`, overlaid on Campaign Stats / dashboard / campaign list without scanning clicks for unfiltered totals.
+- Wired into `kuma-traffic-api-cron.php`. Migrations **108–109**. After unpacking: **Settings → Updates → Update database**, add the Access Token, ensure campaign URLs pass `__CAMPAIGN_ID__` and `__CALLBACK_PARAM__`.
+
+### Notifications and Account layout 
+- Settings → Account is one card. Profile and Password sit side by side. Login page privacy is one row: the gate switch, and Setup for the URL parameter, token, and decoy address. Notifications follows on the same card.
+- Password reset links go to one channel, chosen in a Password reset dropdown: email, Discord, Slack, Telegram, or ntfy. Default is Email. Grizzly Guard alerts go to every checked row. Setup on a row opens that channel’s webhook, token, or SMTP fields. Webhook URLs and the Telegram token are stored encrypted. A blank password or token keeps the saved secret.
+- SMTP is optional. It is used when you turn it on, or when the installer had to add it because PHP `mail()` is missing. A username requires a password. If SMTP is turned on and the send fails, Kuma does not fall back to `mail()` and does not report the message as sent. The SMTP conversation is not written to the error log.
+- Forgot-password still tells the visitor only that a link was sent if an account exists. The link goes through the reset channel above.
+- The installer checks PHP `mail()`. When it is available, setup continues and nothing extra is stored. When it is disabled, setup continues only after SMTP connects or a Discord, Slack, or ntfy test is accepted. Telegram is added later under Account. A webhook that never connects is reported as not reached.
+- Grizzly Guard alerts go to every checked Account channel: email, Discord, Slack, Telegram, ntfy, and Browser. The email or webhook on the Grizzly Guard tab is one extra channel and uses the same mail setup. The same address is not sent twice. The settings menu lists Grizzly Guard as text, the same as the other sections. Turning the account switch on plays the armed state in the browser. It is saved only when you save the tab.
+- The Grizzly Guard tab uses the same compact sections as Account. Backup domains sit beside the extra alert and listing keys.
+
+### User guide on simplekuma.com (simplekuma.com deploy is separate)
+- Live guide source is `kumawebsite` (`content/user-guide/`), not the older static tree under `simplekuma/user-guide/`.
+- Added or refreshed: Account notifications and Browser / Install app, new Grizzly Guard settings page, Meta delivery columns and Pause/Activate on Campaign Stats, Recent API failures on API Cost Updates, campaign Advanced bots / inactive redirect / Guard, RollerAds postback notes, login reset-channel wording, and matching troubleshooting.
+
+### Admin PWA and browser alerts 
+- The logged-in admin shell can be installed as an app (manifest, icons, service worker). Chrome and Edge show **Install app** in the top bar when the browser offers it. The button hides after install or when already running standalone.
+- Account → Notifications has a **Browser** row for Grizzly Guard alerts only (not password resets). Setup → Enable on this device asks for notification permission and stores the subscription. Disable this device removes it. Alerts go to every subscribed browser when Browser is checked, the same way Discord or Slack do.
+- VAPID keys are created once and stored encrypted. Subscriptions live in `push_subscriptions` (migration **107**). Unsubscribe is limited to the signed-in user. The service worker shows the notification and opens the dashboard on click. Production needs HTTPS. On iPhone, install the app first, then enable. SMS is not in this release. Landing-page element rotation stays deferred.
+- After unpacking, use **Settings → Updates → Update database**. Composer must include `minishlink/web-push` (ships in the zip vendor tree).
+
+### RollerAds traffic source 
+- Create from Template still loads the RollerAds click tokens. Cost stays the `cost` parameter on the click, filled with `{cost}` (RollerAds’ own BeMob example). Older token lists say `{costPerClick}` for click spend; if a live campaign shows blank cost, switch that one placeholder. RollerAds does not publish a spend API.
+- The template now includes their conversion postback: `https://trk.roller.ad/conversion/aid/YOUR_ACCOUNT_NUMBER/YOUR_TRACKING_KEY` with their click id, the payout, and goal 1. Replace the two placeholders with the URL from RollerAds → Campaigns → Tracking. Kuma does not send the call until those are replaced. Migration **106** fills that URL on an existing RollerAds source that does not already have one. After unpacking, use **Settings → Updates → Update database**.
+
+### API failure log 
+- Settings → API Cost Updates shows Recent API failures on the usage card. Each row is the time, which API, what it was doing, the HTTP code, and the vendor message, with a Copy button for a report.
+- Meta (cost sync, pause and activate, page view, conversion API), Google Ads, Honeycomb catalog and addon calls, traffic-source postbacks, Safe Browsing, and VirusTotal write a row only when the call fails. Tokens and account ids are stripped. The same failure is kept once every 15 minutes. Rows older than 14 days are dropped. The list is `api_failure_log` (migration **105**). After unpacking, use **Settings → Updates → Update database**.
+
+### Pause and activate Meta ads 
+- On Campaign Stats, a mapped Meta campaign shows the current status on Ad and Ad set rows, with Pause or Activate beside the name. The button changes that whole ad or ad set. A status such as Disapproved is shown as text only.
+- The report does not call Meta to draw the table. Status is stored in `meta_entity_status` (migration **104**). The hourly cost update reads ad and ad set status for mapped campaigns. Pause and Activate send the change, then store the status Meta returns. Each change is written to `meta_entity_actions`.
+- After unpacking, use **Settings → Updates → Update database**. The token needs ads management. Creating ads stays out.
+
+### Meta delivery columns 
+- Campaign Stats can add Meta impressions, Meta reach, Meta clicks, Meta CTR, Meta CPC, Meta CPM, and Meta spend. They start off. Customize Columns is where you turn one on. They are not on the dashboard and they are not in the default column set.
+- The numbers are Meta's, for a mapped ad or ad set. Other breakdown rows stay blank. Meta clicks are Meta's clicks, not Kuma visitors. CTR, CPC, and CPM are calculated from the stored impressions, clicks, and spend. Reach is shown for a single day. A range of days leaves reach blank because Meta's reach is not a sum.
+- The report does not call Meta and does not scan clicks. The hourly cost update stores the extra fields from the Insights response it already makes, plus one ad-level request, into `meta_delivery_daily` (migration **103**). After unpacking, use **Settings → Updates → Update database**. A column that is off does not read that table. Meta status is separate and lives on Pause and Activate.
+
+### Anomaly alerts 
+- Settings → Grizzly Guard has an Anomaly alerts board. Conversion drop, revenue under cost, bot spike, zone spike, postback failures, tracker errors, and no conversions each start off. They run only while the account switch is on, and a repeat of the same alert waits six hours.
+- Click, cost, and conversion checks sum `clicks_daily_summary` the same way campaign totals do. Zone spikes read `clicks_stats_by_token_daily`. Postback failures count failed rows from the last hour. Tracker errors only fire when the server error log shows a click that could not be saved. None of these scan the clicks table.
+- Those alerts use every checked Account channel (including Browser), plus the extra address on the Grizzly Guard tab. The settings menu lists Grizzly Guard as text.
+
+### Campaign Stats breakdown columns and postback headings 
+- Expanding a breakdown row now hides the same columns as the header. Nested rows were still drawing every metric, so the table ran off to the right and a hidden eCPM (revenue per thousand visitors) showed up as a large dollar amount. eCPM is still `(revenue / visitors) × 1000` when that column is turned on.
+- Postback URLs headings are **Multiple payouts on the same click** and **Email opt-ins**. They no longer name other trackers.
+
+### Cheap-click ROI and click-path schema checks 
+- `clicks_daily_summary.roi` was `DECIMAL(10,4)`, so a cheap click (about $0.0003) plus a normal payout overflowed it. The conversion stayed in `conversions` and the token stats, but the daily summary kept conversions at 0. The hourly rebuild then failed for that whole date and rolled it back. Migration **101** widens `roi` to `DECIMAL(20,4)`. The live update, the hourly rebuild, and the backfill store NULL when a percent still cannot fit, so one row cannot fail the day. After unpacking, use **Settings → Updates → Update database**.
+- Click insert, daily-summary checks, the stats-exclusion flag, and postback CAPI column checks no longer run `SHOW COLUMNS` or `information_schema` on every request. A hit is remembered for the process, and in APCu when that extension is loaded. A missing column is rechecked after a minute.
+- The README and the installer requirement line say to set `innodb_buffer_pool_size` well above the 128MB default on a dedicated database server (about half of RAM). The hourly rebuild is still a full rewrite of yesterday and today.
+
+### Grizzly Guard 
+- Settings has a Grizzly Guard tab. The account switch starts off. Optional Google Safe Browsing and VirusTotal keys are stored encrypted. Alerts go to every checked Account channel. The email or webhook on this tab is one extra address. Backup domains 1, 2, and 3 are an ordered list of verified tracking domains. The tab lists what Guard last did.
+- Each campaign, in the editor and the create wizard, can choose Off, My backups, or Full Grizzly Guard. The existing fallback offer is the backup offer. A backup landing page and a plain last-resort URL are optional. Offer tokens are not added to that URL. The campaign does not pick a backup domain.
+- The checker is `scripts/grizzly-guard-cron.php`, about every 5 minutes, and Settings can run the same check now. It records whether a domain is up or down. It does not change the campaign’s saved tracking domain. A visit that still arrives on a down domain is sent to the next healthy domain in the list, counted once, and the alert says the ad URL was not changed. Full mode may use another verified domain only after that list is exhausted. Edge campaigns are not hopped.
+- A down offer is pulled so weight stays on offers that are up, and it is put back when the URL is healthy again. My backups does that only when the fallback offer, backup landing page, or last-resort URL can take the visit. When every landing page in the path is down, the visit goes straight to an offer that is up and the visitor log shows Emergency bypassed. Deep Funnel offer and landing-page rotation is left alone. A Deep Funnel campaign can still hop domains when its mode is on.
+- A 403 or a rate limit is not treated as down. Migration **100** adds the campaign fields, the action log, and the hold rows. After unpacking, use **Settings → Updates → Update database**.
+
+### Report columns and dashboard periods 
+- The dashboard and Campaign Stats can show, hide, and reorder their metric columns. The choice is saved on the user (migration **099**). Campaign, traffic source, and the action buttons stay put.
+- Campaign Stats can add LP clicks, CPC, CPM, eCPM, and EPC. Those rates are calculated from the numbers already on the row. CPC and EPC use clicks. CPM and eCPM use visitors. The dashboard can add LP + direct, CPC, CPM, and eCPM the same way. Nothing new is queried for a column.
+- The dashboard has Day, Week, and Month totals for the selected range, read from `clicks_daily_summary`. Week starts on Monday. Cost in that table is tracked click cost. The Cost card above it is still ad-network spend for the whole range.
+- Totals by period starts collapsed, the same way Performance Trends does. Show totals opens it, Hide totals closes it, and the choice is saved on the user (migration **102**). The period query is skipped while it is hidden.
+- When the selected range does not line up with UTC dates, the period rows still come from the daily summary, and a note says the cards can include hours outside those dates. There is no extra scan of the clicks table.
+
+### Bot and proxy routing 
+- Checked on the campaign editor, the create wizard, and a live tracking link. Test clicks were removed. The campaign was left on Allow.
+- Each campaign can choose what happens to known bots and to proxy, datacenter, hosting, or VPN traffic (connection type Corporate). Default is **Allow**, so existing campaigns keep sending that traffic to the offer or landing page.
+- **Record only** stores the click and returns an empty page. **Safe URL** stores the click and redirects to an http(s) address with no offer tokens appended. Suspected bots are included only when Settings already counts them as bots.
+- The same choice applies on the redirect, on a redirectless landing page (the page script sends a Safe URL visitor away; a later offer click is stopped), and on a Deep Funnel hop.
+- Edge redirect campaigns stay on Allow. The Cloudflare worker does not classify bots yet.
+- Migration **098** adds `bot_route_mode` and `bot_route_url`. After unpacking, use **Settings → Updates → Update database**.
+
+### Proxy and datacenter ranges 
+- Tor exit nodes, the FireHOL anonymous netset, and cloud ranges (AWS, Google Cloud, Azure, DigitalOcean, OVH) can be downloaded with `php scripts/download-anonymous-ranges.php` into `geoip/ranges/anonymous.cidr`. The downloader also writes a packed cache, `geoip/ranges/ranges.bin`. Refresh that command when the lists should be updated. The text file and the cache are not part of git.
+- On the click write path, an address in that file is stored as connection type Corporate, unless the traffic source already sent cellular. Allow, Record only, and Safe URL are unchanged. A normal browser is still counted in stats.
+- Dashboard and campaign stats do not open the range file. They keep reading the stored click and the daily summaries.
+- The redirect does not query the clicks table for this check. Each PHP worker reads the packed cache once (about 15 MB). Later clicks in that worker search the copy already in memory (about 0.2 ms). If the cache is missing, the click keeps the ASN label and the redirect still happens. The large text file is not parsed on the click.
+- Paid IP APIs, a JavaScript challenge, and per-click rate limits are not part of this.
+
+### Themes: five new presets, compact side menu, themed login art 
+- Header theme dropdown adds **Midnight**, **Timber**, **Executive**, **Onyx**, and **Ember** after Original, Clean, and Dark. Original, Clean, and Dark are unchanged. The saved id for Original stays `light`, so existing users do not flip themes on upgrade.
+- Midnight and Onyx are dark (ice blue and champagne). Timber, Executive, and Ember are light (terracotta, navy, and burnt orange). Executive gold is a secondary highlight, not the main button. Profit stays green and cost stays red on every theme.
+- Every theme’s side menu uses the small bear-head logo, with the menu pulled up underneath it (same spacing as Clean). Original uses the brown bear. Dark uses the red-outlined bear on a transparent background.
+- The login page uses a matching desktop and mobile poster for each of the five new themes. Original, Clean, and Dark keep their existing posters.
+
+### Production fixes from customer notes + GitHub issue 12 
+- **Device detection cache.** Matomo regex parses are cached on disk under `storage/cache/devicedetector/` (per user-agent JSON plus OPcache PHP regex files). Repeat clicks skip the ~450ms cold parse. Classifications and result fields are unchanged. Cache files are gitignored and are not part of the zip.
+- **Edge click ingest on nginx.** `/api/edge-click` is handed to `api/edge-click.php` before admin login, including when nginx `try_files` falls through to `index.php`. Deploy probes origin ingest and stays unhealthy until that round-trip is HTTP 2xx. The Worker accepts only 2xx (redirects to the login page are failures). Settings → Edge includes the nginx snippet:
+  `location = /api/edge-click { rewrite ^ /api/edge-click.php last; }`
+  Operators who already deployed Edge must click **Deploy / Update Worker** again after this upgrade so Cloudflare picks up the current Worker. A PHP upgrade alone does not replace a Worker already on Cloudflare.
+- **Permission walk on every admin page.** The tree normalizer no longer opens unreadable `storage/` or `.git/` directories (for example a `0700` root backup folder). `tree_permissions_normalized` is set only after a successful walk.
+- **Breakdown speed for built-in columns.** Browser, OS, country, device, and the other built-in click columns use `idx_campaign_ts` (campaign + time). Date, hour, week, landing, and offer stay on the covering index. Summary-first KPIs, charts, and Meta/Google cost overlay are unchanged.
+- **More than one tracking domain on Edge.** Settings → Edge stores a list of Cloudflare zone + route pairs (the old single zone/pattern still works and is kept in sync with the first route). Disable removes every saved route. Domain verify can pass when DNS is Cloudflare-proxied if `https://that-host/api/domain-check.php` returns this install's proof token. The Worker returns 404 for unknown paths on the tracking host (including `/` and `/login.php`) so the admin login is not what ads see. Click paths, postbacks, pixels, `/lp/…`, and the domain-check URL still reach origin. Click recording and cost capture are unchanged.
+- **Online upgrade error "Data too long for column 'error_log'" (issue 12).** A long failure (about 1,880 permission lines, ~228 KB, when files were owned by root) overflowed `update_logs.error_log` (`TEXT`) and the database error replaced the real cause. Migration **097** widens that column to `MEDIUMTEXT`. The updater stores at most 60 KB, shows the first lines of the real failure in Settings plus a count of the rest, and a failed log write cannot hide the original error. The full path list is not copied into the PHP error log. After unpacking, use **Settings → Updates → Update database** so 097 is applied.
+- **Internal errors and logs are not returned to visitors.**
+  - Click URLs (`km.php`) respond "Service unavailable" on a database connection failure. The driver message stays in the server log.
+  - Redirectless `track.php` returns a generic tracking failure. Exception text, SQL errors, and file paths stay in the server log unless `TRACK_DEBUG` is on.
+  - Honeycomb addon HTTP errors return "Addon request failed" instead of the raw exception.
+  - Cost-sync logs go to `storage/logs` only. If that directory cannot be written, they go to the PHP error log. They are not written under `public/logs`. Apache denies `/logs/` and `*.log`. Nginx needs `location ^~ /logs/ { deny all; }` in the live server config (`.htaccess` does not apply on nginx). See `docker/nginx.conf.example` and `WEB_SERVER_SETUP.md`.
+
+### Core: force offer by slot (standalone, no Honeycomb)
+- LP CTAs can target a specific offer in the campaign rotation: `kTrack(2)`, `data-k-offer="2"`, or `/lp/click.php?click_id=…&o=2` (optional `offer_id=` for catalog id)
+- Plain `kTrack()` still weighted-rotates; DTO/LP/Split behavior otherwise unchanged
+- Documented in campaign CTA guide
+
+### Deep Funnels (Honeycomb utility + thin core)
+- New `flow_type=DeepFunnel` (shown when **Kuma Deep Funnels** is enabled): up to 5 levels × 5 LPs in one campaign via `rotation_json.deep_funnel`
+- Opaque `link_key` per LP and offer, and `level_key` per level. Public hops use `/lp/hop.php?k=` (`kTrackHop`). A specific offer uses `/lp/click.php?k=` (`kTrackKey`). Plain `kTrack()` still rotates offers. Slot numbers stay as editor and stats labels only.
+- Builder sits under Offer Rotation, in the same place as regular landing-page rotation (that blue box hides on Deep Funnel campaigns). The create wizard uses the same order and includes the level list, but not the code generator.
+- Campaign editor code generator is two dropdowns: the page the button is on, then the destination. Destinations are grouped under non-selectable **Level** headings (specific LP, or rotate the LPs on that level) plus an **Offers** group (specific offer, or rotate offers). Each level has **Equal weights**.
+- Copied HTML is one button and key-only (no landing-page or offer names). Another button on the same page is the same start page with a different destination, copied again. The note under the box (not copied) names the route, says `chomp.js` from the normal redirectless block must already be on the page, and says to save the campaign before pasting so the keys persist.
+- Panel colors follow the active theme (accent, surfaces, text). Original stays green because its accent is green.
+- Full path logged on the click (`extra_json.funnel_path` / `funnel_path_key`) and pre-agg tables `clicks_funnel_step_daily` + `clicks_funnel_path_daily` (migration **096**). The Funnel stats tab reads only those tables.
+- Campaign Stats **Funnel** tab (Deep Funnel campaigns only): level drop-off, step chips, path list with node filter
+- Addon source: `honeycomb-addons/addons/deep-funnels` **1.0.12** (Import from the Honeycomb catalog)
+- Overview / Breakdown / Chart for normal campaigns remain on the existing summary-first path
+
+### Campaign editor: regular landing-page rows
+- Landing-page rotation rows use the same column layout as offer rows (dropdown and weight fill their columns).
+- Adding a landing page splits the weights into numbers instead of leaving a blank **Weight %** field. Create wizard Equal Weights and the add button use the same row class.
+
+### Conversion Log: inbound postback extras + click details view
+- Inbound `postback.php` / `pixel.php` / `ringba-postback.php` store `sub1`–`sub10` and other non-reserved query params on the conversion (`source_json`)
+- Conversion Log columns/filters for those extras (CSV export included); documented on Postback URLs
+- **With click details** tab: same filters, each conversion joined to its click (device, cost, tracking tokens) for search/sort — conversion-scoped only (not Campaign Stats dimensions)
+- Settings → Retention help text rewritten in plain language (no internal summary/path jargon)
+- Local QA: `scripts/seed-postback-extras-conversions.php`
+### Campaign editor UX
+- Flow Type on the campaign editor is radio cards (Direct to Offer, Landing Page → Offer, Split Test, Deep Funnel) instead of a dropdown. Values are unchanged (`DTO` / `LP` / `Split` / `DeepFunnel`), so existing campaigns keep the same routing after upgrade.
+- Split traffic % panel sits under Flow Type and uses theme tokens.
+- Grizzly Guard and other optional blocks use a clearer collapsed accordion with a chevron.
+- Honeycomb page cron helper: "Alternative: Honeycomb-only job" uses the same accordion chevron treatment; cron commands wrap on narrow screens.
+- Mobile Flow Type cards stay single-column with readable titles (no letter-stack / radio overlap).
 
 ---
 

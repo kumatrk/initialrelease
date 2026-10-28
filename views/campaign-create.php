@@ -98,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_campaign'])) {
         $initialStep = 1;
         if (!empty($errors['traffic_source_id']) || !empty($errors['google_ads_integration_id'])) {
             $initialStep = 2;
-        } elseif (!empty($errors['rotation']) || !empty($errors['flow_type']) || !empty($errors['landing_pages'])) {
+        } elseif (!empty($errors['rotation']) || !empty($errors['flow_type']) || !empty($errors['landing_pages']) || !empty($errors['bot_route_url'])) {
             $initialStep = 3;
         } elseif (!empty($errors['slugs']) || !empty($errors['redirect_rules'])) {
             $initialStep = 4;
@@ -118,6 +118,7 @@ $wizardJsPath = __DIR__ . '/../public/assets/js/campaign-create-wizard.js';
 $extraJs = ASSETS_BASE_URL . '/assets/js/campaign-create-wizard.js?v=' . (file_exists($wizardJsPath) ? filemtime($wizardJsPath) : '1');
 ?>
 
+<link rel="stylesheet" href="<?= htmlspecialchars(sk_css_href('assets/css/campaign-form.css')) ?>">
 <link rel="stylesheet" href="<?= htmlspecialchars(sk_css_href('assets/css/campaign-create-wizard.css')) ?>">
 
 <div class="page-header">
@@ -138,7 +139,7 @@ $extraJs = ASSETS_BASE_URL . '/assets/js/campaign-create-wizard.js?v=' . (file_e
 </div>
 <?php endif; ?>
 
-<div class="card campaign-wizard-card">
+<div class="card campaign-wizard-card campaigns-page">
     <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
         <h2 class="card-title" style="margin:0;">New campaign wizard</h2>
         <span id="wizard-progress-pct" class="wizard-progress-pct" aria-live="polite">0%</span>

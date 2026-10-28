@@ -20,6 +20,7 @@ final class EdgeSettings
     public const KEY_CF_WORKER_NAME = 'edge_cf_worker_name';
     public const KEY_CF_KV_NAMESPACE_ID = 'edge_cf_kv_namespace_id';
     public const KEY_CF_ROUTE_PATTERN = 'edge_cf_route_pattern';
+    public const KEY_CF_ROUTES = 'edge_cf_routes';
     public const KEY_INGEST_SECRET = 'edge_ingest_secret';
     public const KEY_ORIGIN_BASE_URL = 'edge_origin_base_url';
     public const KEY_LAST_DEPLOY_AT = 'edge_last_deploy_at';
@@ -104,6 +105,80 @@ final class EdgeSettings
         return trim((string) $this->settings->get(self::KEY_CF_ROUTE_PATTERN, ''));
     }
 
+    /**
+     * Every Cloudflare route this install should attach. The JSON list wins.
+     * Older installs only have the single zone + pattern keys; those stay as
+     * the first route until a multi-route save replaces them.
+     *
+     * @return list<array{zone_id: string, pattern: string}>
+     */
+    public function getRoutes(): array
+    {
+        $raw = (string) $this->settings->get(self::KEY_CF_ROUTES, '');
+        $decoded = $raw !== '' ? json_decode($raw, true) : null;
+        $routes = is_array($decoded) ? self::normalizeRouteList($decoded) : [];
+        if ($routes === []) {
+            $routes = self::normalizeRouteList([[
+                'zone_id' => $this->getZoneId(),
+                'pattern' => $this->getRoutePattern(),
+            ]]);
+        }
+
+        return $routes;
+    }
+
+    /**
+     * @param list<mixed> $rows
+     */
+    public function saveRoutes(array $rows): bool
+    {
+        $routes = self::normalizeRouteList($rows);
+        $json = json_encode($routes, JSON_UNESCAPED_SLASHES);
+        if ($json === false) {
+            return false;
+        }
+        $first = $routes[0] ?? ['zone_id' => '', 'pattern' => ''];
+        return $this->settings->setMultiple([
+            self::KEY_CF_ROUTES => $json,
+            self::KEY_CF_ZONE_ID => $first['zone_id'],
+            self::KEY_CF_ROUTE_PATTERN => $first['pattern'],
+        ]);
+    }
+
+    /**
+     * @param list<mixed> $rows
+     * @return list<array{zone_id: string, pattern: string}>
+     */
+    public static function normalizeRouteList(array $rows): array
+    {
+        $routes = [];
+        $seen = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $zone = trim((string) ($row['zone_id'] ?? ''));
+            $pattern = trim((string) ($row['pattern'] ?? ''));
+            if ($zone === '' || $pattern === '') {
+                continue;
+            }
+            if (strlen($zone) > 64 || strlen($pattern) > 200) {
+                continue;
+            }
+            if (preg_match('/[\r\n]/', $zone . $pattern) === 1) {
+                continue;
+            }
+            $key = strtolower($zone) . "\n" . strtolower($pattern);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $routes[] = ['zone_id' => $zone, 'pattern' => $pattern];
+        }
+
+        return $routes;
+    }
+
     public function getIngestSecret(): string
     {
         $raw = (string) $this->settings->get(self::KEY_INGEST_SECRET, '');
@@ -168,6 +243,7 @@ final class EdgeSettings
             'worker_name' => $this->getWorkerName(),
             'kv_namespace_id' => $this->getKvNamespaceId(),
             'route_pattern' => $this->getRoutePattern(),
+            'routes' => $this->getRoutes(),
             'origin_base_url' => $this->getOriginBaseUrl(),
             'ingest_url' => $this->ingestUrl(),
             'has_ingest_secret' => $this->getIngestSecret() !== '',

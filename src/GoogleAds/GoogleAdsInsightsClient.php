@@ -101,6 +101,7 @@ class GoogleAdsInsightsClient
             return $results;
         } catch (\Throwable $e) {
             $this->logApiCall($endpoint, false);
+            $this->callTracker?->noteFailure('Cost sync (' . $endpoint . ')', null, $e->getMessage());
             error_log('Google Ads API Error: ' . $e->getMessage());
             return [];
         }

@@ -21,7 +21,7 @@ final class TrafficApiCronRunner
     }
 
     /**
-     * @return array{fb: array{code: int, skipped_spawn?: bool}, google: array{code: int}, honeycomb: array<string, mixed>}
+     * @return array{fb: array{code: int, skipped_spawn?: bool}, google: array{code: int}, newsbreak: array{code: int}, honeycomb: array<string, mixed>}
      */
     public function run(): array
     {
@@ -31,17 +31,20 @@ final class TrafficApiCronRunner
 
         $fb = $this->runCliScript('fb_cost_updater.php');
         $google = $this->runCliScript('google_ads_cost_updater.php');
+        $newsbreak = $this->runCliScript('newsbreak_cost_updater.php');
         $honeycomb = HoneycombTrafficHourly::runIfDue($this->db, $this->logger);
 
         $this->logger->logDetail('=== Traffic API cron finished ===', [
             'fb_exit' => $fb['code'],
             'google_exit' => $google['code'],
+            'newsbreak_exit' => $newsbreak['code'],
             'honeycomb' => $honeycomb,
         ]);
 
         return [
             'fb' => $fb,
             'google' => $google,
+            'newsbreak' => $newsbreak,
             'honeycomb' => $honeycomb,
         ];
     }

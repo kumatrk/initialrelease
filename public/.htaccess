@@ -2,6 +2,9 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
+    # Older builds wrote cost-sync logs under public/logs. Never serve them.
+    RewriteRule ^logs/ - [F,L]
+
     # Pass Authorization header to PHP (Apache often strips it on rewritten requests)
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
@@ -16,7 +19,7 @@
 
     # Allow direct access to static assets (images, CSS, JS, fonts, etc.)
     RewriteCond %{REQUEST_FILENAME} -f
-    RewriteCond %{REQUEST_URI} \.(jpg|jpeg|png|gif|ico|css|js|woff|woff2|ttf|svg|eot)$ [NC]
+    RewriteCond %{REQUEST_URI} \.(jpg|jpeg|png|gif|ico|css|js|woff|woff2|ttf|svg|eot|webmanifest)$ [NC]
     RewriteRule . - [L]
 
     # Handle installer
@@ -84,6 +87,10 @@
 # (e.g. Łódź Voivodeship in redirect rules) even when PHP omits Content-Type.
 AddDefaultCharset UTF-8
 
+<IfModule mod_mime.c>
+    AddType application/manifest+json .webmanifest
+</IfModule>
+
 # Security headers
 <IfModule mod_headers.c>
     Header set X-Content-Type-Options "nosniff"
@@ -103,6 +110,15 @@ AddDefaultCharset UTF-8
 </IfModule>
 
 # Protect sensitive files from public access
+<FilesMatch "\.log$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
 <FilesMatch "^(config\.php|\.env|\.git)">
     Order allow,deny
     Deny from all
@@ -110,7 +126,7 @@ AddDefaultCharset UTF-8
 
 # Block access to test, debug, utility, and migration scripts (production security)
 # diagnose.php uses $ (exact) — do not put diagnose\.php inside (...).*\.php$ or it never matches
-<FilesMatch "^(test-|debug-|check-|diagnose-|fix-|clear-|cleanup-|backfill-|backup-|convert-|revert-|set-|sync-|remove-|run-migration-|run-timezone-|analyze-|find-|modsecurity-|verify-|km-|install-composer|install-maxmind|fire-postback-|api-v1-smoke|update-base-url|login-preview).*\.php$">
+<FilesMatch "^(test-|debug-|check-|diagnose-|fix-|clear-|cleanup-|backfill-|backup-|convert-|revert-|set-|sync-|remove-|run-migration-|run-timezone-|analyze-|find-|modsecurity-|verify-|km-|install-composer|install-maxmind|fire-postback-|api-v1-smoke|update-base-url).*\.php$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>

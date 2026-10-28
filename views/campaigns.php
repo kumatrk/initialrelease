@@ -107,6 +107,12 @@ if ($action === 'clone' && $id && $_SERVER['REQUEST_METHOD'] === 'POST') {
             'inactive_redirect_mode' => $originalCampaign['inactive_redirect_mode'] ?? 'off',
             'inactive_redirect_campaign_id' => $originalCampaign['inactive_redirect_campaign_id'] ?? null,
             'inactive_redirect_url' => $originalCampaign['inactive_redirect_url'] ?? null,
+            'bot_route_mode' => $originalCampaign['bot_route_mode'] ?? 'allow',
+            'bot_route_url' => $originalCampaign['bot_route_url'] ?? null,
+            'guard_mode' => $originalCampaign['guard_mode'] ?? 'off',
+            'guard_backup_domain_id' => $originalCampaign['guard_backup_domain_id'] ?? null,
+            'guard_backup_lp_id' => $originalCampaign['guard_backup_lp_id'] ?? null,
+            'guard_last_resort_url' => $originalCampaign['guard_last_resort_url'] ?? null,
             'custom_tokens' => $originalCampaign['custom_tokens_json'] ?? [],
             'redirect_rules' => $originalCampaign['redirect_rules_json'] ?? []
         ];
@@ -342,6 +348,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'type' => 'offer',
                     'id' => (int)$offerId,
                         'weight' => (int)($offerWeights[$idx] ?? 0),
+                        'slot' => count($offers) + 1,
                         'enabled' => $isEnabled
                     ];
                 }
@@ -350,7 +357,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         error_log('Parsed offers array: ' . print_r($offers, true));
         
-        if ($flowType === 'DTO') {
+        if ($flowType === 'DeepFunnel') {
+            $rotation = \SimpleKuma\Campaign\CampaignFormParser::parseDeepFunnelRotation($_POST, $offers);
+        } elseif ($flowType === 'DTO') {
             // Direct to Offer - use unified offer rotation directly
             $rotation = $offers;
         } elseif ($flowType === 'LP') {
@@ -466,7 +475,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'fallback_offer_id' => !empty($_POST['fallback_offer_id']) ? (int)$_POST['fallback_offer_id'] : null,
         'tags' => !empty($_POST['tags']) ? trim((string)$_POST['tags']) : null,
     ];
-        $data = array_merge($data, \SimpleKuma\Campaign\InactiveRedirectParser::fromInput($_POST));
+        $data = array_merge(
+            $data,
+            \SimpleKuma\Campaign\InactiveRedirectParser::fromInput($_POST),
+            \SimpleKuma\Tracking\BotRoute::fromInput($_POST),
+            \SimpleKuma\Guard\GrizzlyGuardCampaign::fromInput($_POST)
+        );
         if ($action === 'edit' && $id) {
             $data['_editing_campaign_id'] = (int) $id;
         }
@@ -909,7 +923,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
 </div>
 
 <?php if ($success): ?>
-<div style="background: #d4edda; color: #155724; padding: 15px; border-radius: 4px; margin-bottom: 20px; border-left: 4px solid #28a745;">
+<div style="background: var(--accent-soft); color: var(--accent-hover); padding: 15px; border-radius: 4px; margin-bottom: 20px; border-left: 4px solid var(--color-success);">
         ✅ <?= htmlspecialchars($success) ?>
     </div>
 <?php endif; ?>
@@ -1368,7 +1382,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                             </td>
                             <td class="col-source" style="font-size: 13px;">
                                 <?php if (empty($camp['traffic_source_id']) || empty($camp['traffic_source_name'])): ?>
-                                    <span style="color: #558b2f; font-weight: 500; display: inline-flex; align-items: center; gap: 6px;">
+                                    <span style="color: var(--accent-hover); font-weight: 500; display: inline-flex; align-items: center; gap: 6px;">
                                         <img src="<?= ASSETS_BASE_URL ?>/assets/images/autodetectbear.png" alt="Auto Detected" style="width: 20px; height: 20px; object-fit: contain; vertical-align: middle;">
                                         Auto Detected
                                     </span>
@@ -1603,8 +1617,8 @@ if ($editCampaign && isset($editCampaign['id'])) {
                     }
                     .campaign-action-btn[data-action="stats"]:hover {
                         background: #f5f5f5;
-                        border-color: #4caf50;
-                        color: #4caf50;
+                        border-color: var(--accent);
+                        color: var(--accent);
                     }
                     .campaign-action-btn[data-action="edit"]:hover {
                         background: #e3f2fd;
@@ -1701,7 +1715,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                     data-sort-roi="0"
                                     onclick="toggleGroup('<?= htmlspecialchars($groupId, ENT_QUOTES) ?>')"
                                     style="cursor: pointer; background: #f9f9f9;">
-                                    <td colspan="4" class="col-name" style="font-weight: 600; color: #3d5a26; padding: 12px;">
+                                    <td colspan="4" class="col-name" style="font-weight: 600; color: var(--accent); padding: 12px;">
                                         <span id="toggle-<?= htmlspecialchars($groupId, ENT_QUOTES) ?>">▶</span>
                                         📁 <?= htmlspecialchars($groupName) ?>
                                         <span style="color: #999; font-weight: normal; margin-left: 8px;">(<?= count($groupCampaigns) ?> campaigns)</span>
@@ -1787,7 +1801,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                 <div class="mobile-campaign-card" data-campaign-id="<?= (int)$camp['id'] ?>" data-search="<?= htmlspecialchars($searchData, ENT_QUOTES) ?>" style="padding: var(--spacing-md); border-bottom: 1px solid var(--color-gray-200);">
                                     <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: var(--spacing-sm);">
                                         <div style="flex: 1;">
-                                            <div style="font-weight: 600; font-size: 14px; color: #3d5a26; margin-bottom: 4px;">
+                                            <div style="font-weight: 600; font-size: 14px; color: var(--accent); margin-bottom: 4px;">
                                                 <span class="badge" style="background: #eef2f5; color: #475569; font-weight: 600; font-size: 11px; padding: 2px 6px; border-radius: 4px; margin-right: 6px;" title="Campaign ID: <?= (int)$camp['id'] ?>">#<?= (int)$camp['id'] ?></span>
                                                 <?= htmlspecialchars($camp['name']) ?>
                                             </div>
@@ -1800,7 +1814,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                             <?php endif; ?>
                                             <div style="font-size: 11px; color: #666; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;">
                                                 <?php if ($isAutoDetect): ?>
-                                                    <span style="color: #558b2f; font-weight: 500; display: inline-flex; align-items: center; gap: 4px;">
+                                                    <span style="color: var(--accent-hover); font-weight: 500; display: inline-flex; align-items: center; gap: 4px;">
                                                         <img src="<?= ASSETS_BASE_URL ?>/assets/images/autodetectbear.png" alt="Auto Detected" style="width: 16px; height: 16px;">
                                                         Auto Detected
                                                     </span>
@@ -1887,7 +1901,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                     <div class="mobile-campaign-card" data-campaign-id="<?= (int)$camp['id'] ?>" data-search="<?= htmlspecialchars($searchData, ENT_QUOTES) ?>" style="background: var(--color-white); border: 1px solid var(--color-gray-200); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-md); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                         <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: var(--spacing-sm);">
                             <div style="flex: 1;">
-                                <div style="font-weight: 600; font-size: 14px; color: #3d5a26; margin-bottom: 4px;">
+                                <div style="font-weight: 600; font-size: 14px; color: var(--accent); margin-bottom: 4px;">
                                     <span class="badge" style="background: #eef2f5; color: #475569; font-weight: 600; font-size: 11px; padding: 2px 6px; border-radius: 4px; margin-right: 6px;" title="Campaign ID: <?= (int)$camp['id'] ?>">#<?= (int)$camp['id'] ?></span>
                                     <?= htmlspecialchars($camp['name']) ?>
                                 </div>
@@ -1900,7 +1914,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                 <?php endif; ?>
                                 <div style="font-size: 11px; color: #666; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;">
                                     <?php if ($isAutoDetect): ?>
-                                        <span style="color: #558b2f; font-weight: 500; display: inline-flex; align-items: center; gap: 4px;">
+                                        <span style="color: var(--accent-hover); font-weight: 500; display: inline-flex; align-items: center; gap: 4px;">
                                             <img src="<?= ASSETS_BASE_URL ?>/assets/images/autodetectbear.png" alt="Auto Detected" style="width: 16px; height: 16px;">
                                             Auto Detected
                                         </span>
@@ -2388,13 +2402,13 @@ if ($editCampaign && isset($editCampaign['id'])) {
                 <?php include __DIR__ . '/partials/campaign-form-main-settings.php'; ?>
 
                 <!-- Redirect Rules (Accordion) -->
-                <details style="margin-bottom: 24px;">
-                    <summary style="cursor: pointer; font-weight: 600; padding: 12px; background: #f9f9f9; border-radius: 4px; display: flex; align-items: center; gap: 8px; border: 2px solid #ddd;">
-                        <img src="<?= ASSETS_BASE_URL ?>/assets/images/redirectrulesbear.png" alt="Redirect Rules" style="width: 20px; height: 20px;">
+                <details class="campaign-optional-details">
+                    <summary>
+                        <img src="<?= ASSETS_BASE_URL ?>/assets/images/redirectrulesbear.png" alt="">
                         Redirect Rules (Optional)
                     </summary>
-                    <div style="padding: 16px; border: 2px solid #ddd; border-top: none; border-radius: 0 0 4px 4px;">
-                        <p style="font-size: 13px; color: #666; margin-bottom: 16px;">
+                    <div class="campaign-optional-details__body">
+                        <p class="campaign-optional-details__hint">
                             Create rules to redirect traffic based on custom token values. Rules are checked in order - first matching rule triggers redirect.
                         </p>
                         
@@ -2505,7 +2519,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                             ?>
                             <div class="redirect-rule-row" style="background: #f9f9f9; padding: 16px; border: 2px solid #ddd; border-radius: 4px; margin-bottom: 12px;">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                                    <strong style="color: #3d5a26;">Rule #<?= $idx + 1 ?></strong>
+                                    <strong style="color: var(--accent);">Rule #<?= $idx + 1 ?></strong>
                                     <button type="button" class="btn btn-outline" onclick="removeRedirectRule(this)" 
                                             style="padding: 4px 8px; font-size: 12px; color: #d32f2f;">× Remove</button>
                         </div>
@@ -2663,13 +2677,13 @@ if ($editCampaign && isset($editCampaign['id'])) {
                 </script>
 
                 <!-- Custom Campaign Tokens (Accordion) -->
-                <details style="margin-bottom: 24px;">
-                    <summary style="cursor: pointer; font-weight: 600; padding: 12px; background: #f9f9f9; border-radius: 4px; display: flex; align-items: center; gap: 8px; border: 2px solid #ddd;">
-                        <img src="<?= ASSETS_BASE_URL ?>/assets/images/customtokensbear.png" alt="Custom Tokens" style="width: 20px; height: 20px;">
+                <details class="campaign-optional-details">
+                    <summary>
+                        <img src="<?= ASSETS_BASE_URL ?>/assets/images/customtokensbear.png" alt="">
                         Custom Campaign Tokens (Optional)
                     </summary>
-                    <div style="padding: 16px; border: 2px solid #ddd; border-top: none; border-radius: 0 0 4px 4px;">
-                        <p style="font-size: 13px; color: #666; margin-bottom: 16px;">
+                    <div class="campaign-optional-details__body">
+                        <p class="campaign-optional-details__hint">
                             Define custom tokens specific to this campaign. These are separate from traffic source tokens and can be used for rule-based redirects and analytics filtering.
                         </p>
                         
@@ -2737,7 +2751,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                     <input type="text" class="url-append-display" 
                                            value="<?= htmlspecialchars($urlAppend) ?>"
                                            readonly
-                                           style="width: 100%; padding: 8px; background: #f9f9f9; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; font-family: monospace; color: #3d5a26;"
+                                           style="width: 100%; padding: 8px; background: #f9f9f9; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; font-family: monospace; color: var(--accent);"
                                            aria-label="URL append preview">
                                 </div>
                                 <div style="display: flex; gap: 8px; justify-content: center;">
@@ -2773,39 +2787,134 @@ if ($editCampaign && isset($editCampaign['id'])) {
                     </div>
                 </details>
 
+                <?php
+                $guardCampaign = is_array($editCampaign) ? $editCampaign : [];
+                $guardMode = $_POST['guard_mode'] ?? ($guardCampaign['guard_mode'] ?? 'off');
+                $guardBackupDomainId = $_POST['guard_backup_domain_id'] ?? ($guardCampaign['guard_backup_domain_id'] ?? '');
+                $guardBackupLpId = $_POST['guard_backup_lp_id'] ?? ($guardCampaign['guard_backup_lp_id'] ?? '');
+                $guardLastResortUrl = $_POST['guard_last_resort_url'] ?? ($guardCampaign['guard_last_resort_url'] ?? '');
+                $guardIconSrc = ASSETS_BASE_URL . '/assets/images/grizzly-guard.png';
+                ?>
+                <details class="campaign-optional-details"<?= ($guardMode !== 'off') ? ' open' : '' ?>>
+                    <summary>
+                        <img src="<?= htmlspecialchars($guardIconSrc, ENT_QUOTES, 'UTF-8') ?>" alt="">
+                        Grizzly Guard (Optional)
+                    </summary>
+                    <div class="campaign-optional-details__body">
+                        <p class="campaign-optional-details__hint">
+                            Pick how this campaign should react when a link or tracking domain goes down. The dropdown explains each option. Account backup domains are under Settings → Grizzly Guard.
+                        </p>
+                        <?php include __DIR__ . '/partials/campaign-grizzly-guard-fields.php'; ?>
+                    </div>
+                </details>
 
                 <!-- Flow Type -->
-                <div style="margin-bottom: 24px;">
-                    <label style="display: block; font-weight: 600; margin-bottom: 8px;">
-                        Flow Type <span style="color: #d32f2f;">*</span>
-                    </label>
-                    <select name="flow_type" id="flow_type" required onchange="updateFlowFields()"
-                            style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
-                        <option value="DTO" <?= ($editCampaign['flow_type'] ?? 'DTO') === 'DTO' ? 'selected' : '' ?>>
-                            Direct to Offer (DTO)
-                        </option>
-                        <option value="LP" <?= ($editCampaign['flow_type'] ?? '') === 'LP' ? 'selected' : '' ?>>
-                            Landing Page → Offer
-                        </option>
-                        <option value="Split" <?= ($editCampaign['flow_type'] ?? '') === 'Split' ? 'selected' : '' ?>>
-                            Split Test
-                        </option>
-                    </select>
-                </div>
+                <?php
+                $deepFunnelsAddonEnabled = false;
+                foreach ($honeycombCampaignFieldProviders as $honeyProvider) {
+                    if ($honeyProvider->addonSlug() === 'deep-funnels') {
+                        $deepFunnelsAddonEnabled = true;
+                        break;
+                    }
+                }
+                $currentFlowType = (string) ($editCampaign['flow_type'] ?? 'DTO');
+                if ($currentFlowType === '') {
+                    $currentFlowType = 'DTO';
+                }
+                $isDeepFunnelEdit = ($currentFlowType === 'DeepFunnel');
+                $flowTypeOptions = [
+                    'DTO' => [
+                        'title' => 'Direct to Offer',
+                        'blurb' => 'Send visitors straight to an offer. No landing page in between.',
+                    ],
+                    'LP' => [
+                        'title' => 'Landing Page → Offer',
+                        'blurb' => 'Show a landing page first, then send them to an offer.',
+                    ],
+                    'Split' => [
+                        'title' => 'Split Test',
+                        'blurb' => 'Split traffic between a landing-page path and going direct to offer.',
+                    ],
+                ];
+                if ($deepFunnelsAddonEnabled || $isDeepFunnelEdit) {
+                    $flowTypeOptions['DeepFunnel'] = [
+                        'title' => 'Deep Funnel',
+                        'blurb' => 'Multi-level landing pages (Honeycomb). Build levels below the offer list.',
+                    ];
+                }
+                $splitLPPercent = 50;
+                if ($action === 'edit' && $editCampaign && ($editCampaign['flow_type'] ?? '') === 'Split'
+                    && isset($editRotation['split_traffic']['lp_percent'])) {
+                    $splitLPPercent = (int) $editRotation['split_traffic']['lp_percent'];
+                }
+                ?>
+                <fieldset class="flow-type-picker" id="flow_type_picker">
+                    <legend class="flow-type-picker__legend">
+                        Flow Type <span class="campaign-form-required">*</span>
+                    </legend>
+                    <p class="flow-type-picker__intro">How should this campaign send traffic?</p>
+                    <div class="flow-type-picker__grid">
+                        <?php foreach ($flowTypeOptions as $flowValue => $flowMeta): ?>
+                            <?php $flowChecked = ($currentFlowType === $flowValue); ?>
+                            <label class="flow-type-option<?= $flowChecked ? ' is-selected' : '' ?>">
+                                <span class="flow-type-option__head">
+                                    <input type="radio"
+                                           name="flow_type"
+                                           value="<?= htmlspecialchars($flowValue, ENT_QUOTES, 'UTF-8') ?>"
+                                           <?= $flowChecked ? 'checked' : '' ?>
+                                           required
+                                           onchange="syncFlowTypeOptionCards(); updateFlowFields();">
+                                    <span class="flow-type-option__title"><?= htmlspecialchars($flowMeta['title'], ENT_QUOTES, 'UTF-8') ?></span>
+                                </span>
+                                <span class="flow-type-option__blurb"><?= htmlspecialchars($flowMeta['blurb'], ENT_QUOTES, 'UTF-8') ?></span>
+                            </label>
+                        <?php endforeach; ?>
+                    </div>
+                    <?php if ($deepFunnelsAddonEnabled): ?>
+                    <p class="campaign-form-hint" style="margin: 12px 0 0;">Deep Funnel uses the landing-page area below the offer list. Pick levels there, then copy button code from the dropdowns.</p>
+                    <?php endif; ?>
+                    <input type="hidden" name="deep_funnel_json" id="deep_funnel_json" value="<?= htmlspecialchars(
+                        ($isDeepFunnelEdit && !empty($editRotation['deep_funnel']))
+                            ? (string) json_encode($editRotation['deep_funnel'], JSON_UNESCAPED_UNICODE)
+                            : '',
+                        ENT_QUOTES,
+                        'UTF-8'
+                    ) ?>">
+
+                    <div id="split_fields" class="flow-split-panel" style="display: <?= $currentFlowType === 'Split' ? 'block' : 'none' ?>;">
+                        <div class="flow-split-panel__title">Split traffic</div>
+                        <div class="flow-split-panel__row">
+                            <label class="flow-split-panel__label" for="split_traffic_to_lp_input">To landing-page path</label>
+                            <span class="flow-split-panel__control">
+                                <input type="number" name="split_traffic_to_lp" id="split_traffic_to_lp_input"
+                                       class="campaign-form-input flow-split-panel__input"
+                                       min="0" max="100" value="<?= (int) $splitLPPercent ?>"
+                                       oninput="updateSplitPercentage()" aria-describedby="split_remaining_percent">
+                                <span class="flow-split-panel__pct" aria-hidden="true">%</span>
+                            </span>
+                            <span id="split_remaining_percent" class="flow-split-panel__rest">
+                                <?= 100 - (int) $splitLPPercent ?>% goes direct to offer
+                            </span>
+                        </div>
+                        <p class="flow-split-panel__hint">
+                            LP path uses the landing pages + offers below. Direct path skips the landing page and uses offers only.
+                        </p>
+                    </div>
+                </fieldset>
 
 
                 <!-- Unified Offer Rotation Section (Always Visible) -->
-                <fieldset style="margin-bottom: 32px; background: linear-gradient(135deg, #f1f8e9 0%, #dcedc8 100%); padding: 20px; border-radius: 8px; border: 2px solid #8bc34a;">
-                    <legend style="font-weight: 600; color: #33691e; display: flex; align-items: center; gap: 8px; padding: 0 8px;">
+                <fieldset style="margin-bottom: 32px; background: linear-gradient(135deg, #f1f8e9 0%, #dcedc8 100%); padding: 20px; border-radius: 8px; border: 2px solid var(--accent);">
+                    <legend style="font-weight: 600; color: var(--accent); display: flex; align-items: center; gap: 8px; padding: 0 8px;">
                         <img src="<?= ASSETS_BASE_URL ?>/assets/images/offers.png" alt="Offers" style="width: 20px; height: 20px;">
                         Offer Rotation (Weights must sum to 100%)
                         <button type="button" onclick="equalizeOfferWeights()" class="btn btn-outline" 
-                                style="margin-left: auto; padding: 6px 16px; font-size: 13px; background: white; border-color: #8bc34a; color: #33691e; font-weight: 600;"
+                                style="margin-left: auto; padding: 6px 16px; font-size: 13px; background: white; border-color: var(--accent); color: var(--accent); font-weight: 600;"
                                 title="Distribute weights evenly">
                             = Equal Weights
                     </button>
                     </legend>
-                    <p style="font-size: 12px; color: #558b2f; margin: 0 0 12px; line-height: 1.45;">
+                    <p style="font-size: 12px; color: var(--accent-hover); margin: 0 0 12px; line-height: 1.45;">
                         Weight changes apply immediately on origin tracking links.
                         <?php if (!empty($editCampaignSafe['edge_enabled'] ?? $editEdgeEnabled ?? false)): ?>
                         With Edge redirect enabled, Cloudflare may take about a minute to use new weights after sync (see Edge status above).
@@ -2841,6 +2950,8 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                 } elseif (!empty($topLevelOffers)) {
                                     $editOffers = $topLevelOffers;
                                 }
+                            } elseif ($editCampaign['flow_type'] === 'DeepFunnel') {
+                                $editOffers = $editRotation['deep_funnel']['offers'] ?? [];
                             }
                             
                             // If still empty, ensure at least one row
@@ -2863,7 +2974,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                 error_log('Editing offer #' . $idx . ' - ID: ' . $offerId . ', Weight: ' . $offerWeight . ', Enabled: ' . ($offerEnabled ? 'yes' : 'no') . ', Full data: ' . print_r($editOffer, true));
                             }
                         ?>
-                        <div class="offer-rotation-row" style="display: grid; grid-template-columns: auto 2fr 1fr auto; gap: 12px; margin-bottom: 8px; align-items: center;">
+                        <div class="offer-rotation-row">
                             <!-- Hidden input is the source of truth (only this gets submitted) -->
                             <input type="hidden" name="offer_enabled[<?= $idx ?>]" id="offer_enabled_hidden_<?= $idx ?>" value="<?= $offerEnabled ? '1' : '0' ?>">
                             <label style="display: flex; align-items: center; cursor: pointer; white-space: nowrap;">
@@ -2875,7 +2986,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                             <!-- Do not use HTML disabled here: disabled controls are omitted from POST and
                                  reindex offer_id[]/offer_weight[] against offer_enabled[n], breaking weight validation. -->
                             <select name="offer_id[]" id="offer_select_<?= $idx ?>"
-                                    style="padding: 8px; border: 2px solid #ddd; border-radius: 4px; <?= !$offerEnabled ? 'background: #f5f5f5; color: #999; cursor: not-allowed; pointer-events: none;' : '' ?>"
+                                    style="width: 100%; box-sizing: border-box; padding: 8px; border: 2px solid #ddd; border-radius: 4px; <?= !$offerEnabled ? 'background: #f5f5f5; color: #999; cursor: not-allowed; pointer-events: none;' : '' ?>"
                                     <?= !$offerEnabled ? 'tabindex="-1" aria-disabled="true"' : '' ?>
                                     aria-label="Select offer">
                                 <option value="">Select offer...</option>
@@ -2888,7 +2999,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                             <input type="number" name="offer_weight[]" id="offer_weight_<?= $idx ?>" placeholder="Weight %" min="0" max="100"
                                    value="<?= htmlspecialchars($offerWeight) ?>"
                                    <?= !$offerEnabled ? 'readonly' : '' ?>
-                                   style="padding: 8px; border: 2px solid #ddd; border-radius: 4px; <?= !$offerEnabled ? 'background: #f5f5f5; color: #999; cursor: not-allowed;' : '' ?>"
+                                   style="width: 100%; box-sizing: border-box; padding: 8px; border: 2px solid #ddd; border-radius: 4px; <?= !$offerEnabled ? 'background: #f5f5f5; color: #999; cursor: not-allowed;' : '' ?>"
                                    aria-label="Offer weight percentage">
                             <button type="button" class="btn btn-outline" onclick="addOfferRotationItem()" aria-label="Add another offer">
                                 +
@@ -2900,7 +3011,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                         💡 All flow types use the same offer rotation. Add multiple offers to rotate (weights must sum to 100%).
                     </div>
                     <div style="margin-top: 16px;">
-                        <label for="fallback_offer_id" style="font-weight: 600; color: #33691e;">Fallback Offer (optional)</label>
+                        <label for="fallback_offer_id" style="font-weight: 600; color: var(--accent);">Fallback Offer (optional)</label>
                         <select name="fallback_offer_id" id="fallback_offer_id" style="padding: 8px; border: 2px solid #ddd; border-radius: 4px; min-width: 280px; margin-top: 8px; display: block;">
                             <option value="">None</option>
                             <?php foreach ($offers as $off): ?>
@@ -2909,9 +3020,32 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                 </option>
                             <?php endforeach; ?>
                         </select>
-                        <div style="font-size: 12px; color: #666; margin-top: 6px;">Used when no enabled offer in rotation is available.</div>
+                        <div style="font-size: 12px; color: #666; margin-top: 6px;">Used when no enabled offer in rotation is available. Grizzly Guard uses this as the backup offer.</div>
                     </div>
+                    <?php
+                    $botRouteMode = $editCampaign['bot_route_mode'] ?? ($_POST['bot_route_mode'] ?? 'allow');
+                    $botRouteUrl = $editCampaign['bot_route_url'] ?? ($_POST['bot_route_url'] ?? '');
+                    include __DIR__ . '/partials/campaign-bot-route-fields.php';
+                    ?>
                 </fieldset>
+
+                <!-- Deep Funnel sits where landing-page rotation sits, under offers -->
+                <div id="deep_funnel_fields" style="margin-bottom: 32px; display: <?= $isDeepFunnelEdit ? 'block' : 'none' ?>;">
+                    <?php
+                    foreach ($honeycombCampaignFieldProviders as $honeyProvider) {
+                        if ($honeyProvider->addonSlug() !== 'deep-funnels') {
+                            continue;
+                        }
+                        echo $honeyProvider->renderHtml([
+                            'binding' => null,
+                            'post' => [],
+                            'prefer_export_on_create' => false,
+                            'embedded' => true,
+                            'show_link_helper' => true,
+                        ]);
+                    }
+                    ?>
+                </div>
 
                 <!-- LP: Landing Page Rotation Only (Blue Box) -->
                 <!-- Also shown for Split flow type (uses same LPs) -->
@@ -2957,7 +3091,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                             // Check enabled state - default to true if not set (backward compatibility)
                             $lpEnabled = !isset($editLP['enabled']) || $editLP['enabled'] === true || $editLP['enabled'] === 1 || $editLP['enabled'] === '1';
                             ?>
-                            <div style="display: grid; grid-template-columns: auto 2fr 1fr auto; gap: 12px; margin-bottom: 8px; align-items: center;">
+                            <div class="lp-rotation-row">
                                 <!-- Hidden input is the source of truth (only this gets submitted) -->
                                 <input type="hidden" name="lp_enabled[<?= $idx ?>]" id="lp_enabled_hidden_<?= $idx ?>" value="<?= $lpEnabled ? '1' : '0' ?>">
                                 <label style="display: flex; align-items: center; cursor: pointer; white-space: nowrap;">
@@ -2967,7 +3101,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                     <span style="font-size: 12px; color: #666;">Enable</span>
                                 </label>
                                 <select name="lp_id[]" id="lp_select_<?= $idx ?>"
-                                        style="padding: 8px; border: 2px solid #ddd; border-radius: 4px; <?= !$lpEnabled ? 'background: #f5f5f5; color: #999; cursor: not-allowed; pointer-events: none;' : '' ?>"
+                                        style="width: 100%; box-sizing: border-box; padding: 8px; border: 2px solid #ddd; border-radius: 4px; <?= !$lpEnabled ? 'background: #f5f5f5; color: #999; cursor: not-allowed; pointer-events: none;' : '' ?>"
                                         <?= !$lpEnabled ? 'tabindex="-1" aria-disabled="true"' : '' ?>
                                         aria-label="Select landing page"
                                         onchange="if (typeof updateWhopAdDestination === 'function') updateWhopAdDestination();">
@@ -2983,10 +3117,10 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
-                                <input type="number" name="lp_weight[]" id="lp_weight_<?= $idx ?>" placeholder="Weight %" min="0" max="100" 
+                                <input type="number" name="lp_weight[]" id="lp_weight_<?= $idx ?>" min="0" max="100" 
                                        value="<?= htmlspecialchars(isset($editLP['weight']) ? (int)$editLP['weight'] : 100) ?>"
                                        <?= !$lpEnabled ? 'readonly' : '' ?>
-                                       style="padding: 8px; border: 2px solid #ddd; border-radius: 4px; <?= !$lpEnabled ? 'background: #f5f5f5; color: #999; cursor: not-allowed;' : '' ?>"
+                                       style="width: 100%; box-sizing: border-box; padding: 8px; border: 2px solid #ddd; border-radius: 4px; <?= !$lpEnabled ? 'background: #f5f5f5; color: #999; cursor: not-allowed;' : '' ?>"
                                        aria-label="Landing page weight percentage"
                                        onchange="if (typeof updateWhopAdDestination === 'function') updateWhopAdDestination();">
                                 <button type="button" class="btn btn-outline lp-add-btn" onclick="addLPItem()" aria-label="Add another landing page">+</button>
@@ -2999,43 +3133,14 @@ if ($editCampaign && isset($editCampaign['id'])) {
                     </fieldset>
                 </div>
 
-                <!-- Split: Split percentage configuration -->
-                <div id="split_fields" style="margin-bottom: 32px; display: <?= ($editCampaign['flow_type'] ?? '') === 'Split' ? 'block' : 'none' ?>;">
-                    <!-- Split Percentage -->
-                    <div style="background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%); padding: 16px; border-radius: 8px; border: 2px solid #ff9800; margin-bottom: 16px;">
-                        <label style="display: block; font-weight: 600; margin-bottom: 12px; color: #e65100;">
-                            ⚖️ Split Test: LP Path vs Direct Path
-                        </label>
-                        <div style="display: grid; grid-template-columns: auto auto auto; gap: 12px; align-items: center; background: rgba(255,255,255,0.5); padding: 12px; border-radius: 4px;">
-                            <strong style="color: #e65100;">Traffic to LP Path:</strong>
-                            <?php
-                            $splitLPPercent = 50; // Default
-                            if ($action === 'edit' && $editCampaign && $editCampaign['flow_type'] === 'Split' && isset($editRotation['split_traffic']['lp_percent'])) {
-                                $splitLPPercent = (int)$editRotation['split_traffic']['lp_percent'];
-                            }
-                            ?>
-                            <input type="number" name="split_traffic_to_lp" placeholder="%" min="0" max="100" value="<?= $splitLPPercent ?>"
-                                   id="split_traffic_to_lp_input"
-                                   oninput="updateSplitPercentage()"
-                                   style="width: 80px; padding: 8px; border: 2px solid #e65100; border-radius: 4px; font-weight: 600;">
-                            <span id="split_remaining_percent" style="color: #666; font-size: 14px;">
-                                (<?= 100 - $splitLPPercent ?>% Direct)
-                            </span>
-                        </div>
-                        <div style="font-size: 12px; color: #666; margin-top: 8px;">
-                            LP Path uses Landing Pages above → then Offers above. Direct Path goes straight to Offers above.
-                        </div>
-                    </div>
-                </div>
-
                 <!-- Multi-Slug Management Section -->
-                <details style="margin-bottom: 24px;">
-                    <summary style="cursor: pointer; font-weight: 600; padding: 12px; background: #f9f9f9; border-radius: 4px; display: flex; align-items: center; gap: 8px; border: 2px solid #ddd;">
-                        <span style="font-size: 18px;">🔗</span>
+                <details class="campaign-optional-details">
+                    <summary>
+                        <span aria-hidden="true">🔗</span>
                         Campaign Slugs (Optional)
                     </summary>
-                    <div style="padding: 16px; border: 2px solid #ddd; border-top: none; border-radius: 0 0 4px 4px;">
-                        <p style="font-size: 13px; color: #666; margin-bottom: 16px;">
+                    <div class="campaign-optional-details__body">
+                        <p class="campaign-optional-details__hint">
                             Create multiple tracking slugs for this campaign to scale across multiple ad accounts and traffic sources. Each slug routes to the same campaign but provides unique tracking links for different ad accounts or traffic sources. Slugs must be unique across all campaigns and can only contain letters, numbers, hyphens, and underscores.
                         </p>
                         
@@ -3284,12 +3389,12 @@ if ($editCampaign && isset($editCampaign['id'])) {
             </h2>
         </div>
         <div class="card-body">
-            <div id="tracking-links-banner-default" style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); border-left: 4px solid #4caf50; border-radius: 6px; padding: 14px 16px; margin-bottom: 16px; box-shadow: 0 2px 4px rgba(76, 175, 80, 0.1);">
-                <p style="margin: 0; color: #2e7d32; font-size: 15px; font-weight: 700; line-height: 1.5;">
+            <div id="tracking-links-banner-default" style="background: linear-gradient(135deg, var(--accent-soft) 0%, var(--accent-soft) 100%); border-left: 4px solid var(--accent); border-radius: 6px; padding: 14px 16px; margin-bottom: 16px; box-shadow: 0 2px 4px color-mix(in srgb, var(--accent) 10%, transparent);">
+                <p style="margin: 0; color: var(--accent-hover); font-size: 15px; font-weight: 700; line-height: 1.5;">
                     <span style="font-size: 18px; margin-right: 8px;">🔗</span>
                     <strong>USE THESE LINKS IN YOUR TRAFFIC SOURCE</strong> (Facebook, Google, etc.)
                 </p>
-                <p style="margin: 8px 0 0 0; color: #388e3c; font-size: 14px; font-weight: 500; line-height: 1.4;">
+                <p style="margin: 8px 0 0 0; color: var(--accent-hover); font-size: 14px; font-weight: 500; line-height: 1.4;">
                     <?php if (!empty($existingSlugs)): ?>
                         Multiple slugs available for this campaign. Each slug routes to the same campaign but allows you to differentiate traffic sources.
                     <?php else: ?>
@@ -3323,9 +3428,9 @@ if ($editCampaign && isset($editCampaign['id'])) {
                     <div style="position: relative;">
                         <select id="campaign-slug-selector" 
                                 onchange="updateTrackingLinkOnSlugChange()"
-                                style="width: 100%; padding: 12px 40px 12px 16px; border: 2px solid #4caf50; border-radius: 6px; font-size: 14px; background: #fff; cursor: pointer; appearance: none; -webkit-appearance: none; -moz-appearance: none; color: #333; font-weight: 500; box-shadow: 0 2px 4px rgba(76, 175, 80, 0.15); transition: all 0.2s;" 
-                                onfocus="this.style.borderColor='#3d5a26'" 
-                                onblur="this.style.borderColor='#4caf50'">
+                                style="width: 100%; padding: 12px 40px 12px 16px; border: 2px solid var(--accent); border-radius: 6px; font-size: 14px; background: #fff; cursor: pointer; appearance: none; -webkit-appearance: none; -moz-appearance: none; color: #333; font-weight: 500; box-shadow: 0 2px 4px color-mix(in srgb, var(--accent) 15%, transparent); transition: all 0.2s;" 
+                                onfocus="this.style.borderColor='var(--accent)'" 
+                                onblur="this.style.borderColor='var(--accent)'">
                             <option value="" data-slug="">Default (Campaign Key: <?= htmlspecialchars($campaignKey) ?>)</option>
                             <?php foreach ($campaignSlugs as $slug): ?>
                                 <option value="<?= (int)$slug['id'] ?>" 
@@ -3335,7 +3440,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                                 </option>
                             <?php endforeach; ?>
                         </select>
-                        <div style="position: absolute; right: 14px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #4caf50; font-size: 18px; font-weight: bold;">
+                        <div style="position: absolute; right: 14px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--accent); font-size: 18px; font-weight: bold;">
                             ▼
                         </div>
                     </div>
@@ -3377,7 +3482,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                     <code id="full-tracking-url" style="font-size: 14px; color: #333; word-break: break-all; flex: 1; white-space: pre-wrap; font-family: 'Courier New', monospace; background: #f5f5f5; padding: 12px; border-radius: 4px; border: 1px solid #ddd;">
                         <?= htmlspecialchars(BASE_URL) ?>/km/<?= htmlspecialchars($editCampaign['campaign_key'] ?? $editCampaign['id']) ?>
                     </code>
-                    <button id="copy-url-btn" onclick="copyFullTrackingUrl()" class="btn btn-primary" style="white-space: nowrap; padding: 12px 24px; background: #4caf50; border: none; border-radius: 6px; color: #fff; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);" aria-label="Copy full tracking URL" onmouseover="this.style.background='#3d5a26'; this.style.boxShadow='0 3px 6px rgba(61, 90, 38, 0.4)'" onmouseout="this.style.background='#4caf50'; this.style.boxShadow='0 2px 4px rgba(76, 175, 80, 0.3)'">
+                    <button id="copy-url-btn" onclick="copyFullTrackingUrl()" class="btn btn-primary" style="white-space: nowrap; padding: 12px 24px; background: var(--accent); border: none; border-radius: 6px; color: #fff; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 4px color-mix(in srgb, var(--accent) 30%, transparent);" aria-label="Copy full tracking URL" onmouseover="this.style.background='var(--accent-hover)'; this.style.boxShadow='0 3px 6px color-mix(in srgb, var(--accent) 40%, transparent)'" onmouseout="this.style.background='var(--accent)'; this.style.boxShadow='0 2px 4px color-mix(in srgb, var(--accent) 30%, transparent)'">
                         📋 Copy
                     </button>
                 </div>
@@ -3460,7 +3565,7 @@ whop.track("page");
                 <div style="margin-bottom:16px;padding:16px;background:#fff;border:2px solid #6b4f8a;border-radius:8px;box-shadow:0 2px 6px rgba(107,79,138,0.12);">
                     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap;">
                         <p style="margin:0;font-weight:700;color:#4a3563;font-size:15px;">3. Your CTA button <span style="font-weight:500;color:#666;font-size:13px;">(replace your LP button with this)</span></p>
-                        <button type="button" onclick="copyWhopSnippet('whop-cta-code', this)" style="padding:8px 16px;font-size:13px;background:#3d5a26;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;">📋 Copy CTA</button>
+                        <button type="button" onclick="copyWhopSnippet('whop-cta-code', this)" style="padding:8px 16px;font-size:13px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;">📋 Copy CTA</button>
                     </div>
                     <pre id="whop-cta-code" style="margin:0;padding:14px;background:#f8f5fb;color:#333;border:1px solid #d4c4e4;border-radius:6px;overflow:auto;font-size:14px;line-height:1.5;white-space:pre-wrap;font-family:'Courier New',monospace;"></pre>
                     <p style="margin:10px 0 0;font-size:12px;color:#555;line-height:1.45;">
@@ -3491,8 +3596,8 @@ whop.track("page");
 
             <!-- CTA Configuration Guide (Only show for LP and Split flows, not DTO) -->
             <?php if (!empty($editCampaign['flow_type']) && $editCampaign['flow_type'] !== 'DTO'): ?>
-            <div id="standard-cta-guide-panel" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border: 2px solid #3d5a26; border-radius: 8px; padding: 20px; margin-top: 24px;">
-                <h3 id="standard-cta-guide-title" style="margin: 0 0 16px 0; color: #3d5a26; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+            <div id="standard-cta-guide-panel" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border: 2px solid var(--accent); border-radius: 8px; padding: 20px; margin-top: 24px;">
+                <h3 id="standard-cta-guide-title" style="margin: 0 0 16px 0; color: var(--accent); font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
                     <span>🔗</span>
                     <span id="standard-cta-guide-title-text">Configure Your Landing Page CTA</span>
                 </h3>
@@ -3506,9 +3611,9 @@ whop.track("page");
                         </p>
                     </div>
                     <div style="background: #ffffff; border: 1px solid #ddd; border-radius: 4px; padding: 12px; margin-bottom: 12px;">
-                        <code id="chomp-js-code-display" style="font-size: 13px; color: #3d5a26; word-break: break-all;">&lt;script src="<?= htmlspecialchars(Formatter::getCampaignBaseUrl($editCampaign)) ?>/chomp.js"&gt;&lt;/script&gt;</code>
+                        <code id="chomp-js-code-display" style="font-size: 13px; color: var(--accent); word-break: break-all;">&lt;script src="<?= htmlspecialchars(Formatter::getCampaignBaseUrl($editCampaign)) ?>/chomp.js"&gt;&lt;/script&gt;</code>
                         <button id="copy-chomp-js-btn" onclick="copyChompJSCode()" 
-                                style="margin-left: 8px; padding: 4px 12px; font-size: 12px; background: #3d5a26; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                style="margin-left: 8px; padding: 4px 12px; font-size: 12px; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer;">
                             📋 Copy
                         </button>
                     </div>
@@ -3518,15 +3623,26 @@ whop.track("page");
                 <div style="margin-bottom: 20px;">
                     <p style="color: #333; margin-bottom: 12px; font-weight: 600; font-size: 14px;">Step 2: Configure Your CTA Button</p>
                     <div style="background: #ffffff; border: 1px solid #ddd; border-radius: 4px; padding: 12px; margin-bottom: 12px;">
-                        <code style="font-size: 13px; color: #3d5a26; display: block; white-space: pre-wrap;">&lt;a href="#" onclick="kTrack(); return false;"&gt;
+                        <code style="font-size: 13px; color: var(--accent); display: block; white-space: pre-wrap;">&lt;a href="#" onclick="kTrack(); return false;"&gt;
     Click Here
 &lt;/a&gt;</code>
                         <button onclick="copyToClipboard('&lt;a href=&quot;#&quot; onclick=&quot;kTrack(); return false;&quot;&gt;\n    Click Here\n&lt;/a&gt;')" 
-                                style="margin-top: 8px; padding: 4px 12px; font-size: 12px; background: #3d5a26; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                style="margin-top: 8px; padding: 4px 12px; font-size: 12px; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer;">
                             📋 Copy
                         </button>
                     </div>
-                    <p style="font-size: 12px; color: #666; margin: 0;">Replace your CTA button with this code. The <code>kTrack()</code> function will automatically track the click and redirect to your offer.</p>
+                    <p style="font-size: 12px; color: #666; margin: 0;">Replace your CTA button with this code. The <code>kTrack()</code> function will automatically track the click and redirect to your offer (weighted rotation).</p>
+                    <div style="background: #ffffff; border: 1px solid #ddd; border-radius: 4px; padding: 12px; margin-top: 12px;">
+                        <p style="margin: 0 0 8px 0; color: #333; font-weight: 600; font-size: 13px;">Optional: link to a specific offer</p>
+                        <p style="font-size: 12px; color: #666; margin: 0 0 8px 0;">Use the offer’s position in this campaign’s offer list (1 = first enabled offer, 2 = second, …). Plain <code>kTrack()</code> still auto-rotates.</p>
+                        <code style="font-size: 13px; color: var(--accent); display: block; white-space: pre-wrap;">&lt;a href="#" onclick="kTrack(2); return false;"&gt;Go to Offer 2&lt;/a&gt;
+&lt;!-- or: --&gt;
+&lt;a href="#" class="k-track" data-k-offer="2"&gt;Go to Offer 2&lt;/a&gt;</code>
+                        <button onclick="copyToClipboard('&lt;a href=&quot;#&quot; onclick=&quot;kTrack(2); return false;&quot;&gt;Go to Offer 2&lt;/a&gt;')"
+                                style="margin-top: 8px; padding: 4px 12px; font-size: 12px; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer;">
+                            📋 Copy example
+                        </button>
+                    </div>
                 </div>
                 </div><!-- /#standard-cta-classic-steps -->
 
@@ -3563,21 +3679,21 @@ whop.track("page");
                 ?>
                 <!-- Optional: Redirectless Tracking -->
                 <details id="standard-cta-redirectless" style="margin-top: 24px;">
-                    <summary id="standard-cta-redirectless-summary" style="cursor: pointer; font-weight: 600; padding: 14px 16px; background: linear-gradient(135deg, #2e7d32 0%, #4caf50 100%); border-radius: 8px; display: flex; align-items: center; gap: 8px; border: 2px solid #3d5a26; color: #fff; font-size: 15px; box-shadow: 0 2px 4px rgba(61, 90, 38, 0.2);">
+                    <summary id="standard-cta-redirectless-summary" style="cursor: pointer; font-weight: 600; padding: 14px 16px; background: linear-gradient(135deg, var(--accent-hover) 0%, var(--accent) 100%); border-radius: 8px; display: flex; align-items: center; gap: 8px; border: 2px solid var(--accent); color: #fff; font-size: 15px; box-shadow: 0 2px 4px color-mix(in srgb, var(--accent) 20%, transparent);">
                         <span>📡</span>
                         <span id="standard-cta-redirectless-summary-text">Optional: Redirectless Tracking (For Google Ads & Similar)</span>
                     </summary>
                     <div style="padding: 24px; border: 2px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px; background: #fafafa;">
-                        <div style="background: #e8f5e9; border-left: 4px solid #4caf50; border-radius: 4px; padding: 16px; margin-bottom: 20px;">
-                            <p style="margin: 0 0 8px 0; color: #2e7d32; font-size: 14px; line-height: 1.6;">
+                        <div style="background: var(--accent-soft); border-left: 4px solid var(--accent); border-radius: 4px; padding: 16px; margin-bottom: 20px;">
+                            <p style="margin: 0 0 8px 0; color: var(--accent-hover); font-size: 14px; line-height: 1.6;">
                                 <strong>When to use:</strong> Some platforms like Google Ads don't allow redirect tracking links. 
                                 With redirectless tracking, traffic goes <strong>directly to your landing page URL</strong>, 
                                 and the tracking code below captures visitor data on the page itself.
                             </p>
-                            <p style="margin: 0 0 8px 0; color: #388e3c; font-size: 13px; line-height: 1.5;">
+                            <p style="margin: 0 0 8px 0; color: var(--accent-hover); font-size: 13px; line-height: 1.5;">
                                 Use your landing page URL directly in your traffic source (no tracking link). Copy the <strong>complete JavaScript snippet below</strong> — it includes visit tracking, CTA click tracking (<code>chomp.js</code>), and the CTA button markup. You do not need Steps 1–2 above.
                             </p>
-                            <p style="margin: 0; color: #388e3c; font-size: 13px; line-height: 1.5;">
+                            <p style="margin: 0; color: var(--accent-hover); font-size: 13px; line-height: 1.5;">
                                 <strong>Same LP for redirect rotation:</strong> You can keep this code on pages that also receive traffic from the campaign redirect link (for LP rotation). If the visitor already has a <code>click_id</code> from the redirect, Kuma reuses it and does <strong>not</strong> create a second visit.
                             </p>
                         </div>
@@ -3589,7 +3705,7 @@ whop.track("page");
                                 Select Landing Page (Code will update automatically):
                             </label>
                             <div style="position: relative;">
-                                <select id="redirectless-lp-selector" onchange="updateRedirectlessCode()" style="width: 100%; padding: 12px 40px 12px 16px; border: 2px solid #4caf50; border-radius: 6px; font-size: 14px; background: #fff; cursor: pointer; appearance: none; -webkit-appearance: none; -moz-appearance: none; color: #333; font-weight: 500; box-shadow: 0 2px 4px rgba(76, 175, 80, 0.15); transition: all 0.2s;" onfocus="this.style.borderColor='#3d5a26'" onblur="this.style.borderColor='#4caf50'">
+                                <select id="redirectless-lp-selector" onchange="updateRedirectlessCode()" style="width: 100%; padding: 12px 40px 12px 16px; border: 2px solid var(--accent); border-radius: 6px; font-size: 14px; background: #fff; cursor: pointer; appearance: none; -webkit-appearance: none; -moz-appearance: none; color: #333; font-weight: 500; box-shadow: 0 2px 4px color-mix(in srgb, var(--accent) 15%, transparent); transition: all 0.2s;" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--accent)'">
                                     <option value="">-- Select a landing page --</option>
                                 <?php 
                                 // Get full LP data for dropdown (including URLs)
@@ -3633,7 +3749,7 @@ whop.track("page");
                                     </option>
                                 <?php endforeach; ?>
                             </select>
-                            <div style="position: absolute; right: 14px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #4caf50; font-size: 18px; font-weight: bold;">
+                            <div style="position: absolute; right: 14px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--accent); font-size: 18px; font-weight: bold;">
                                 ▼
                             </div>
                         </div>
@@ -3647,9 +3763,9 @@ whop.track("page");
                             <div style="position: relative;">
                                 <select id="redirectless-tracking-domain-select" 
                                         onchange="updateRedirectlessCode()"
-                                        style="width: 100%; padding: 12px 40px 12px 16px; border: 2px solid #4caf50; border-radius: 6px; font-size: 14px; background: #fff; cursor: pointer; appearance: none; -webkit-appearance: none; -moz-appearance: none; color: #333; font-weight: 500; box-shadow: 0 2px 4px rgba(76, 175, 80, 0.15); transition: all 0.2s;" 
-                                        onfocus="this.style.borderColor='#3d5a26'" 
-                                        onblur="this.style.borderColor='#4caf50'">
+                                        style="width: 100%; padding: 12px 40px 12px 16px; border: 2px solid var(--accent); border-radius: 6px; font-size: 14px; background: #fff; cursor: pointer; appearance: none; -webkit-appearance: none; -moz-appearance: none; color: #333; font-weight: 500; box-shadow: 0 2px 4px color-mix(in srgb, var(--accent) 15%, transparent); transition: all 0.2s;" 
+                                        onfocus="this.style.borderColor='var(--accent)'" 
+                                        onblur="this.style.borderColor='var(--accent)'">
                                     <option value="">Default (<?= htmlspecialchars(parse_url(BASE_URL, PHP_URL_HOST) ?: 'Current Domain') ?>)</option>
                                     <?php foreach ($verifiedTrackingDomains as $domain): ?>
                                         <?php $domainStatusLabel = ($domain['status'] ?? '') === 'verified_manual' ? 'Manual' : 'Verified'; ?>
@@ -3658,7 +3774,7 @@ whop.track("page");
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
-                                <div style="position: absolute; right: 14px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #4caf50; font-size: 18px; font-weight: bold;">
+                                <div style="position: absolute; right: 14px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--accent); font-size: 18px; font-weight: bold;">
                                     ▼
                                 </div>
                             </div>
@@ -3669,7 +3785,7 @@ whop.track("page");
                         <?php endif; ?>
                         
                         <!-- Traffic source for redirectless: always the campaign's selected source -->
-                        <div id="redirectless-traffic-source-info" style="margin-bottom: 24px; padding: 12px 14px; background: #e8f5e9; border: 1px solid #c8e6c9; border-radius: 6px; font-size: 13px; color: #2e7d32; line-height: 1.45;">
+                        <div id="redirectless-traffic-source-info" style="margin-bottom: 24px; padding: 12px 14px; background: var(--accent-soft); border: 1px solid var(--accent-soft); border-radius: 6px; font-size: 13px; color: var(--accent-hover); line-height: 1.45;">
                             Using this campaign’s traffic source: <strong id="redirectless-traffic-source-label">—</strong>
                             <span style="display:block;margin-top:4px;font-size:12px;color:#555;">
                                 Token parameters on the Direct Campaign Link follow that source. Change it in Traffic Source above.
@@ -3703,12 +3819,12 @@ whop.track("page");
                             <label style="display: block; color: #333; margin-bottom: 10px; font-weight: 600; font-size: 14px;">
                                 Direct Campaign Link (Use this URL in your traffic source):
                             </label>
-                            <div style="background: #fff; border: 2px solid #4caf50; border-radius: 8px; padding: 16px; box-shadow: 0 2px 4px rgba(76, 175, 80, 0.15);">
+                            <div style="background: #fff; border: 2px solid var(--accent); border-radius: 8px; padding: 16px; box-shadow: 0 2px 4px color-mix(in srgb, var(--accent) 15%, transparent);">
                                 <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;">
                                     <code id="redirectless-direct-link" style="font-size: 13px; color: #333; word-break: break-all; flex: 1; white-space: pre-wrap; font-family: 'Courier New', monospace; background: #f5f5f5; padding: 12px; border-radius: 4px; border: 1px solid #ddd; min-width: 200px;">
                                         Select a landing page to generate link
                                     </code>
-                                    <button id="copy-redirectless-direct-link-btn" onclick="copyRedirectlessDirectLink()" style="white-space: nowrap; padding: 12px 24px; background: #4caf50; border: none; border-radius: 6px; color: #fff; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);" onmouseover="this.style.background='#3d5a26'; this.style.boxShadow='0 3px 6px rgba(61, 90, 38, 0.4)'" onmouseout="this.style.background='#4caf50'; this.style.boxShadow='0 2px 4px rgba(76, 175, 80, 0.3)'">
+                                    <button id="copy-redirectless-direct-link-btn" onclick="copyRedirectlessDirectLink()" style="white-space: nowrap; padding: 12px 24px; background: var(--accent); border: none; border-radius: 6px; color: #fff; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 4px color-mix(in srgb, var(--accent) 30%, transparent);" onmouseover="this.style.background='var(--accent-hover)'; this.style.boxShadow='0 3px 6px color-mix(in srgb, var(--accent) 40%, transparent)'" onmouseout="this.style.background='var(--accent)'; this.style.boxShadow='0 2px 4px color-mix(in srgb, var(--accent) 30%, transparent)'">
                                         📋 Copy
                                     </button>
                                 </div>
@@ -3737,7 +3853,7 @@ var kumaConfig = { "root": "<?= htmlspecialchars(BASE_URL) ?>/", };
 
 &lt;!-- Use this markup (or onclick) on your CTA button --&gt;
 &lt;a href="#" onclick="kTrack(); return false;"&gt;Click Here&lt;/a&gt;</code>
-                                    <button id="copy-redirectless-js-btn" class="redirectless-copy-btn btn btn-primary" onclick="copyRedirectlessJSCode()" style="white-space: nowrap; padding: 12px 24px; background: #4caf50; border: none; border-radius: 6px; color: #fff; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);" aria-label="Copy JavaScript redirectless tracking code" onmouseover="this.style.background='#3d5a26'; this.style.boxShadow='0 3px 6px rgba(61, 90, 38, 0.4)'" onmouseout="this.style.background='#4caf50'; this.style.boxShadow='0 2px 4px rgba(76, 175, 80, 0.3)'">
+                                    <button id="copy-redirectless-js-btn" class="redirectless-copy-btn btn btn-primary" onclick="copyRedirectlessJSCode()" style="white-space: nowrap; padding: 12px 24px; background: var(--accent); border: none; border-radius: 6px; color: #fff; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 4px color-mix(in srgb, var(--accent) 30%, transparent);" aria-label="Copy JavaScript redirectless tracking code" onmouseover="this.style.background='var(--accent-hover)'; this.style.boxShadow='0 3px 6px color-mix(in srgb, var(--accent) 40%, transparent)'" onmouseout="this.style.background='var(--accent)'; this.style.boxShadow='0 2px 4px color-mix(in srgb, var(--accent) 30%, transparent)'">
                                         📋 Copy
                                     </button>
                                 </div>
@@ -3755,7 +3871,7 @@ var kumaConfig = { "root": "<?= htmlspecialchars(BASE_URL) ?>/", };
 &lt;img src="<?= htmlspecialchars(APP_BASE_URL) ?>/track.php?c=<?= $campaignIdForRedirectless ?>&amp;l=LP_ID&amp;&lt;?php echo htmlspecialchars($_SERVER['QUERY_STRING']); ?&gt;" 
      width="1" height="1" style="display:none;"&gt;
 &lt;?php endif; ?&gt;</code>
-                                    <button id="copy-redirectless-php-btn" class="redirectless-copy-btn btn btn-primary" onclick="copyRedirectlessPHPCode()" style="white-space: nowrap; padding: 12px 24px; background: #4caf50; border: none; border-radius: 6px; color: #fff; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);" aria-label="Copy PHP redirectless tracking code" onmouseover="this.style.background='#3d5a26'; this.style.boxShadow='0 3px 6px rgba(61, 90, 38, 0.4)'" onmouseout="this.style.background='#4caf50'; this.style.boxShadow='0 2px 4px rgba(76, 175, 80, 0.3)'">
+                                    <button id="copy-redirectless-php-btn" class="redirectless-copy-btn btn btn-primary" onclick="copyRedirectlessPHPCode()" style="white-space: nowrap; padding: 12px 24px; background: var(--accent); border: none; border-radius: 6px; color: #fff; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 4px color-mix(in srgb, var(--accent) 30%, transparent);" aria-label="Copy PHP redirectless tracking code" onmouseover="this.style.background='var(--accent-hover)'; this.style.boxShadow='0 3px 6px color-mix(in srgb, var(--accent) 40%, transparent)'" onmouseout="this.style.background='var(--accent)'; this.style.boxShadow='0 2px 4px color-mix(in srgb, var(--accent) 30%, transparent)'">
                                         📋 Copy
                                     </button>
                                 </div>
@@ -3826,11 +3942,11 @@ if (!empty($_GET['click_id'])) {
                             <p style="font-size: 12px; color: #666; margin: 0;">Paste this code at the <strong>very top</strong> of your PHP landing page (before any HTML). Select a landing page above to auto-populate the LP ID.</p>
                             
                             <!-- Simple CTA Link Instructions -->
-                            <div style="background: #e8f5e9; border-left: 4px solid #4caf50; border-radius: 4px; padding: 16px; margin-top: 16px;">
-                                <p style="margin: 0 0 12px 0; color: #2e7d32; font-size: 13px; font-weight: 600;">✅ How to Use (No JavaScript Required):</p>
+                            <div style="background: var(--accent-soft); border-left: 4px solid var(--accent); border-radius: 4px; padding: 16px; margin-top: 16px;">
+                                <p style="margin: 0 0 12px 0; color: var(--accent-hover); font-size: 13px; font-weight: 600;">✅ How to Use (No JavaScript Required):</p>
                                 
-                                <div style="background: #fff; border: 1px solid #4caf50; border-radius: 4px; padding: 12px; margin: 8px 0;">
-                                    <code style="font-size: 12px; color: #2e7d32; font-family: 'Courier New', monospace; display: block; white-space: pre-wrap;">
+                                <div style="background: #fff; border: 1px solid var(--accent); border-radius: 4px; padding: 12px; margin: 8px 0;">
+                                    <code style="font-size: 12px; color: var(--accent-hover); font-family: 'Courier New', monospace; display: block; white-space: pre-wrap;">
 &lt;?php
 $trackerUrl = "<?= htmlspecialchars(Formatter::getCampaignBaseUrl($editCampaign)) ?>/lp/click.php";
 // Get click_id from multiple sources (in order of priority):
@@ -3843,7 +3959,7 @@ $clickId = $_GET['click_id'] ?? $kumaClickId ?? $_COOKIE['kuma_click_id'] ?? '';
                                     </code>
                                 </div>
                                 
-                                <p style="margin: 8px 0 0 0; color: #2e7d32; font-size: 11px; line-height: 1.5;">
+                                <p style="margin: 8px 0 0 0; color: var(--accent-hover); font-size: 11px; line-height: 1.5;">
                                     <strong>Important:</strong> Make sure your landing page file has a <code>.php</code> extension (not <code>.html</code>) for PHP code to execute. The <code>$kumaClickId</code> variable is available after the tracking code runs. The tracker domain will automatically use your selected tracking domain (or default if none selected).
                                 </p>
                             </div>
@@ -3874,10 +3990,10 @@ $clickId = $_GET['click_id'] ?? $kumaClickId ?? $_COOKIE['kuma_click_id'] ?? '';
             const originalText = btn.innerHTML;
             const originalBg = btn.style.background;
             btn.innerHTML = '✓ Copied!';
-            btn.style.background = '#28a745';
+            btn.style.background = 'var(--accent-hover)';
             setTimeout(() => {
                 btn.innerHTML = originalText;
-                btn.style.background = originalBg || '#3d5a26';
+                btn.style.background = originalBg || 'var(--accent)';
             }, 2000);
         }
     
@@ -4439,7 +4555,7 @@ $clickId = $_GET['click_id'] ?? $kumaClickId ?? $_COOKIE['kuma_click_id'] ?? '';
 
             if (!container) return;
 
-            const rows = Array.from(container.querySelectorAll('div[style*="grid-template-columns"]'));
+            const rows = Array.from(container.querySelectorAll('.lp-rotation-row'));
             if (rows.length === 0) return;
 
             if (!isWhop) {
@@ -4554,8 +4670,7 @@ $clickId = $_GET['click_id'] ?? $kumaClickId ?? $_COOKIE['kuma_click_id'] ?? '';
             const copyBtn = document.getElementById('copy-whop-ad-destination-btn');
             if (!urlEl) return;
 
-            const flowTypeEl = document.getElementById('flow_type');
-            const flowType = flowTypeEl ? flowTypeEl.value : '';
+            const flowType = typeof getCampaignFlowType === 'function' ? getCampaignFlowType() : '';
             const showDest = isWhopTrafficSourceSelected() && (flowType === 'LP' || flowType === 'Split');
 
             if (!showDest) {
@@ -4567,7 +4682,7 @@ $clickId = $_GET['click_id'] ?? $kumaClickId ?? $_COOKIE['kuma_click_id'] ?? '';
             const container = document.getElementById('lp_items');
             let lpUrl = '';
             if (container) {
-                const rows = Array.from(container.querySelectorAll('div[style*="grid-template-columns"]'));
+                const rows = Array.from(container.querySelectorAll('.lp-rotation-row'));
                 for (let i = 0; i < rows.length; i++) {
                     const row = rows[i];
                     if (row.style.display === 'none') continue;
@@ -5388,7 +5503,7 @@ if (!empty(\$_GET['click_id'])) {
                 <div>
                     <input type="text" class="url-append-display" 
                            readonly
-                           style="width: 100%; padding: 8px; background: #f9f9f9; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; font-family: monospace; color: #3d5a26;"
+                           style="width: 100%; padding: 8px; background: #f9f9f9; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; font-family: monospace; color: var(--accent);"
                            aria-label="URL append preview">
                 </div>
                 <div style="display: flex; gap: 8px; justify-content: center;">
@@ -5551,7 +5666,7 @@ if (!empty(\$_GET['click_id'])) {
             newRow.style.cssText = 'background: #f9f9f9; padding: 16px; border: 2px solid #ddd; border-radius: 4px; margin-bottom: 12px;';
             newRow.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                    <strong style="color: #3d5a26;">Rule #${ruleIndex + 1}</strong>
+                    <strong style="color: var(--accent);">Rule #${ruleIndex + 1}</strong>
                     <button type="button" class="btn btn-outline" onclick="removeRedirectRule(this)" 
                             style="padding: 4px 8px; font-size: 12px; color: #d32f2f;">× Remove</button>
                 </div>
@@ -5783,7 +5898,7 @@ if (!empty(\$_GET['click_id'])) {
             const container = document.getElementById('lp_items');
             if (!container) return;
             
-            const rows = Array.from(container.querySelectorAll('div[style*="grid-template-columns"]'));
+            const rows = Array.from(container.querySelectorAll('.lp-rotation-row'));
             
             // Filter to only enabled rows
             const enabledRows = rows.filter(row => {
@@ -5847,7 +5962,7 @@ if (!empty(\$_GET['click_id'])) {
             const container = document.getElementById('lp_items');
             if (!container) return;
             
-            const rows = Array.from(container.querySelectorAll('div[style*="grid-template-columns"]'));
+            const rows = Array.from(container.querySelectorAll('.lp-rotation-row'));
             const enabledRows = rows.filter(row => {
                 const checkbox = row.querySelector('input[type="checkbox"]');
                 return checkbox && checkbox.checked;
@@ -5936,7 +6051,7 @@ if (!empty(\$_GET['click_id'])) {
             // Initialize LP checkboxes
             const lpContainer = document.getElementById('lp_items');
             if (lpContainer) {
-                const lpRows = lpContainer.querySelectorAll('div[style*="grid-template-columns"]');
+                const lpRows = lpContainer.querySelectorAll('.lp-rotation-row');
                 lpRows.forEach((row) => {
                     const checkbox = row.querySelector('input[type="checkbox"]');
                     if (checkbox && checkbox.id && checkbox.id.startsWith('lp_checkbox_')) {
@@ -6032,6 +6147,9 @@ if (!empty(\$_GET['click_id'])) {
                 toggleWhopLpCodes();
             }
             initializeDisabledStates();
+            if (typeof syncFlowTypeOptionCards === 'function') {
+                syncFlowTypeOptionCards();
+            }
             updateFlowFields(); // Initialize flow fields visibility
             bindCampaignFormRotationSubmit();
         });
@@ -6055,17 +6173,54 @@ if (!empty(\$_GET['click_id'])) {
                 toggleWhopLpCodes();
             }
             initializeDisabledStates();
+            if (typeof syncFlowTypeOptionCards === 'function') {
+                syncFlowTypeOptionCards();
+            }
             updateFlowFields(); // Initialize flow fields visibility
             bindCampaignFormRotationSubmit();
         }
 
+        function getCampaignFlowType() {
+            const checked = document.querySelector('input[name="flow_type"]:checked');
+            if (checked && checked.value) {
+                return checked.value;
+            }
+            // Legacy select fallback (classic wizard / older markup)
+            const select = document.getElementById('flow_type');
+            if (select && select.tagName === 'SELECT') {
+                return select.value || 'DTO';
+            }
+            return 'DTO';
+        }
+
+        function syncFlowTypeOptionCards() {
+            document.querySelectorAll('.flow-type-option').forEach(function (label) {
+                const input = label.querySelector('input[type="radio"]');
+                label.classList.toggle('is-selected', !!(input && input.checked));
+            });
+        }
+
         function updateFlowFields() {
-            const flowType = document.getElementById('flow_type').value;
-            // LP and Split: Show LP rotation box (both use the same LPs)
-            document.getElementById('lp_fields').style.display = (flowType === 'LP' || flowType === 'Split') ? 'block' : 'none';
-            // Split: Show split percentage configuration
-            document.getElementById('split_fields').style.display = flowType === 'Split' ? 'block' : 'none';
-            // Note: Offer rotation section is always visible - no need to toggle it
+            const flowType = getCampaignFlowType();
+            // LP and Split: Show LP rotation box (both use the same LPs). DeepFunnel uses Honeycomb level builder.
+            const lpFields = document.getElementById('lp_fields');
+            if (lpFields) {
+                lpFields.style.display = (flowType === 'LP' || flowType === 'Split') ? 'block' : 'none';
+            }
+            const dfFields = document.getElementById('deep_funnel_fields');
+            if (dfFields) {
+                dfFields.style.display = flowType === 'DeepFunnel' ? 'block' : 'none';
+            }
+            const splitFields = document.getElementById('split_fields');
+            if (splitFields) {
+                splitFields.style.display = flowType === 'Split' ? 'block' : 'none';
+            }
+            document.querySelectorAll('.honeycomb-deep-funnels-panel').forEach(function (el) {
+                el.style.display = flowType === 'DeepFunnel' ? 'block' : 'none';
+            });
+            if (typeof window.kumaDeepFunnelsOnFlowChange === 'function') {
+                window.kumaDeepFunnelsOnFlowChange(flowType);
+            }
             if (typeof syncWhopLpRotationLimits === 'function') {
                 syncWhopLpRotationLimits();
             }
@@ -6078,9 +6233,12 @@ if (!empty(\$_GET['click_id'])) {
             const input = document.getElementById('split_traffic_to_lp_input');
             const remainingSpan = document.getElementById('split_remaining_percent');
             if (input && remainingSpan) {
-                const lpPercent = parseInt(input.value) || 0;
+                let lpPercent = parseInt(input.value, 10);
+                if (isNaN(lpPercent)) lpPercent = 0;
+                if (lpPercent < 0) lpPercent = 0;
+                if (lpPercent > 100) lpPercent = 100;
                 const directPercent = 100 - lpPercent;
-                remainingSpan.textContent = `(${directPercent}% Direct)`;
+                remainingSpan.textContent = directPercent + '% goes direct to offer';
             }
         }
 
@@ -6135,7 +6293,7 @@ if (!empty(\$_GET['click_id'])) {
                 return;
             }
             const container = document.getElementById('lp_items');
-            const existingRows = container.querySelectorAll('div[style*="grid-template-columns"]');
+            const existingRows = container.querySelectorAll('.lp-rotation-row');
             const newIndex = existingRows.length;
             const firstItem = existingRows[0];
             if (!firstItem) return;
@@ -6176,6 +6334,7 @@ if (!empty(\$_GET['click_id'])) {
             setRotationControlLocked(select, weightInput, true);
             
             container.appendChild(newItem);
+            equalizeLPWeights();
         }
 
         function copyTrackingLink(fullUrl, btnElement) {
@@ -6203,9 +6362,9 @@ if (!empty(\$_GET['click_id'])) {
             // Function to show success feedback
             const showSuccess = () => {
                 btn.innerHTML = '✓';
-                btn.style.background = '#4caf50';
+                btn.style.background = 'var(--accent)';
                 btn.style.color = '#fff';
-                btn.style.borderColor = '#4caf50';
+                btn.style.borderColor = 'var(--accent)';
                 btn.style.transform = 'scale(1.1)';
                 btn.title = 'Copied!';
                 setTimeout(() => {

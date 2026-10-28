@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SimpleKuma\Tracking;
 
 use mysqli;
+use SimpleKuma\Database\SchemaProbe;
 use SimpleKuma\Enrichment\BotDetector;
 use SimpleKuma\Settings\SettingsManager;
 use SimpleKuma\Stats\CampaignStatsExpressions;
@@ -391,15 +392,6 @@ final class ClickRecorder
 
     private function columnExists(string $table, string $column): bool
     {
-        static $cache = [];
-        $key = $table . '.' . $column;
-        if (array_key_exists($key, $cache)) {
-            return $cache[$key];
-        }
-        $t = $this->db->real_escape_string($table);
-        $c = $this->db->real_escape_string($column);
-        $result = $this->db->query("SHOW COLUMNS FROM `{$t}` LIKE '{$c}'");
-        $cache[$key] = $result && $result->num_rows > 0;
-        return $cache[$key];
+        return SchemaProbe::columnExists($this->db, $table, $column);
     }
 }

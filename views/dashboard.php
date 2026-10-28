@@ -68,6 +68,10 @@ try {
 $todayInUserTz = Formatter::getTodayInTimezone($userTimezone);
 $dateFrom = $_GET['date_from'] ?? $todayInUserTz;
 $dateTo = $_GET['date_to'] ?? $todayInUserTz;
+$dashBucket = $_GET['dash_bucket'] ?? 'day';
+if (!in_array($dashBucket, ['day', 'week', 'month'], true)) {
+    $dashBucket = 'day';
+}
 
 // Campaign status filter: active, paused, archived. Empty or all three = show all.
 $statusFilterRaw = $_GET['status_filter'] ?? [];
@@ -104,19 +108,22 @@ $loadDashboardExport = static function () use ($db, $dateFrom, $dateTo, $userTim
     }, 30);
 };
 
-$loadDashboardOverview = static function () use ($db, $dateFrom, $dateTo, $userTimezone, $allowedStatuses, $userId): array {
+$loadDashboardOverview = static function () use ($db, $dateFrom, $dateTo, $userTimezone, $allowedStatuses, $userId, $dashBucket): array {
     $includeChart = empty($GLOBALS['dashboardChartsHidden']);
+    $includePeriod = empty($GLOBALS['dashboardPeriodHidden']);
     $cacheKey = \SimpleKuma\Stats\StatsResponseCache::makeKey($userId, 'dashboard_overview', [
         $dateFrom,
         $dateTo,
         $userTimezone,
         $allowedStatuses,
         $includeChart ? 'chart' : 'nochart',
+        $includePeriod ? 'period' : 'noperiod',
+        $dashBucket,
         \SimpleKuma\Stats\StatsResponseCache::clicksFreshnessToken($db),
     ]);
-    return \SimpleKuma\Stats\StatsResponseCache::remember($cacheKey, static function () use ($db, $dateFrom, $dateTo, $userTimezone, $allowedStatuses, $includeChart) {
+    return \SimpleKuma\Stats\StatsResponseCache::remember($cacheKey, static function () use ($db, $dateFrom, $dateTo, $userTimezone, $allowedStatuses, $includeChart, $dashBucket, $includePeriod) {
         $service = new \SimpleKuma\Stats\DashboardStatsService($db);
-        return $service->loadOverviewAndChart($dateFrom, $dateTo, $userTimezone, $allowedStatuses, $includeChart);
+        return $service->loadOverviewAndChart($dateFrom, $dateTo, $userTimezone, $allowedStatuses, $includeChart, $dashBucket, $includePeriod);
     }, \SimpleKuma\Stats\StatsResponseCache::TTL_DASHBOARD);
 };
 
@@ -189,6 +196,9 @@ $roi = (float)$payload['roi'];
 $epc = (float)$payload['epc'];
 $ctr = (float)$payload['ctr'];
 $cr = (float)$payload['cr'];
+$periodRows = is_array($payload['periodRows'] ?? null) ? $payload['periodRows'] : [];
+$periodNote = is_string($payload['periodNote'] ?? null) ? $payload['periodNote'] : '';
+$periodBucket = in_array($payload['periodBucket'] ?? '', ['day', 'week', 'month'], true) ? $payload['periodBucket'] : $dashBucket;
 $chartLabels = $payload['chartLabels'];
 $clicksData = $payload['clicksData'];
 $conversionsData = $payload['conversionsData'];
@@ -196,6 +206,7 @@ $revenueData = $payload['revenueData'];
 $isSingleDay = (bool)$payload['isSingleDay'];
 $dashboardChartsHidden = !empty($GLOBALS['dashboardChartsHidden']);
 $includeDashboardChart = !$dashboardChartsHidden;
+$includeDashboardPeriod = empty($GLOBALS['dashboardPeriodHidden']);
 
 $statusQueryForApi = '';
 if ($allowedStatuses !== null) {
@@ -213,7 +224,7 @@ $dashboardCampaignsApiUrl = rtrim(APP_BASE_URL, '/') . '/api-dashboard-campaigns
 <!-- Motivational Quote -->
 <div style="margin-bottom: 16px; padding: 0 16px;">
     <p style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 13px; color: #888; font-weight: 400; line-height: 1.5; margin: 0; font-style: italic;">
-        Work it harder, make it better. Do it faster, makes us stronger. More than ever, hour after hour. <strong style="font-weight: 700; font-style: normal;"><a href="https://www.youtube.com/watch?v=yydNF8tuVmU" target="_blank" rel="noopener noreferrer" style="color: #888; text-decoration: underline; cursor: pointer; transition: color 0.2s;" onmouseover="this.style.color='#3d5a26'" onmouseout="this.style.color='#888'">Work is never over.</a></strong>
+        Work it harder, make it better. Do it faster, makes us stronger. More than ever, hour after hour. <strong style="font-weight: 700; font-style: normal;"><a href="https://www.youtube.com/watch?v=yydNF8tuVmU" target="_blank" rel="noopener noreferrer" style="color: #888; text-decoration: underline; cursor: pointer; transition: color 0.2s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='#888'">Work is never over.</a></strong>
     </p>
 </div>
 
@@ -247,7 +258,7 @@ $dashboardCampaignsApiUrl = rtrim(APP_BASE_URL, '/') . '/api-dashboard-campaigns
 <div id="getting-started-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center; animation: fadeIn 0.3s ease;">
     <div class="modal-content-wrapper" style="background: #fff; border-radius: 12px; max-width: 900px; width: 95%; max-height: 90vh; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.5); position: relative; animation: slideUp 0.3s ease; display: flex; flex-direction: column;">
         <!-- Modal Header -->
-        <div style="background: linear-gradient(135deg, #3d5a26 0%, #5a7a3a 100%); color: #fff; padding: 20px 24px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
+        <div style="background: linear-gradient(135deg, var(--accent) 0%, var(--accent-muted) 100%); color: #fff; padding: 20px 24px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
             <div style="display: flex; align-items: center; gap: 12px;">
                 <img src="<?= ASSETS_BASE_URL ?>/assets/images/dashboard.png" alt="Dashboard" style="width: 24px; height: 24px; filter: brightness(0) invert(1);">
                 <h2 style="margin: 0; font-size: 20px; font-weight: 600; color: #fff;">Getting Started with Simple KUMA</h2>
@@ -426,8 +437,9 @@ document.addEventListener('keydown', function(e) {
         <h1 class="page-title">Bearboard</h1>
         <p class="page-description">Follow the tracks. Find the profit.</p>
     </div>
-    <form id="dashboard-date-form" method="get" style="display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
+    <form id="dashboard-date-form" class="dash-date-form" method="get">
         <input type="hidden" name="page" value="dashboard">
+        <input type="hidden" name="dash_bucket" value="<?= htmlspecialchars($dashBucket) ?>">
         <?php if (defined('DEBUG_MODE') && DEBUG_MODE && isset($_GET['debug']) && $_GET['debug'] === 'costs'): ?><input type="hidden" name="debug" value="costs"><?php endif; ?>
         <!-- Minimal Preset Buttons -->
         <?php
@@ -485,25 +497,25 @@ document.addEventListener('keydown', function(e) {
             <button type="button" class="dash-date-preset<?= $activePreset === 'last30' ? ' dash-date-preset--active' : '' ?>" onclick="setDashDate('last30')">30d</button>
             <button type="button" class="dash-date-preset<?= $activePreset === 'lastmonth' ? ' dash-date-preset--active' : '' ?>" onclick="setDashDate('lastmonth')">Last Mo</button>
             <button type="button" class="dash-date-preset<?= $activePreset === 'thismonth' ? ' dash-date-preset--active' : '' ?>" onclick="setDashDate('thismonth')">This Mo</button>
-            <button type="button" class="dash-date-preset<?= $activePreset === 'alltime' ? ' dash-date-preset--active' : '' ?>" onclick="setDashDate('alltime')">ALL TIME</button>
+            <button type="button" class="dash-date-preset<?= $activePreset === 'alltime' ? ' dash-date-preset--active' : '' ?>" onclick="setDashDate('alltime')">All</button>
         </div>
         <div class="dash-date-range">
             <input type="date" name="date_from" id="dash_date_from" class="dash-date-input" value="<?= $dateFrom ?>">
             <span class="dash-date-separator">to</span>
             <input type="date" name="date_to" id="dash_date_to" class="dash-date-input" value="<?= $dateTo ?>">
-            <button type="submit" class="btn btn-primary">Update</button>
+            <button type="submit" class="btn btn-primary dash-date-update">Update</button>
         </div>
-        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-            <span style="font-size: 12px; color: #666; font-weight: 600;">Show:</span>
-            <label style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #666; cursor: pointer;">
+        <div class="dash-status-filters">
+            <span class="dash-status-label">Show:</span>
+            <label class="dash-status-option">
                 <input type="checkbox" name="status_filter[]" value="active" <?= ($allowedStatuses === null || in_array('active', $allowedStatuses)) ? 'checked' : '' ?>>
                 Active
             </label>
-            <label style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #666; cursor: pointer;">
+            <label class="dash-status-option">
                 <input type="checkbox" name="status_filter[]" value="paused" <?= ($allowedStatuses === null || in_array('paused', $allowedStatuses)) ? 'checked' : '' ?>>
                 Paused
             </label>
-            <label style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #666; cursor: pointer;">
+            <label class="dash-status-option">
                 <input type="checkbox" name="status_filter[]" value="archived" <?= ($allowedStatuses === null || in_array('archived', $allowedStatuses)) ? 'checked' : '' ?>>
                 Archived
             </label>
@@ -595,13 +607,13 @@ document.addEventListener('keydown', function(e) {
 <div class="dashboard-stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px;">
     <div class="card" style="padding: 16px;">
         <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Views</div>
-        <div style="font-size: 28px; font-weight: 700; color: #3d5a26;"><?= number_format($clicks) ?></div>
+        <div style="font-size: 28px; font-weight: 700; color: var(--accent);"><?= number_format($clicks) ?></div>
         <div style="font-size: 11px; color: #999; margin-top: 4px;">👁️ Campaign link clicks</div>
     </div>
     
     <div class="card" style="padding: 16px;">
         <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Conversions</div>
-        <div style="font-size: 28px; font-weight: 700; color: #3d5a26;"><?= number_format($conversions) ?></div>
+        <div style="font-size: 28px; font-weight: 700; color: var(--accent);"><?= number_format($conversions) ?></div>
         <div style="font-size: 11px; color: #999; margin-top: 4px;">💰 CR: <?= number_format($cr, 2) ?>%</div>
     </div>
     
@@ -626,8 +638,84 @@ document.addEventListener('keydown', function(e) {
     </div>
 </div>
 
-
-
+<?php
+$periodStatusQs = '';
+if ($allowedStatuses !== null) {
+    foreach ($allowedStatuses as $periodStatus) {
+        $periodStatusQs .= '&status_filter[]=' . urlencode((string)$periodStatus);
+    }
+}
+$periodBaseQs = 'page=dashboard&date_from=' . urlencode($dateFrom) . '&date_to=' . urlencode($dateTo) . $periodStatusQs;
+$periodLabels = ['day' => 'Day', 'week' => 'Week', 'month' => 'Month'];
+?>
+<?php if ($includeDashboardPeriod): ?>
+<div class="card" style="margin-bottom: 32px;" id="dashboard-period-card">
+    <div class="card-header" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+        <h2 class="card-title" style="margin-bottom: 0;">Totals by period</h2>
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <div class="dash-date-presets" style="margin: 0;">
+                <?php foreach ($periodLabels as $periodKey => $periodLabel): ?>
+                    <a class="dash-date-preset<?= $periodBucket === $periodKey ? ' dash-date-preset--active' : '' ?>" href="?<?= $periodBaseQs ?>&dash_bucket=<?= $periodKey ?>"><?= $periodLabel ?></a>
+                <?php endforeach; ?>
+            </div>
+            <button type="button" class="btn btn-sm btn-secondary" data-dashboard-period-toggle="hide">Hide totals</button>
+        </div>
+    </div>
+    <div class="card-body" style="padding: 16px 20px 20px;">
+        <p style="margin: 0 0 12px 0; font-size: 12px; color: #777;">Tracked cost is the click cost on the daily summary. The Cost card above is ad-network spend for the whole range.</p>
+        <?php if ($periodRows === []): ?>
+            <p style="margin: 0; font-size: 13px; color: #666;"><?= htmlspecialchars($periodNote !== '' ? $periodNote : 'No daily summary rows in this range.') ?></p>
+        <?php else: ?>
+            <?php if ($periodNote !== ''): ?>
+                <p style="margin: 0 0 12px 0; font-size: 13px; color: #666;"><?= htmlspecialchars($periodNote) ?></p>
+            <?php endif; ?>
+            <div class="table-wrapper">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Period</th>
+                            <th>Visits</th>
+                            <th>LP clicks</th>
+                            <th>Direct</th>
+                            <th>Clicks</th>
+                            <th>Conv</th>
+                            <th title="Click cost stored on the daily summary">Tracked cost</th>
+                            <th>Revenue</th>
+                            <th>Profit</th>
+                            <th>ROI</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($periodRows as $periodRow): ?>
+                            <?php
+                            $periodProfit = (float)$periodRow['profit'];
+                            $periodRoi = (float)$periodRow['roi'];
+                            ?>
+                            <tr>
+                                <td><?= htmlspecialchars((string)$periodRow['label']) ?></td>
+                                <td><?= number_format((int)$periodRow['views']) ?></td>
+                                <td><?= number_format((int)$periodRow['lp_clicks']) ?></td>
+                                <td><?= number_format((int)$periodRow['direct_clicks']) ?></td>
+                                <td><?= number_format((int)$periodRow['clicks']) ?></td>
+                                <td><?= number_format((int)$periodRow['conversions']) ?></td>
+                                <td><?= Formatter::formatCurrency((float)$periodRow['cost'], $userCurrency) ?></td>
+                                <td style="color: #28a745; font-weight: 600;"><?= Formatter::formatCurrency((float)$periodRow['revenue'], $userCurrency) ?></td>
+                                <td style="color: <?= $periodProfit >= 0 ? '#28a745' : '#d32f2f' ?>; font-weight: 600;"><?= Formatter::formatCurrency($periodProfit, $userCurrency) ?></td>
+                                <td style="color: <?= $periodRoi >= 0 ? '#28a745' : '#d32f2f' ?>; font-weight: 600;"><?= number_format($periodRoi, 1) ?>%</td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+    </div>
+</div>
+<?php else: ?>
+<div class="dashboard-chart-collapsed" id="dashboard-period-card">
+    <span class="dashboard-chart-collapsed-label">Totals by period hidden</span>
+    <button type="button" class="btn btn-sm btn-secondary" data-dashboard-period-toggle="show">Show totals</button>
+</div>
+<?php endif; ?>
 
 <!-- Performance Charts -->
 <?php if ($includeDashboardChart): ?>
@@ -666,9 +754,9 @@ function getDashboardChartTheme() {
         tickColor: css('--chart-tick', isDark ? '#adbac7' : '#666'),
         legendColor: css('--chart-legend', isDark ? '#adbac7' : '#666'),
         pointBorder: css('--chart-point-border', isDark ? '#2d333b' : '#fff'),
-        clicksColor: css('--chart-clicks', isDark ? '#7fd67e' : '#3d5a26'),
-        clicksFill: css('--chart-clicks-fill', isDark ? 'rgba(127, 214, 126, 0.15)' : 'rgba(61, 90, 38, 0.1)'),
-        tooltipBorder: css('--chart-tooltip-border', isDark ? '#6abf69' : '#3d5a26'),
+        clicksColor: css('--chart-clicks', isDark ? 'var(--accent-muted)' : 'var(--accent)'),
+        clicksFill: css('--chart-clicks-fill', isDark ? 'rgba(127, 214, 126, 0.15)' : 'color-mix(in srgb, var(--accent) 10%, transparent)'),
+        tooltipBorder: css('--chart-tooltip-border', isDark ? 'var(--accent)' : 'var(--accent)'),
         tooltipBg: css('--chart-tooltip-bg', isDark ? 'rgba(45, 51, 59, 0.95)' : 'rgba(0, 0, 0, 0.8)')
     };
 }
@@ -897,19 +985,29 @@ window.addEventListener('kuma-theme-change', function() {
 <div class="card">
     <div class="card-header">
         <h2 class="card-title">Campaign Performance</h2>
-        <a href="?page=dashboard&export=csv&date_from=<?= htmlspecialchars($dateFrom) ?>&date_to=<?= htmlspecialchars($dateTo) ?>" class="btn btn-secondary">📥 Export CSV</a>
+        <div style="display: flex; gap: 8px; align-items: center;">
+            <button type="button" class="btn btn-secondary" id="dashboard-customize-columns">Columns</button>
+            <a href="?page=dashboard&export=csv&date_from=<?= htmlspecialchars($dateFrom) ?>&date_to=<?= htmlspecialchars($dateTo) ?>" class="btn btn-secondary">📥 Export CSV</a>
+        </div>
     </div>
     <div class="card-body" id="dashboard-campaigns-body"
-         data-campaigns-url="<?= htmlspecialchars($dashboardCampaignsApiUrl) ?>">
+         data-campaigns-url="<?= htmlspecialchars($dashboardCampaignsApiUrl) ?>"
+         data-currency="<?= htmlspecialchars($userCurrency) ?>">
         <div id="dashboard-campaigns-loading" style="text-align:center; padding:40px; color:#666;">
             <div style="font-size:14px; margin-bottom:8px;">Loading campaign performance…</div>
             <div style="font-size:12px; color:#999;">Overview and chart loaded first for faster page start.</div>
         </div>
         <div id="dashboard-campaigns-error" style="display:none; text-align:center; padding:24px; color:#c62828;"></div>
+        <div id="dashboard-column-picker" hidden style="display:none; flex-wrap:wrap; gap:10px; padding:8px 0 12px; font-size:13px;"></div>
         <div id="dashboard-campaigns-content"></div>
     </div>
 </div>
 
+<?php
+$dashColJs = __DIR__ . '/../public/assets/js/dashboard-columns.js';
+$dashColVer = is_file($dashColJs) ? (string)filemtime($dashColJs) : '1';
+?>
+<script src="<?= ASSETS_BASE_URL ?>/assets/js/dashboard-columns.js?v=<?= htmlspecialchars($dashColVer) ?>"></script>
 <script>
 (function() {
     var activeCampaignsAbort = null;
@@ -991,6 +1089,9 @@ window.addEventListener('kuma-theme-change', function() {
                 }
                 content.innerHTML = result.data.html || '';
                 body.setAttribute('data-campaigns-url', url);
+                if (window.KumaDashboardColumns) {
+                    window.KumaDashboardColumns.apply(content);
+                }
                 wireDashboardCampaignPagination(content);
             })
             .catch(function(err) {

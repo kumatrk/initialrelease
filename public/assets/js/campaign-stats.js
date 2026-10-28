@@ -24,10 +24,39 @@
     const PREFS_KEY = 'stats_v2_prefs';
     const SAVED_VIEWS_KEY = 'stats_v2_saved_views_v1';
     const defaultColumns = ['visitors', 'lp_clicks', 'ctr', 'conversions', 'optins', 'cr', 'cost', 'revenue', 'profit', 'roi', 'bot_pct'];
-    const ALL_METRIC_COLS = ['visitors', 'lp_clicks', 'ctr', 'conversions', 'optins', 'cr', 'cost', 'revenue', 'profit', 'roi', 'bot_pct', 'bot_clicks'];
+    const ALL_METRIC_COLS = ['visitors', 'lp_only', 'lp_clicks', 'ctr', 'cpc', 'cpm', 'ecpm', 'epc', 'conversions', 'optins', 'cr', 'cost', 'revenue', 'profit', 'roi', 'bot_pct', 'bot_clicks', 'meta_impressions', 'meta_reach', 'meta_clicks', 'meta_ctr', 'meta_cpc', 'meta_cpm', 'meta_spend'];
+    const META_COLS = ['meta_impressions', 'meta_reach', 'meta_clicks', 'meta_ctr', 'meta_cpc', 'meta_cpm', 'meta_spend'];
+    const COL_LABELS = {
+        visitors: 'Visitors',
+        lp_only: 'LP clicks',
+        lp_clicks: 'Clicks',
+        ctr: 'CTR',
+        cpc: 'CPC',
+        cpm: 'CPM',
+        ecpm: 'eCPM',
+        epc: 'EPC',
+        conversions: 'Conversions',
+        optins: 'Opt-ins',
+        cr: 'CR',
+        cost: 'Cost',
+        revenue: 'Revenue',
+        profit: 'Profit',
+        roi: 'ROI',
+        bot_pct: 'Bot %',
+        bot_clicks: 'Bots',
+        meta_impressions: 'Meta impressions',
+        meta_reach: 'Meta reach',
+        meta_clicks: 'Meta clicks',
+        meta_ctr: 'Meta CTR',
+        meta_cpc: 'Meta CPC',
+        meta_cpm: 'Meta CPM',
+        meta_spend: 'Meta spend',
+    };
 
     function ensureColumnOrder(columns) {
-        const set = new Set(Array.isArray(columns) ? columns : []);
+        columns = (Array.isArray(columns) ? columns : []).filter((col) => ALL_METRIC_COLS.includes(col));
+        if (!columns.length) columns = defaultColumns.slice();
+        const set = new Set(columns);
         if (!set.has('ctr') && set.has('lp_clicks')) {
             const next = [];
             columns.forEach((col) => {
@@ -88,15 +117,25 @@
 
     const prefs = loadPrefs();
 
+    function savedServerColumns() {
+        const cfg = window.KUMA_UI_PREFS_CONFIG;
+        if (!cfg || !cfg.reportColumns || !cfg.reportColumns.hasSaved) return null;
+        const cols = cfg.reportColumns.stats;
+        if (!Array.isArray(cols)) return null;
+        const filtered = cols.filter((col) => ALL_METRIC_COLS.includes(col));
+        return filtered.length ? filtered : null;
+    }
+
+    const prefsColumns = savedServerColumns()
+        || (Array.isArray(prefs.columns) && prefs.columns.length ? prefs.columns : defaultColumns.slice());
+
     let state = {
         campaignId: parseInt(app.dataset.campaignId, 10) || 0,
         dateFrom: app.dataset.dateFrom,
         dateTo: app.dataset.dateTo,
         tab: prefs.tab || 'overview',
         dimensions: Array.isArray(prefs.dimensions) && prefs.dimensions.length ? prefs.dimensions : ['offer'],
-        visibleColumns: ensureColumnOrder(
-            Array.isArray(prefs.columns) && prefs.columns.length ? prefs.columns : defaultColumns.slice()
-        ),
+        visibleColumns: ensureColumnOrder(prefsColumns),
         availableDimensions: [],
         breakdownPage: 1,
         perPage: normalizePerPage(prefs.perPage),
@@ -255,6 +294,7 @@
             return;
         }
         flash.classList.add('hidden');
+        flash.classList.remove('error', 'ok');
         flash.setAttribute('hidden', '');
         flash.innerHTML = '';
     }
@@ -272,7 +312,7 @@
         }
         flash.innerHTML = `<span class="stats-v2-flash-text">${escapeHtml(text)}</span>`
             + `<button type="button" class="stats-v2-flash-dismiss" aria-label="Dismiss">&times;</button>`;
-        flash.classList.remove('hidden');
+        flash.classList.remove('hidden', 'ok');
         flash.removeAttribute('hidden');
         flash.classList.add('error');
         const btn = flash.querySelector('.stats-v2-flash-dismiss');
@@ -920,7 +960,143 @@
         return data;
     }
 
+    function visitorsOf(row) {
+        if (row.visitors != null && row.visitors !== '') return Number(row.visitors) || 0;
+        return Number(row.clicks) || 0;
+    }
+
+    function clicksOf(row) {
+        if (row.action_clicks != null && row.action_clicks !== '') return Number(row.action_clicks) || 0;
+        if (row.visitors != null && row.visitors !== '') return Number(row.clicks) || 0;
+        return (Number(row.lp_clicks) || 0) + (Number(row.direct_clicks) || 0);
+    }
+
+    function rateTds(visitors, actionClicks, lpOnly, cost, revenue) {
+        const cpc = actionClicks > 0 ? cost / actionClicks : 0;
+        const epc = actionClicks > 0 ? revenue / actionClicks : 0;
+        const cpm = visitors > 0 ? (cost / visitors) * 1000 : 0;
+        const ecpm = visitors > 0 ? (revenue / visitors) * 1000 : 0;
+        return `<td class="num" data-col="lp_only">${Number(lpOnly || 0).toLocaleString()}</td>
+            <td class="num" data-col="cpc">${fmtRate(cpc)}</td>
+            <td class="num" data-col="cpm">${fmtRate(cpm)}</td>
+            <td class="num" data-col="ecpm">${fmtRate(ecpm)}</td>
+            <td class="num" data-col="epc">${fmtRate(epc)}</td>`;
+    }
+
+    function metricCsvValue(row, col) {
+        const visitors = visitorsOf(row);
+        const actionClicks = clicksOf(row);
+        const cost = Number(row.cost) || 0;
+        const revenue = Number(row.revenue) || 0;
+        switch (col) {
+            case 'visitors': return visitors;
+            case 'lp_only': return Number(row.lp_clicks) || 0;
+            case 'lp_clicks': return actionClicks;
+            case 'ctr': return row.ctr != null ? row.ctr : rowCtr(row);
+            case 'cpc': return actionClicks > 0 ? cost / actionClicks : 0;
+            case 'cpm': return visitors > 0 ? (cost / visitors) * 1000 : 0;
+            case 'ecpm': return visitors > 0 ? (revenue / visitors) * 1000 : 0;
+            case 'epc': return actionClicks > 0 ? revenue / actionClicks : 0;
+            case 'conversions': return row.conversions;
+            case 'optins': return row.optins || 0;
+            case 'cr': return row.conversion_rate;
+            case 'cost': return row.cost;
+            case 'revenue': return row.revenue;
+            case 'profit': return row.profit;
+            case 'roi': return row.roi;
+            case 'bot_pct': return row.bot_pct != null ? row.bot_pct : 0;
+            case 'bot_clicks': return row.bot_clicks || 0;
+            case 'meta_impressions':
+            case 'meta_reach':
+            case 'meta_clicks':
+            case 'meta_ctr':
+            case 'meta_cpc':
+            case 'meta_cpm':
+            case 'meta_spend':
+                return row[col] == null || row[col] === '' ? '' : row[col];
+            default: return '';
+        }
+    }
+
+    function persistReportColumns() {
+        savePrefs();
+        const cfg = window.KUMA_UI_PREFS_CONFIG;
+        if (!window.KumaUiPrefs || !cfg) return;
+        const payload = { stats: state.visibleColumns.slice() };
+        const dash = window.KumaDashboardColumns && window.KumaDashboardColumns.current
+            ? window.KumaDashboardColumns.current()
+            : null;
+        if (Array.isArray(dash) && dash.length) {
+            payload.dashboard = dash;
+        } else {
+            try {
+                const localDash = JSON.parse(localStorage.getItem('kuma_dashboard_columns') || 'null');
+                if (Array.isArray(localDash) && localDash.length) payload.dashboard = localDash;
+            } catch (e) { /* ignore */ }
+        }
+        window.KumaUiPrefs.saveReportColumns(payload).then((data) => {
+            if (!data || !data.ok || !cfg.reportColumns) return;
+            cfg.reportColumns.hasSaved = true;
+            cfg.reportColumns.stats = state.visibleColumns.slice();
+            if (data.report_columns && Array.isArray(data.report_columns.dashboard)) {
+                cfg.reportColumns.dashboard = data.report_columns.dashboard;
+            }
+        });
+    }
+
+    function syncColumnPicker() {
+        const picker = document.getElementById('stats-v2-column-picker');
+        if (!picker) return;
+        const labels = Array.from(picker.querySelectorAll('label'));
+        const byCol = {};
+        labels.forEach((label) => {
+            const input = label.querySelector('.col-toggle');
+            if (!input) return;
+            byCol[input.dataset.col] = label;
+            if (!label.querySelector('.col-move')) {
+                label.insertAdjacentHTML('afterbegin',
+                    '<button type="button" class="col-move" data-dir="-1" aria-label="Move earlier">↑</button>' +
+                    '<button type="button" class="col-move" data-dir="1" aria-label="Move later">↓</button>'
+                );
+            }
+        });
+        const ordered = state.visibleColumns.concat(ALL_METRIC_COLS.filter((col) => !state.visibleColumns.includes(col)));
+        ordered.forEach((col) => {
+            if (byCol[col]) picker.appendChild(byCol[col]);
+        });
+        const note = picker.querySelector('.stats-v2-col-note');
+        const firstMeta = byCol.meta_impressions;
+        if (note && firstMeta) picker.insertBefore(note, firstMeta);
+    }
+
+    function moveVisibleColumn(col, dir) {
+        const i = state.visibleColumns.indexOf(col);
+        const j = i + dir;
+        if (i < 0 || j < 0 || j >= state.visibleColumns.length) return;
+        const tmp = state.visibleColumns[i];
+        state.visibleColumns[i] = state.visibleColumns[j];
+        state.visibleColumns[j] = tmp;
+        persistReportColumns();
+        applyColumnVisibility();
+    }
+
     function applyColumnVisibility() {
+        const head = document.getElementById('stats-v2-breakdown-head');
+        if (head) {
+            const hidden = ALL_METRIC_COLS.filter((col) => !state.visibleColumns.includes(col));
+            const order = ['name'].concat(state.visibleColumns).concat(hidden);
+            order.forEach((col) => {
+                const th = head.querySelector(`th[data-col="${col}"]`);
+                if (th) head.appendChild(th);
+            });
+            document.querySelectorAll('#stats-v2-breakdown-body tr').forEach((tr) => {
+                if (!tr.querySelector('td[data-col]')) return;
+                order.forEach((col) => {
+                    const td = tr.querySelector(`td[data-col="${col}"]`);
+                    if (td) tr.appendChild(td);
+                });
+            });
+        }
         const visible = new Set(state.visibleColumns);
         document.querySelectorAll('#stats-v2-breakdown-head [data-col]').forEach((th) => {
             const col = th.dataset.col;
@@ -938,6 +1114,7 @@
         document.querySelectorAll('.col-toggle').forEach((cb) => {
             cb.checked = visible.has(cb.dataset.col);
         });
+        syncColumnPicker();
     }
 
     function totalRowHtml(t) {
@@ -963,6 +1140,8 @@
             <td class="num" data-col="roi"><span class="${profitCls}">${fmtPct(t.roi)}</span></td>
             <td class="num" data-col="bot_pct">${fmtPct(botPct)}</td>
             <td class="num" data-col="bot_clicks">${botClicks.toLocaleString()}</td>
+            ${rateTds(visitors, actionClicks, lpClicks, Number(t.cost) || 0, Number(t.revenue) || 0)}
+            ${metaTds(t)}
         </tr>`;
     }
 
@@ -982,22 +1161,10 @@
             return;
         }
 
-        const header = ['Name', 'Visitors', 'Clicks', 'CTR', 'Conversions', 'Opt-ins', 'CR', 'Cost', 'Revenue', 'Profit', 'ROI', 'Bot %', 'Bot Clicks'];
-        const lines = [header.filter((_, i) => i === 0 || state.visibleColumns.includes(ALL_METRIC_COLS[i - 1])).join(',')];
+        const header = ['Name'].concat(state.visibleColumns.map((col) => COL_LABELS[col] || col));
+        const lines = [header.join(',')];
         rows.forEach((r) => {
-            const cells = [r.name];
-            if (state.visibleColumns.includes('visitors')) cells.push(r.clicks);
-            if (state.visibleColumns.includes('lp_clicks')) cells.push(r.action_clicks != null ? r.action_clicks : ((r.lp_clicks || 0) + (r.direct_clicks || 0)));
-            if (state.visibleColumns.includes('ctr')) cells.push(r.ctr != null ? r.ctr : rowCtr(r));
-            if (state.visibleColumns.includes('conversions')) cells.push(r.conversions);
-            if (state.visibleColumns.includes('optins')) cells.push(r.optins || 0);
-            if (state.visibleColumns.includes('cr')) cells.push(r.conversion_rate);
-            if (state.visibleColumns.includes('cost')) cells.push(r.cost);
-            if (state.visibleColumns.includes('revenue')) cells.push(r.revenue);
-            if (state.visibleColumns.includes('profit')) cells.push(r.profit);
-            if (state.visibleColumns.includes('roi')) cells.push(r.roi);
-            if (state.visibleColumns.includes('bot_pct')) cells.push(r.bot_pct != null ? r.bot_pct : 0);
-            if (state.visibleColumns.includes('bot_clicks')) cells.push(r.bot_clicks || 0);
+            const cells = [r.name].concat(state.visibleColumns.map((col) => metricCsvValue(r, col)));
             lines.push(cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','));
         });
         const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -1023,6 +1190,7 @@
                 per_page: 200,
                 sort: sortParams.sort,
                 order: sortParams.order,
+                meta_delivery: wantsMetaDelivery() ? '1' : '0',
             });
             total = data.total ?? 0;
             (data.rows || []).forEach((row) => {
@@ -1030,6 +1198,8 @@
                     name: row.name || row.group,
                     clicks: row.clicks,
                     lp_clicks: row.lp_clicks,
+                    action_clicks: row.action_clicks,
+                    direct_clicks: row.direct_clicks,
                     ctr: row.ctr != null ? row.ctr : rowCtr(row),
                     conversions: row.conversions,
                     optins: row.optins || 0,
@@ -1040,6 +1210,13 @@
                     roi: row.roi,
                     bot_pct: row.bot_pct != null ? row.bot_pct : 0,
                     bot_clicks: row.bot_clicks || 0,
+                    meta_impressions: row.meta_impressions,
+                    meta_reach: row.meta_reach,
+                    meta_clicks: row.meta_clicks,
+                    meta_ctr: row.meta_ctr,
+                    meta_cpc: row.meta_cpc,
+                    meta_cpm: row.meta_cpm,
+                    meta_spend: row.meta_spend,
                 });
             });
             page += 1;
@@ -1567,7 +1744,7 @@
         const botPct = row.bot_pct != null ? Number(row.bot_pct) : (Number(row.clicks) > 0 ? ((Number(row.bot_clicks) || 0) / Number(row.clicks)) * 100 : 0);
         const botClicks = Number(row.bot_clicks || 0);
         return `<tr class="${indent}${roiCls}" data-row-id="${rowId}" data-level="${level}">
-            <td data-col="name">${expandBtn}${escapeHtml(row.name || row.group)}</td>
+            <td data-col="name">${expandBtn}<span class="stats-name-wrap"><span class="stats-row-name">${escapeHtml(row.name || row.group)}</span>${metaEntityControlHtml(row)}</span></td>
             <td class="num" data-col="visitors">${Number(row.clicks).toLocaleString()}</td>
             <td class="num" data-col="lp_clicks">${Number(row.action_clicks != null ? row.action_clicks : ((row.lp_clicks || 0) + (row.direct_clicks || 0))).toLocaleString()}</td>
             <td class="num" data-col="ctr">${fmtPct(rowCtr(row))}</td>
@@ -1580,7 +1757,133 @@
             <td class="num" data-col="roi"><span class="${profitCls}">${fmtPct(row.roi)}</span></td>
             <td class="num" data-col="bot_pct">${fmtPct(botPct)}</td>
             <td class="num" data-col="bot_clicks">${botClicks.toLocaleString()}</td>
+            ${rateTds(
+                Number(row.clicks) || 0,
+                Number(row.action_clicks != null ? row.action_clicks : ((row.lp_clicks || 0) + (row.direct_clicks || 0))) || 0,
+                Number(row.lp_clicks) || 0,
+                Number(row.cost) || 0,
+                Number(row.revenue) || 0
+            )}
+            ${metaTds(row)}
         </tr>`;
+    }
+
+    function metaCell(value, kind) {
+        if (value == null || value === '') return '—';
+        const n = Number(value);
+        if (!Number.isFinite(n)) return '—';
+        if (kind === 'int') return Math.round(n).toLocaleString();
+        if (kind === 'pct') return fmtPct(n);
+        return fmtMoney(n);
+    }
+
+    function metaTds(row) {
+        return `<td class="num" data-col="meta_impressions">${metaCell(row.meta_impressions, 'int')}</td>`
+            + `<td class="num" data-col="meta_reach">${metaCell(row.meta_reach, 'int')}</td>`
+            + `<td class="num" data-col="meta_clicks">${metaCell(row.meta_clicks, 'int')}</td>`
+            + `<td class="num" data-col="meta_ctr">${metaCell(row.meta_ctr, 'pct')}</td>`
+            + `<td class="num" data-col="meta_cpc">${metaCell(row.meta_cpc, 'money')}</td>`
+            + `<td class="num" data-col="meta_cpm">${metaCell(row.meta_cpm, 'money')}</td>`
+            + `<td class="num" data-col="meta_spend">${metaCell(row.meta_spend, 'money')}</td>`;
+    }
+
+    function wantsMetaDelivery() {
+        return state.visibleColumns.some((col) => META_COLS.includes(col));
+    }
+
+    function prettyMetaStatus(status) {
+        const map = {
+            ACTIVE: 'Active',
+            PAUSED: 'Paused',
+            DISAPPROVED: 'Disapproved',
+            WITH_ISSUES: 'With issues',
+            PENDING_REVIEW: 'In review',
+            CAMPAIGN_PAUSED: 'Campaign paused',
+            ADSET_PAUSED: 'Ad set paused',
+            ARCHIVED: 'Archived',
+            DELETED: 'Deleted',
+        };
+        if (map[status]) {
+            return map[status];
+        }
+        return String(status || '').replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+
+    function metaStatusClass(status) {
+        if (status === 'ACTIVE') return 'meta-status meta-status--active';
+        if (status === 'PAUSED') return 'meta-status meta-status--paused';
+        return 'meta-status';
+    }
+
+    function metaEntityControlHtml(row) {
+        const id = row.meta_entity_id != null ? String(row.meta_entity_id) : '';
+        if (!id) return '';
+        const level = row.meta_entity_level === 'ad' ? 'ad' : 'adset';
+        const status = String(row.meta_status || '');
+        const name = escapeHtml(row.name || row.group || '');
+        let html = `<span class="${metaStatusClass(status)}" data-meta-entity="${escapeHtml(id)}" data-meta-level="${level}">${escapeHtml(prettyMetaStatus(status))}</span>`;
+        if (status === 'ACTIVE' || status === 'PAUSED') {
+            const next = status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
+            const label = status === 'ACTIVE' ? 'Pause' : 'Activate';
+            const whole = level === 'adset' ? 'ad set' : 'ad';
+            html += `<button type="button" class="btn btn-sm btn-secondary meta-entity-toggle" data-meta-entity="${escapeHtml(id)}" data-meta-level="${level}" data-next="${next}" data-name="${name}" title="${label} this whole ${whole} in Meta">${label}</button>`;
+        }
+        return `<span class="meta-entity-control">${html}</span>`;
+    }
+
+    function syncMetaControlsNote(enabled) {
+        const note = document.getElementById('stats-v2-meta-controls-note');
+        if (!note) return;
+        note.hidden = !enabled;
+    }
+
+    function showStatsNotice(text) {
+        const flash = document.getElementById('stats-v2-flash');
+        if (!flash) return;
+        flash.innerHTML = `<span class="stats-v2-flash-text">${escapeHtml(text)}</span>`
+            + `<button type="button" class="stats-v2-flash-dismiss" aria-label="Dismiss">&times;</button>`;
+        flash.classList.remove('hidden', 'error');
+        flash.classList.add('ok');
+        flash.removeAttribute('hidden');
+        const btn = flash.querySelector('.stats-v2-flash-dismiss');
+        if (btn) {
+            btn.addEventListener('click', clearStatsFlash, { once: true });
+        }
+    }
+
+    function paintMetaControl(entityId, level, status) {
+        const next = status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
+        const label = status === 'ACTIVE' ? 'Pause' : 'Activate';
+        const whole = level === 'adset' ? 'ad set' : 'ad';
+        document.querySelectorAll(`[data-meta-entity="${CSS.escape(entityId)}"][data-meta-level="${level}"]`).forEach((el) => {
+            if (el.classList.contains('meta-status')) {
+                el.className = metaStatusClass(status);
+                el.textContent = prettyMetaStatus(status);
+            }
+            if (el.classList.contains('meta-entity-toggle')) {
+                el.textContent = label;
+                el.dataset.next = next;
+                el.title = `${label} this whole ${whole} in Meta`;
+                el.disabled = false;
+            }
+        });
+    }
+
+    async function postMetaEntity(body) {
+        const form = new FormData();
+        form.append('app_csrf', app.dataset.csrf || '');
+        Object.keys(body).forEach((key) => form.append(key, body[key]));
+        const res = await fetch(app.dataset.metaApi, { method: 'POST', body: form, credentials: 'same-origin' });
+        let data = {};
+        try {
+            data = await res.json();
+        } catch (e) {
+            data = {};
+        }
+        if (!res.ok || !data.ok) {
+            throw new Error(data.error || 'That change could not be saved.');
+        }
+        return data;
     }
 
     function escapeHtml(s) {
@@ -1677,6 +1980,7 @@
             per_page: state.perPage,
             sort: sortParams.sort,
             order: sortParams.order,
+            meta_delivery: wantsMetaDelivery() ? '1' : '0',
         };
 
         const data = await fetchJson(params);
@@ -1695,6 +1999,7 @@
         });
 
         if (level === 0) {
+            syncMetaControlsNote(!!data.meta_controls);
             state.exportRows = data.rows.map((row) => ({
                 name: row.name || row.group,
                 clicks: row.clicks,
@@ -1721,8 +2026,8 @@
             tbody.append(...frag.childNodes);
         }
 
+        applyColumnVisibility();
         if (level === 0) {
-            applyColumnVisibility();
             applyBreakdownSearch();
         }
 
@@ -1812,6 +2117,7 @@
             state.parentStacks[rowId] = childRows;
             tbody.querySelectorAll('[data-expand]').forEach((b) => b.addEventListener('click', onExpandClick));
             btn.textContent = '▼';
+            applyColumnVisibility();
             applyBreakdownSearch();
         } catch (err) {
             if (isAbortError(err)) {
@@ -1856,6 +2162,7 @@
             if (isAbortError(err)) {
                 return;
             }
+            syncMetaControlsNote(false);
             const text = showStatsError(err.message);
             msg.textContent = text;
             msg.className = 'stats-v2-message stats-v2-breakdown-message error';
@@ -1877,6 +2184,129 @@
         });
     }
 
+    let funnelNodePrefix = '';
+
+    function selectedCampaignFlowType() {
+        const sel = document.getElementById('stats-v2-campaign');
+        if (!sel || !sel.selectedOptions || !sel.selectedOptions[0]) return '';
+        return sel.selectedOptions[0].getAttribute('data-flow-type') || '';
+    }
+
+    function syncFunnelTabVisibility() {
+        const tab = document.getElementById('stats-v2-tab-funnel');
+        if (!tab) return;
+        const isDeep = selectedCampaignFlowType() === 'DeepFunnel';
+        tab.classList.toggle('hidden', !isDeep);
+        if (!isDeep && state.tab === 'funnel') {
+            setTab('overview');
+        }
+    }
+
+    async function loadFunnelReport() {
+        const levelsEl = document.getElementById('stats-v2-funnel-levels');
+        const stepsEl = document.getElementById('stats-v2-funnel-steps');
+        const pathsEl = document.getElementById('stats-v2-funnel-paths');
+        const nodeLabel = document.getElementById('stats-v2-funnel-node-label');
+        if (!levelsEl || !stepsEl || !pathsEl) return;
+        if (selectedCampaignFlowType() !== 'DeepFunnel') return;
+
+        levelsEl.innerHTML = '<span style="color:#888;">Loading…</span>';
+        stepsEl.innerHTML = '';
+        pathsEl.innerHTML = '';
+
+        const params = {
+            action: 'funnel',
+            campaign_id: state.campaignId,
+            date_from: state.dateFrom,
+            date_to: state.dateTo,
+        };
+        if (funnelNodePrefix) {
+            params.node = funnelNodePrefix;
+        }
+
+        try {
+            const data = (await fetchJson(params)) || {};
+            if (data.error) {
+                levelsEl.innerHTML = '<span style="color:#c62828;">' + escapeHtml(data.error) + '</span>';
+                return;
+            }
+
+            const levels = data.levels || [];
+            levelsEl.innerHTML = levels.map((lv) => {
+                const label = escapeHtml(lv.label || ('Level ' + lv.level));
+                return '<button type="button" class="btn btn-sm btn-secondary df-level-chip" data-level="' + escapeHtml(lv.level) + '" style="text-align:left;">'
+                    + '<strong>' + label + '</strong><br>'
+                    + '<span style="font-size:11px;">' + (lv.entries || 0) + ' in · ' + (lv.drop_off_pct || 0) + '% drop-off</span>'
+                    + '</button>';
+            }).join('') || '<span style="color:#888;">No funnel step data in this range.</span>';
+
+            levelsEl.querySelectorAll('.df-level-chip').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const level = btn.getAttribute('data-level');
+                    funnelNodePrefix = level === '0' ? 'o:' : (level + ':');
+                    loadFunnelReport();
+                });
+            });
+
+            const steps = data.steps || [];
+            let stepsHtml = '<table class="stats-v2-table" style="width:100%;font-size:13px;"><thead><tr>'
+                + '<th>Node</th><th>Entries</th><th>Continued</th><th>Drop-off</th><th>Offer clicks</th><th>Conv</th><th>Revenue</th>'
+                + '</tr></thead><tbody>';
+            steps.forEach((s) => {
+                const level = parseInt(s.level, 10);
+                const slot = parseInt(s.slot, 10);
+                const name = level === 0
+                    ? ('Offer slot ' + slot + (s.offer_name ? ' · ' + s.offer_name : ''))
+                    : ('L' + level + ' slot ' + slot + (s.landing_page_name ? ' · ' + s.landing_page_name : ''));
+                const nodeKey = level === 0 ? ('o:' + slot) : (level + ':' + slot);
+                stepsHtml += '<tr>'
+                    + '<td><button type="button" class="btn btn-sm btn-outline df-step-chip" data-node="' + escapeHtml(nodeKey) + '">' + escapeHtml(name) + '</button></td>'
+                    + '<td>' + (s.entries || 0) + '</td>'
+                    + '<td>' + (s.continues || 0) + '</td>'
+                    + '<td>' + (s.drop_off || 0) + ' (' + (s.drop_off_pct || 0) + '%)</td>'
+                    + '<td>' + (s.offer_clicks || 0) + '</td>'
+                    + '<td>' + (s.conversions || 0) + '</td>'
+                    + '<td>' + fmtMoney(s.revenue || 0) + '</td>'
+                    + '</tr>';
+            });
+            stepsHtml += '</tbody></table>';
+            stepsEl.innerHTML = steps.length ? stepsHtml : '<p style="color:#888;">No steps yet.</p>';
+            stepsEl.querySelectorAll('.df-step-chip').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    funnelNodePrefix = btn.getAttribute('data-node') || '';
+                    loadFunnelReport();
+                });
+            });
+
+            if (nodeLabel) {
+                nodeLabel.textContent = funnelNodePrefix
+                    ? ('Paths containing node “' + funnelNodePrefix + '”.')
+                    : 'Showing all paths for the date range.';
+            }
+
+            const paths = data.paths || [];
+            let pathsHtml = '<table class="stats-v2-table" style="width:100%;font-size:13px;"><thead><tr>'
+                + '<th>Path</th><th>Visitors</th><th>Offer clicks</th><th>Conv</th><th>CR</th><th>Revenue</th>'
+                + '</tr></thead><tbody>';
+            paths.forEach((p) => {
+                pathsHtml += '<tr>'
+                    + '<td>' + escapeHtml(p.path_label || p.path_key) + '</td>'
+                    + '<td>' + (p.visitors || 0) + '</td>'
+                    + '<td>' + (p.offer_clicks || 0) + '</td>'
+                    + '<td>' + (p.conversions || 0) + '</td>'
+                    + '<td>' + (p.cr || 0) + '%</td>'
+                    + '<td>' + fmtMoney(p.revenue || 0) + '</td>'
+                    + '</tr>';
+            });
+            pathsHtml += '</tbody></table>';
+            pathsEl.innerHTML = paths.length ? pathsHtml : '<p style="color:#888;">No path aggregates yet.</p>';
+        } catch (err) {
+            if (!isAbortError(err)) {
+                levelsEl.innerHTML = '<span style="color:#c62828;">' + escapeHtml(err.message || 'Failed to load funnel') + '</span>';
+            }
+        }
+    }
+
     function setTab(tab) {
         state.tab = tab;
         savePrefs();
@@ -1884,6 +2314,9 @@
         document.querySelectorAll('.stats-v2-panel').forEach((el) => el.classList.toggle('active', el.dataset.panel === tab));
         if (tab === 'chart') {
             loadChartInsights(false);
+        }
+        if (tab === 'funnel') {
+            loadFunnelReport();
         }
     }
 
@@ -1938,6 +2371,10 @@
             }
             if (state.tab === 'breakdown' && document.getElementById('stats-v2-breakdown-body').querySelector('[data-row-id]')) {
                 await loadBreakdown();
+            }
+            syncFunnelTabVisibility();
+            if (state.tab === 'funnel') {
+                await loadFunnelReport();
             }
         } catch (err) {
             if (isAbortError(err) || gen !== refreshGeneration) {
@@ -2064,6 +2501,13 @@
         tab.addEventListener('click', () => setTab(tab.dataset.tab));
     });
 
+    document.getElementById('stats-v2-funnel-clear-node')?.addEventListener('click', () => {
+        funnelNodePrefix = '';
+        if (state.tab === 'funnel') {
+            loadFunnelReport();
+        }
+    });
+
     document.getElementById('stats-v2-add-dimension').addEventListener('change', (e) => {
         const v = e.target.value;
         if (v && !state.dimensions.includes(v)) {
@@ -2074,6 +2518,37 @@
             syncDimensionPresetActiveState();
         }
         e.target.value = '';
+    });
+
+    document.getElementById('stats-v2-breakdown-body')?.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.meta-entity-toggle');
+        if (!btn || btn.disabled) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const level = btn.dataset.metaLevel === 'ad' ? 'ad' : 'adset';
+        const whole = level === 'adset' ? 'ad set' : 'ad';
+        const next = btn.dataset.next === 'ACTIVE' ? 'ACTIVE' : 'PAUSED';
+        const verb = next === 'PAUSED' ? 'Pause' : 'Activate';
+        const name = btn.dataset.name || ('this ' + whole);
+        if (!window.confirm(`${verb} the ${whole} “${name}” in Meta? This applies to the whole ${whole}.`)) {
+            return;
+        }
+        btn.disabled = true;
+        try {
+            const data = await postMetaEntity({
+                campaign_id: String(state.campaignId),
+                level,
+                entity_id: btn.dataset.metaEntity || '',
+                status: next,
+            });
+            paintMetaControl(btn.dataset.metaEntity || '', level, data.status || next);
+            const done = data.status === 'PAUSED' ? 'Paused' : 'Activated';
+            const where = data.preview ? ' on this preview campaign. Meta was not called.' : ' in Meta.';
+            showStatsNotice(`${done} “${data.name || name}”${where}`);
+        } catch (err) {
+            btn.disabled = false;
+            showStatsError(err.message || 'That change could not be saved.');
+        }
     });
 
     document.getElementById('stats-v2-run-report').addEventListener('click', () => {
@@ -2186,9 +2661,20 @@
                 state.visibleColumns = [col];
                 cb.checked = true;
             }
-            savePrefs();
+            persistReportColumns();
             applyColumnVisibility();
+            if (META_COLS.includes(col) && cb.checked && state.campaignId && state.dimensions.length) {
+                loadBreakdown();
+            }
         });
+    });
+
+    document.getElementById('stats-v2-column-picker')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.col-move');
+        if (!btn) return;
+        e.preventDefault();
+        const col = btn.closest('label')?.querySelector('.col-toggle')?.dataset.col;
+        moveVisibleColumn(col, Number(btn.dataset.dir));
     });
 
     document.getElementById('stats-v2-export-csv')?.addEventListener('click', exportBreakdownCsv);
@@ -2236,6 +2722,7 @@
         }
     });
 
+    syncFunnelTabVisibility();
     setTab(state.tab);
     bindSortHeaders();
 
@@ -2248,6 +2735,10 @@
         return loadChart('stats-v2-overview-chart', 'chartOverview');
     }).then(() => {
         applyColumnVisibility();
+        syncFunnelTabVisibility();
+        if (state.tab === 'funnel') {
+            return loadFunnelReport();
+        }
     }).catch((err) => {
         if (isAbortError(err)) {
             return;

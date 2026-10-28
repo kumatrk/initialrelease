@@ -1,0 +1,109 @@
+/**
+ * Ember: burgundy sidebar, cream canvas, burnt-orange actions.
+ * Stored id: ember. Base polarity is light.
+ */
+[data-theme="ember"] {
+    --accent: #c26b57;
+    --accent-hover: #a9513f;
+    --accent-muted: #9c4e60;
+    --accent-soft: #fff1e9;
+
+    --color-forest-dark: #a9513f;
+    --color-forest: #c26b57;
+    --color-forest-light: #9c4e60;
+    --color-bark: #9c4e60;
+    --color-bark-dark: #7d3d4c;
+    --color-cream: #fff9f2;
+    --color-cream-dark: #f7ebe4;
+
+    --color-white: #ffffff;
+    --color-gray-100: #fff9f2;
+    --color-gray-200: #eaddd7;
+    --color-gray-300: #dccbc4;
+    --color-gray-600: #806b70;
+    --color-gray-800: #412f36;
+    --color-black: #412f36;
+
+    --heading-color: #412f36;
+    --link-color: #9c4e60;
+    --link-hover: #7d3d4c;
+
+    --color-success: #277a49;
+    --color-success-bg: #e6f4eb;
+    --color-warning: #96620f;
+    --color-warning-bg: #f8f0df;
+    --color-error: #c3383d;
+    --color-error-bg: #fbeaeb;
+    --color-info: #9c4e60;
+    --color-info-bg: #f7ebe4;
+
+    --sidebar-bg: #663b46;
+    --sidebar-text: #ffffff;
+    --sidebar-text-muted: #e4c8cd;
+    --sidebar-hover-bg: #754554;
+    --sidebar-active-bg: #814e59;
+    --sidebar-active-border: #c26b57;
+    --sidebar-active-text: #ffffff;
+    --sidebar-scrollbar-track: #522f38;
+    --sidebar-scrollbar-thumb: #a56b78;
+    --sidebar-scrollbar-thumb-hover: #e4c8cd;
+    --sidebar-border: #814e59;
+
+    --page-bg: #fff9f2;
+    --surface: #ffffff;
+    --surface-raised: #f7ebe4;
+    --text-primary: #412f36;
+    --text-muted: #806b70;
+    --border-color: #eaddd7;
+    --navbar-bg: #ffffff;
+    --navbar-border: #eaddd7;
+    --card-header-border: #eaddd7;
+
+    --input-bg: #ffffff;
+    --input-border: #eaddd7;
+    --input-text: #412f36;
+    --input-placeholder: rgba(128, 107, 112, 0.8);
+
+    --table-bg: #ffffff;
+    --table-header-bg: #f7ebe4;
+    --table-header-text: #412f36;
+    --table-header-accent: inset 0 -2px 0 #c26b57;
+    --table-row-hover: #fff1e9;
+    --table-border: #eaddd7;
+
+    --btn-on-primary-text: #ffffff;
+    --btn-outline-hover-text: #ffffff;
+    --btn-radius: 4px;
+    --btn-padding-y: 8px;
+    --btn-padding-x: 24px;
+    --badge-warning-text: #96620f;
+
+    --logo-max-width: 64px;
+    --logo-max-height: 60px;
+    --auth-logo-max-height: 140px;
+
+    --auth-page-bg: #fff9f2;
+    --auth-header-bg: #663b46;
+    --auth-header-text: #ffffff;
+    --auth-container-shadow: 0 10px 40px rgba(102, 59, 70, 0.14);
+    --auth-tagline-text: #e4c8cd;
+    --auth-tagline-shadow: none;
+
+    --chart-grid: rgba(65, 47, 54, 0.06);
+    --chart-tick: #806b70;
+    --chart-legend: #806b70;
+    --chart-point-border: #ffffff;
+    --chart-clicks: #c26b57;
+    --chart-clicks-fill: rgba(194, 107, 87, 0.14);
+    --chart-tooltip-border: #c26b57;
+    --chart-tooltip-bg: rgba(102, 59, 70, 0.94);
+
+    --shadow-sm: 0 1px 2px rgba(102, 59, 70, 0.06);
+    --shadow-md: 0 4px 10px rgba(102, 59, 70, 0.08);
+    --shadow-lg: 0 10px 22px rgba(102, 59, 70, 0.1);
+}
+
+[data-theme="ember"] .card {
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+}

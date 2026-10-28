@@ -5,19 +5,19 @@
     gap: 12px;
     flex-wrap: wrap;
     padding: 12px 16px;
-    background: #f5f8f2;
+    background: var(--accent-soft);
     border-radius: 6px;
-    border: 1px solid #d4e4c4;
+    border: 1px solid var(--border-color);
 }
 .api-base-url-label {
     font-weight: 600;
-    color: #3d5a26;
+    color: var(--accent);
     font-size: 13px;
 }
 .api-code-inline {
     font-family: ui-monospace, monospace;
     font-size: 14px;
-    color: #2c3e1f;
+    color: var(--accent-hover);
 }
 .api-code-block {
     display: block;
@@ -41,11 +41,11 @@
 }
 /* Kuma API page — layout & section hierarchy */
 .kuma-api-page {
-    --api-section-bg: #fafbf9;
-    --api-section-border: #dde5d4;
-    --api-header-bg: #eef3ea;
-    --api-header-border: #c8d4bc;
-    --api-accent: #3d5a26;
+    --api-section-bg: var(--page-bg);
+    --api-section-border: var(--border-color);
+    --api-header-bg: var(--accent-soft);
+    --api-header-border: var(--border-color);
+    --api-accent: var(--accent);
 }
 
 .kuma-api-page .api-page-card {
@@ -83,7 +83,7 @@
 
 .kuma-api-page .api-docs-body {
     padding-top: 4px;
-    background: #f4f6f2;
+    background: var(--page-bg);
 }
 
 .api-docs-nav {
@@ -115,7 +115,7 @@
 }
 .api-docs-nav a:hover {
     text-decoration: none;
-    background: #e4ecd9;
+    background: var(--accent-soft);
     border-color: var(--api-header-border);
 }
 
@@ -162,7 +162,7 @@
 }
 
 .api-doc-section h4 {
-    color: #2c3e1f;
+    color: var(--accent-hover);
     margin: 22px 0 12px;
     padding: 8px 12px;
     font-size: 0.95rem;
@@ -223,8 +223,8 @@
 .api-quickstart-prereqs {
     margin-bottom: 20px;
     padding: 14px 16px;
-    background: #f4f8f0;
-    border: 1px solid #d4e0c8;
+    background: var(--accent-soft);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     font-size: 13px;
 }
@@ -232,7 +232,7 @@
 .api-quickstart-prereqs strong {
     display: block;
     margin-bottom: 8px;
-    color: #2d4a1e;
+    color: var(--accent-hover);
     font-size: 14px;
 }
 
@@ -251,9 +251,9 @@
 .api-quickstart-step {
     padding: 16px 18px 18px;
     background: #fff;
-    border: 1px solid #d4e0c8;
+    border: 1px solid var(--border-color);
     border-radius: 10px;
-    box-shadow: 0 1px 3px rgba(45, 74, 30, 0.06);
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--accent-hover) 6%, transparent);
 }
 
 .api-quickstart-step-head {
@@ -271,7 +271,7 @@
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    background: #3d5a26;
+    background: var(--accent);
     color: #fff;
     font-size: 13px;
     font-weight: 700;
@@ -281,7 +281,7 @@
     margin: 0;
     font-size: 16px;
     font-weight: 700;
-    color: #2d4a1e;
+    color: var(--accent-hover);
 }
 
 .api-quickstart-step-summary {
@@ -309,8 +309,8 @@
 .api-quickstart-expect {
     margin-top: 4px;
     padding: 12px 14px;
-    background: #f8faf6;
-    border: 1px solid #e0e8da;
+    background: var(--accent-soft);
+    border: 1px solid var(--border-color);
     border-radius: 6px;
     border-left: 3px solid #5b8def;
 }
@@ -321,7 +321,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #3d5a26;
+    color: var(--accent);
     margin-bottom: 4px;
 }
 
@@ -344,13 +344,13 @@
 .api-quickstart-tips {
     margin: 12px 0 0;
     font-size: 13px;
-    color: #5a6b52;
+    color: var(--text-muted);
 }
 
 .api-quickstart-next {
     padding: 16px 18px;
-    background: linear-gradient(180deg, #f4f8f0 0%, #eef3ea 100%);
-    border: 1px solid #c5d4bc;
+    background: linear-gradient(180deg, var(--accent-soft) 0%, var(--accent-soft) 100%);
+    border: 1px solid var(--border-color);
     border-radius: 10px;
 }
 
@@ -379,8 +379,8 @@
 }
 .api-perm-badge {
     display: inline-block;
-    background: #eef3ea;
-    color: #3d5a26;
+    background: var(--accent-soft);
+    color: var(--accent);
     padding: 2px 8px;
     border-radius: 4px;
     font-size: 11px;
@@ -388,7 +388,7 @@
 }
 .api-prompt-block {
     background: #f9f9f9;
-    border-left: 4px solid #3d5a26;
+    border-left: 4px solid var(--accent);
     padding: 12px 16px;
     margin: 12px 0;
     font-size: 14px;
@@ -398,7 +398,7 @@
 /* AI agent prompt tab strip */
 .api-prompt-tabs {
     margin: 16px 0 8px;
-    border: 1px solid #dde5d6;
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     overflow: hidden;
     background: #fff;
@@ -407,15 +407,15 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0;
-    background: #f0f4ec;
-    border-bottom: 1px solid #dde5d6;
+    background: var(--accent-soft);
+    border-bottom: 1px solid var(--border-color);
     padding: 0;
 }
 .api-prompt-tab {
     appearance: none;
     border: none;
     background: transparent;
-    color: #4a5f3a;
+    color: var(--accent-hover);
     font-size: 13px;
     font-weight: 600;
     padding: 10px 14px;
@@ -425,12 +425,12 @@
     transition: background 0.15s, color 0.15s;
 }
 .api-prompt-tab:hover {
-    background: rgba(61, 90, 38, 0.06);
+    background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 .api-prompt-tab.is-active {
     background: #fff;
-    color: #2c3e1f;
-    border-bottom-color: #3d5a26;
+    color: var(--accent-hover);
+    border-bottom-color: var(--accent);
 }
 .api-prompt-panel {
     padding: 16px 18px 18px;
@@ -499,20 +499,20 @@
 }
 
 .api-ref-table th {
-    background: #eef3ea;
-    color: #3d5a26;
+    background: var(--accent-soft);
+    color: var(--accent);
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.03em;
     padding: 10px 12px;
     text-align: left;
-    border-bottom: 2px solid #d4e0c8;
+    border-bottom: 2px solid var(--border-color);
 }
 
 .api-ref-table td {
     padding: 10px 12px;
     vertical-align: top;
-    border-bottom: 1px solid #e8ede3;
+    border-bottom: 1px solid var(--border-color);
     line-height: 1.5;
 }
 
@@ -563,7 +563,7 @@
 /* Detailed reference block (request / response / samples) */
 .api-ref-detail {
     margin-top: 24px;
-    border: 1px solid #c5d4bc;
+    border: 1px solid var(--border-color);
     border-radius: 10px;
     overflow: hidden;
     background: #fff;
@@ -571,21 +571,21 @@
 
 .api-ref-detail-header {
     padding: 14px 18px 10px;
-    background: linear-gradient(180deg, #f4f8f0 0%, #eef3ea 100%);
-    border-bottom: 1px solid #dde5d6;
+    background: linear-gradient(180deg, var(--accent-soft) 0%, var(--accent-soft) 100%);
+    border-bottom: 1px solid var(--border-color);
 }
 
 .api-ref-detail-title {
     margin: 0 0 4px;
     font-size: 15px;
     font-weight: 700;
-    color: #2d4a1e;
+    color: var(--accent-hover);
 }
 
 .api-ref-detail-hint {
     margin: 0;
     font-size: 13px;
-    color: #5a6b52;
+    color: var(--text-muted);
     line-height: 1.45;
 }
 
@@ -594,8 +594,8 @@
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 10px;
     padding: 14px 16px;
-    background: #f8faf6;
-    border-bottom: 1px solid #dde5d6;
+    background: var(--accent-soft);
+    border-bottom: 1px solid var(--border-color);
 }
 
 .api-ref-segment {
@@ -604,26 +604,26 @@
     align-items: flex-start;
     gap: 2px;
     text-align: left;
-    border: 2px solid #c5d4bc !important;
+    border: 2px solid var(--border-color) !important;
     border-radius: 8px !important;
     background: #fff !important;
     padding: 12px 14px !important;
     margin-bottom: 0 !important;
-    box-shadow: 0 1px 2px rgba(45, 74, 30, 0.06);
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--accent-hover) 6%, transparent);
     transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 
 .api-ref-segment:hover {
-    border-color: #8faa7a !important;
+    border-color: var(--accent) !important;
     background: #fff !important;
-    box-shadow: 0 2px 6px rgba(45, 74, 30, 0.1);
+    box-shadow: 0 2px 6px color-mix(in srgb, var(--accent-hover) 10%, transparent);
 }
 
 .api-ref-segment.is-active {
-    border-color: #3d5a26 !important;
-    background: #eef6e8 !important;
-    box-shadow: 0 0 0 1px #3d5a26, 0 2px 8px rgba(61, 90, 38, 0.12);
-    color: #2c3e1f;
+    border-color: var(--accent) !important;
+    background: var(--accent-soft) !important;
+    box-shadow: 0 0 0 1px var(--accent), 0 2px 8px color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent-hover);
 }
 
 .api-ref-segment-label {
@@ -635,12 +635,12 @@
 .api-ref-segment-desc {
     font-size: 12px;
     font-weight: 400;
-    color: #6b7c63;
+    color: var(--text-muted);
     line-height: 1.35;
 }
 
 .api-ref-segment.is-active .api-ref-segment-desc {
-    color: #4a5f3a;
+    color: var(--accent-hover);
 }
 
 .api-ref-detail-body {
@@ -650,7 +650,7 @@
 
 .api-complete-ref-inner > .api-prompt-panel {
     padding: 18px 20px 20px;
-    border-top: 1px solid #eef2ea;
+    border-top: 1px solid var(--border-color);
     background: #fff;
 }
 
@@ -660,19 +660,19 @@
 
 .api-ref-sample-strip {
     margin: 0;
-    border: 1px solid #dde5d6;
+    border: 1px solid var(--border-color);
     border-radius: 8px;
 }
 
 .api-ref-sample-strip .api-prompt-tablist {
-    background: #f4f7f1;
+    background: var(--accent-soft);
 }
 
 .api-ref-subheading {
     margin: 16px 0 8px;
     font-size: 14px;
     font-weight: 600;
-    color: #2d4a1e;
+    color: var(--accent-hover);
 }
 
 .api-ref-subheading:first-child {
@@ -689,7 +689,7 @@
 }
 
 .api-endpoints-table thead {
-    background: #eef3ea;
+    background: var(--accent-soft);
 }
 
 .api-endpoints-table th {
@@ -697,16 +697,16 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #2d4a1e;
+    color: var(--accent-hover);
     padding: 10px 12px;
     text-align: left;
-    border-bottom: 2px solid #c5d4bc;
+    border-bottom: 2px solid var(--border-color);
 }
 
 .api-endpoints-table td {
     vertical-align: top;
     padding: 10px 12px;
-    border-bottom: 1px solid #e8ede3;
+    border-bottom: 1px solid var(--border-color);
 }
 
 .api-endpoints-table tbody tr:last-child td {
@@ -722,7 +722,7 @@
 }
 
 .api-method--get { background: #e3f2fd; color: #1565c0; }
-.api-method--post { background: #e8f5e9; color: #2e7d32; }
+.api-method--post { background: var(--accent-soft); color: var(--accent-hover); }
 .api-method--patch { background: #fff3e0; color: #e65100; }
 .api-method--delete { background: #ffebee; color: #c62828; }
 

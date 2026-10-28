@@ -189,8 +189,8 @@ if (!empty($clickId)) {
         <?php endif; ?>
         
         <?php if ($clickData): ?>
-            <div style="background: #e8f5e9; border: 2px solid #4caf50; border-radius: 6px; padding: 16px; margin-bottom: 24px;">
-                <strong style="color: #2e7d32;">✓ Click found!</strong>
+            <div style="background: var(--accent-soft); border: 2px solid var(--accent); border-radius: 6px; padding: 16px; margin-bottom: 24px;">
+                <strong style="color: var(--accent-hover);">✓ Click found!</strong>
             </div>
             
             <!-- Basic Click Information -->
@@ -245,7 +245,7 @@ if (!empty($clickId)) {
                         <div>
                             <strong style="color: #666; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Landing Page Clicked</strong>
                             <div style="font-size: 14px; margin-top: 4px;">
-                                <?= $clickData['lp_click'] ? '<span style="color: #4caf50; font-weight: 600;">✓ Yes</span>' : '<span style="color: #999;">✗ No</span>' ?>
+                                <?= $clickData['lp_click'] ? '<span style="color: var(--accent); font-weight: 600;">✓ Yes</span>' : '<span style="color: #999;">✗ No</span>' ?>
                             </div>
                         </div>
                         <?php if ($clickData['ts_lp']): ?>
@@ -462,19 +462,19 @@ if (!empty($clickId)) {
                 $isFiltered = $hasPersistedFlag
                     ? (int)$clickData['exclude_from_stats'] === 1
                     : $isApprovalClick;
-                $approvalColor = $isFiltered ? '#f57c00' : '#4caf50';
-                $approvalBackground = $isFiltered ? '#fff3e0' : '#e8f5e9';
+                $approvalColor = $isFiltered ? '#f57c00' : 'var(--accent)';
+                $approvalBackground = $isFiltered ? '#fff3e0' : 'var(--accent-soft)';
             ?>
             <div class="card" style="margin-bottom: 24px; border: 2px solid <?= $approvalColor ?>;">
                 <div class="card-header" style="background: <?= $approvalBackground ?>; padding: 16px; border-bottom: 2px solid <?= $approvalColor ?>;">
                     <h2 style="margin: 0; font-size: 20px; color: #333;">
                         Facebook Approval Team Check
                         <?php if ($isConvertedReal): ?>
-                            <span style="color: #2e7d32; margin-left: 12px;">✓ Included as REAL (converted)</span>
+                            <span style="color: var(--accent-hover); margin-left: 12px;">✓ Included as REAL (converted)</span>
                         <?php elseif ($isFiltered): ?>
                             <span style="color: #f57c00; margin-left: 12px;">⚠️ Would be FILTERED</span>
                         <?php else: ?>
-                            <span style="color: #4caf50; margin-left: 12px;">✓ Valid Click</span>
+                            <span style="color: var(--accent); margin-left: 12px;">✓ Valid Click</span>
                         <?php endif; ?>
                     </h2>
                 </div>
@@ -490,7 +490,7 @@ if (!empty($clickId)) {
                             <?php elseif (is_string($adId) && (strpos($adId, '{{') === 0 || strpos($adId, '{ts:') === 0)): ?>
                                 <div style="color: #f57c00; font-size: 12px; margin-top: 4px;">⚠️ Contains template token</div>
                             <?php else: ?>
-                                <div style="color: #4caf50; font-size: 12px; margin-top: 4px;">✓ Valid</div>
+                                <div style="color: var(--accent); font-size: 12px; margin-top: 4px;">✓ Valid</div>
                             <?php endif; ?>
                         </div>
                         <div>
@@ -503,7 +503,7 @@ if (!empty($clickId)) {
                             <?php elseif (is_string($adsetId) && (strpos($adsetId, '{{') === 0 || strpos($adsetId, '{ts:') === 0)): ?>
                                 <div style="color: #f57c00; font-size: 12px; margin-top: 4px;">⚠️ Contains template token</div>
                             <?php else: ?>
-                                <div style="color: #4caf50; font-size: 12px; margin-top: 4px;">✓ Valid</div>
+                                <div style="color: var(--accent); font-size: 12px; margin-top: 4px;">✓ Valid</div>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -606,7 +606,7 @@ if (!empty($clickId)) {
                                     <div>
                                         <strong style="color: #666; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Status</strong>
                                         <div style="font-size: 14px; margin-top: 4px;">
-                                            <span style="padding: 4px 8px; border-radius: 4px; background: <?= $conv['status'] === 'approved' ? '#e8f5e9' : ($conv['status'] === 'rejected' ? '#ffebee' : '#fff3e0') ?>; color: <?= $conv['status'] === 'approved' ? '#2e7d32' : ($conv['status'] === 'rejected' ? '#c62828' : '#f57c00') ?>; font-weight: 600;">
+                                            <span style="padding: 4px 8px; border-radius: 4px; background: <?= $conv['status'] === 'approved' ? 'var(--accent-soft)' : ($conv['status'] === 'rejected' ? '#ffebee' : '#fff3e0') ?>; color: <?= $conv['status'] === 'approved' ? 'var(--accent-hover)' : ($conv['status'] === 'rejected' ? '#c62828' : '#f57c00') ?>; font-weight: 600;">
                                                 <?= htmlspecialchars(ucfirst($conv['status'])) ?>
                                             </span>
                                         </div>
@@ -706,7 +706,7 @@ if (!empty($clickId)) {
                         html += '<h4 style="margin: 0 0 12px 0; font-size: 14px; color: #333;">Outbound Postbacks (sent to traffic sources / Facebook CAPI)</h4>';
                         data.postback_logs.forEach(function(log, idx) {
                             var isSkipped = log.postback_type === 'skipped_threshold';
-                            var logClass = isSkipped ? '#fff8e1' : (log.success ? '#d4edda' : '#f8d7da');
+                            var logClass = isSkipped ? '#fff8e1' : (log.success ? 'var(--accent-soft)' : '#f8d7da');
                             var borderClass = isSkipped ? '#ffe082' : (log.success ? '#c3e6cb' : '#f5c6cb');
                             html += '<div style="margin-bottom: 16px; padding: 12px; background: ' + logClass + '; border: 1px solid ' + borderClass + '; border-radius: 4px;">';
                             var statusLabel = isSkipped ? 'Skipped (below minimum)' : (log.success ? '✓' : '✗');
@@ -738,7 +738,7 @@ if (!empty($clickId)) {
                                     html += '<details style="margin-top: 8px;"><summary style="cursor: pointer; font-weight: 600; color: #0c5460; font-size: 12px;">📥 Response</summary>';
                                     html += '<pre style="background: #fff; padding: 12px; border-radius: 4px; font-size: 11px; overflow-x: auto; margin: 8px 0 0 0;">' + escapeHtml(JSON.stringify(resp, null, 2)) + '</pre>';
                                     if (resp.events_received !== undefined) {
-                                        html += '<div style="margin-top: 8px; padding: 8px; background: ' + (resp.events_received > 0 ? '#d4edda' : '#f8d7da') + '; border-radius: 4px;">Events received: ' + resp.events_received + (resp.fbtrace_id ? ' &bull; Trace ID: ' + escapeHtml(resp.fbtrace_id) : '') + '</div>';
+                                        html += '<div style="margin-top: 8px; padding: 8px; background: ' + (resp.events_received > 0 ? 'var(--accent-soft)' : '#f8d7da') + '; border-radius: 4px;">Events received: ' + resp.events_received + (resp.fbtrace_id ? ' &bull; Trace ID: ' + escapeHtml(resp.fbtrace_id) : '') + '</div>';
                                     }
                                     html += '</details>';
                                 } catch (e) {

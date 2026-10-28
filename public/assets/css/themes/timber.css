@@ -1,0 +1,109 @@
+/**
+ * Timber: pine sidebar, ivory canvas, terracotta actions.
+ * Stored id: timber. Base polarity is light.
+ */
+[data-theme="timber"] {
+    --accent: #b66a4d;
+    --accent-hover: #985238;
+    --accent-muted: #527568;
+    --accent-soft: #f1ece4;
+
+    --color-forest-dark: #985238;
+    --color-forest: #b66a4d;
+    --color-forest-light: #527568;
+    --color-bark: #527568;
+    --color-bark-dark: #3b5a50;
+    --color-cream: #f5f0e8;
+    --color-cream-dark: #eae3d8;
+
+    --color-white: #ffffff;
+    --color-gray-100: #f5f0e8;
+    --color-gray-200: #ded7cb;
+    --color-gray-300: #cfc6b8;
+    --color-gray-600: #65736b;
+    --color-gray-800: #24352f;
+    --color-black: #24352f;
+
+    --heading-color: #24352f;
+    --link-color: #527568;
+    --link-hover: #2c6755;
+
+    --color-success: #237b46;
+    --color-success-bg: #e5f4eb;
+    --color-warning: #9b6a11;
+    --color-warning-bg: #f8f1e0;
+    --color-error: #c23a3a;
+    --color-error-bg: #fbeaea;
+    --color-info: #527568;
+    --color-info-bg: #e7f0ec;
+
+    --sidebar-bg: #273f3a;
+    --sidebar-text: #ffffff;
+    --sidebar-text-muted: #c4d2ca;
+    --sidebar-hover-bg: #314c46;
+    --sidebar-active-bg: #3b5a50;
+    --sidebar-active-border: #b66a4d;
+    --sidebar-active-text: #ffffff;
+    --sidebar-scrollbar-track: #1e322e;
+    --sidebar-scrollbar-thumb: #527568;
+    --sidebar-scrollbar-thumb-hover: #c4d2ca;
+    --sidebar-border: #3b5a50;
+
+    --page-bg: #f5f0e8;
+    --surface: #ffffff;
+    --surface-raised: #eae3d8;
+    --text-primary: #24352f;
+    --text-muted: #65736b;
+    --border-color: #ded7cb;
+    --navbar-bg: #ffffff;
+    --navbar-border: #ded7cb;
+    --card-header-border: #ded7cb;
+
+    --input-bg: #ffffff;
+    --input-border: #ded7cb;
+    --input-text: #24352f;
+    --input-placeholder: rgba(101, 115, 107, 0.8);
+
+    --table-bg: #ffffff;
+    --table-header-bg: #eae3d8;
+    --table-header-text: #24352f;
+    --table-header-accent: inset 0 -2px 0 #b66a4d;
+    --table-row-hover: #f1ece4;
+    --table-border: #ded7cb;
+
+    --btn-on-primary-text: #ffffff;
+    --btn-outline-hover-text: #ffffff;
+    --btn-radius: 4px;
+    --btn-padding-y: 8px;
+    --btn-padding-x: 24px;
+    --badge-warning-text: #9b6a11;
+
+    --logo-max-width: 64px;
+    --logo-max-height: 60px;
+    --auth-logo-max-height: 140px;
+
+    --auth-page-bg: #f5f0e8;
+    --auth-header-bg: #273f3a;
+    --auth-header-text: #ffffff;
+    --auth-container-shadow: 0 10px 40px rgba(39, 63, 58, 0.16);
+    --auth-tagline-text: #c4d2ca;
+    --auth-tagline-shadow: none;
+
+    --chart-grid: rgba(36, 53, 47, 0.06);
+    --chart-tick: #65736b;
+    --chart-legend: #65736b;
+    --chart-point-border: #ffffff;
+    --chart-clicks: #527568;
+    --chart-clicks-fill: rgba(82, 117, 104, 0.15);
+    --chart-tooltip-border: #b66a4d;
+    --chart-tooltip-bg: rgba(39, 63, 58, 0.94);
+
+    --shadow-sm: 0 1px 2px rgba(39, 63, 58, 0.06);
+    --shadow-md: 0 4px 10px rgba(39, 63, 58, 0.08);
+    --shadow-lg: 0 10px 24px rgba(39, 63, 58, 0.1);
+}
+
+[data-theme="timber"] .card {
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+}

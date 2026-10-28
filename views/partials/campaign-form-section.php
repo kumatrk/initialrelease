@@ -1,13 +1,13 @@
 <?php
 /**
- * Reusable campaign editor section shell (expanded by default).
+ * Reusable campaign editor section shell (collapsed by default).
  *
  * Expected vars:
  * - string $sectionId
  * - string $sectionTitle
  * - string $sectionSubtitle (optional)
  * - string $sectionBodyHtml
- * - bool $sectionOpen (default true)
+ * - bool $sectionOpen (default false)
  * - string $sectionExtraClass (optional)
  * - string $sectionExtraAttrs (optional raw attributes, e.g. style="display:none")
  */
@@ -15,7 +15,7 @@ $sectionId = (string) ($sectionId ?? '');
 $sectionTitle = (string) ($sectionTitle ?? '');
 $sectionSubtitle = (string) ($sectionSubtitle ?? '');
 $sectionBodyHtml = (string) ($sectionBodyHtml ?? '');
-$sectionOpen = $sectionOpen ?? true;
+$sectionOpen = $sectionOpen ?? false;
 $sectionExtraClass = trim((string) ($sectionExtraClass ?? ''));
 $sectionExtraAttrs = trim((string) ($sectionExtraAttrs ?? ''));
 $class = 'campaign-form-section' . ($sectionExtraClass !== '' ? ' ' . $sectionExtraClass : '');

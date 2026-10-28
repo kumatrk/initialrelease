@@ -81,10 +81,10 @@
     .token-row > div:first-child {
         font-size: 16px !important;
         font-weight: 600 !important;
-        color: #3d5a26 !important;
+        color: var(--accent) !important;
         margin-bottom: 12px !important;
         padding-bottom: 8px !important;
-        border-bottom: 2px solid #3d5a26 !important;
+        border-bottom: 2px solid var(--accent) !important;
         text-align: left !important;
     }
     

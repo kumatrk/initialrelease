@@ -2,6 +2,7 @@
 
 namespace SimpleKuma\Tracking;
 
+use SimpleKuma\Database\SchemaProbe;
 use SimpleKuma\Stats\CampaignStatsExpressions;
 use SimpleKuma\Stats\StatsHiddenIpService;
 use SimpleKuma\Stats\StatsExclusionFlag;
@@ -76,8 +77,7 @@ class DailySummaryUpdater
         if ($this->summaryTableExists !== null) {
             return $this->summaryTableExists;
         }
-        $result = $this->db->query("SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clicks_daily_summary' LIMIT 1");
-        return $this->summaryTableExists = $result && $result->num_rows > 0;
+        return $this->summaryTableExists = SchemaProbe::tableExists($this->db, 'clicks_daily_summary');
     }
 
     /**
@@ -88,8 +88,7 @@ class DailySummaryUpdater
         if ($this->tokenSummaryTableExists !== null) {
             return $this->tokenSummaryTableExists;
         }
-        $result = $this->db->query("SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clicks_stats_by_token_daily' LIMIT 1");
-        return $this->tokenSummaryTableExists = $result && $result->num_rows > 0;
+        return $this->tokenSummaryTableExists = SchemaProbe::tableExists($this->db, 'clicks_stats_by_token_daily');
     }
 
     /**
@@ -100,10 +99,7 @@ class DailySummaryUpdater
         if ($this->tokenHourlyTableExists !== null) {
             return $this->tokenHourlyTableExists;
         }
-        $result = $this->db->query(
-            "SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clicks_stats_by_token_hourly' LIMIT 1"
-        );
-        return $this->tokenHourlyTableExists = $result && $result->num_rows > 0;
+        return $this->tokenHourlyTableExists = SchemaProbe::tableExists($this->db, 'clicks_stats_by_token_hourly');
     }
 
     /**
@@ -1175,12 +1171,14 @@ class DailySummaryUpdater
                 }
             }
         } else {
+            // Assign revenue first. MySQL and MariaDB then use that new value for profit and roi.
+            $roiSql = CampaignStatsExpressions::storedRoiPercentSql('revenue', 'cost');
             $upd = $this->db->prepare("
                 UPDATE clicks_daily_summary
                 SET conversions = conversions + 1,
                     revenue = revenue + ?,
-                    profit = (revenue + ?) - cost,
-                    roi = CASE WHEN cost > 0 THEN (((revenue + ?) - cost) / cost) * 100 ELSE NULL END,
+                    profit = revenue - cost,
+                    roi = {$roiSql},
                     updated_at = NOW()
                 WHERE campaign_id = ?
                   AND (traffic_source_id <=> ?)
@@ -1191,9 +1189,7 @@ class DailySummaryUpdater
             ");
             if ($upd) {
                 $upd->bind_param(
-                    'dddiiiis',
-                    $revenue,
-                    $revenue,
+                    'diiiis',
                     $revenue,
                     $campaignId,
                     $trafficSourceId,
@@ -1287,12 +1283,13 @@ class DailySummaryUpdater
             }
             $upd->bind_param('iiiis', $campaignId, $trafficSourceId, $offerId, $landingPageId, $summaryDate);
         } else {
+            $roiSql = CampaignStatsExpressions::storedRoiPercentSql('revenue', 'cost');
             $upd = $this->db->prepare("
                 UPDATE clicks_daily_summary SET
                     conversions = GREATEST(0, CAST(conversions AS SIGNED) - 1),
                     revenue = GREATEST(0, revenue - ?),
-                    profit = GREATEST(0, revenue - ?) - cost,
-                    roi = CASE WHEN cost > 0 THEN ((GREATEST(0, revenue - ?) - cost) / cost) * 100 ELSE NULL END,
+                    profit = revenue - cost,
+                    roi = {$roiSql},
                     updated_at = NOW()
                 WHERE campaign_id = ? AND (traffic_source_id <=> ?) AND (offer_id <=> ?) AND (landing_page_id <=> ?) AND summary_date = ?
             ");
@@ -1300,7 +1297,7 @@ class DailySummaryUpdater
                 error_log('DailySummaryUpdater::removeConversion prepare failed: ' . $this->db->error);
                 return;
             }
-            $upd->bind_param('dddiiiis', $revenue, $revenue, $revenue, $campaignId, $trafficSourceId, $offerId, $landingPageId, $summaryDate);
+            $upd->bind_param('diiiis', $revenue, $campaignId, $trafficSourceId, $offerId, $landingPageId, $summaryDate);
         }
         if (!$upd->execute()) {
             error_log('DailySummaryUpdater::removeConversion execute failed: ' . $upd->error);
@@ -1359,8 +1356,7 @@ class DailySummaryUpdater
         if (!$this->tableExists()) {
             return $cached = false;
         }
-        $check = $this->db->query("SHOW COLUMNS FROM clicks_daily_summary LIKE 'bot_clicks'");
-        return $cached = ($check && $check->num_rows > 0);
+        return $cached = SchemaProbe::columnExists($this->db, 'clicks_daily_summary', 'bot_clicks');
     }
 
     private function tokenTableHasBotClicksColumn(): bool
@@ -1372,8 +1368,7 @@ class DailySummaryUpdater
         if (!$this->tokenTableExists()) {
             return $cached = false;
         }
-        $check = $this->db->query("SHOW COLUMNS FROM clicks_stats_by_token_daily LIKE 'bot_clicks'");
-        return $cached = ($check && $check->num_rows > 0);
+        return $cached = SchemaProbe::columnExists($this->db, 'clicks_stats_by_token_daily', 'bot_clicks');
     }
 
     private function summaryTableHasOptinsColumn(): bool
@@ -1385,8 +1380,7 @@ class DailySummaryUpdater
         if (!$this->tableExists()) {
             return $cached = false;
         }
-        $check = $this->db->query("SHOW COLUMNS FROM clicks_daily_summary LIKE 'optins'");
-        return $cached = ($check && $check->num_rows > 0);
+        return $cached = SchemaProbe::columnExists($this->db, 'clicks_daily_summary', 'optins');
     }
 
     private function tokenTableHasOptinsColumn(): bool
@@ -1398,8 +1392,7 @@ class DailySummaryUpdater
         if (!$this->tokenTableExists()) {
             return $cached = false;
         }
-        $check = $this->db->query("SHOW COLUMNS FROM clicks_stats_by_token_daily LIKE 'optins'");
-        return $cached = ($check && $check->num_rows > 0);
+        return $cached = SchemaProbe::columnExists($this->db, 'clicks_stats_by_token_daily', 'optins');
     }
 
     /**
@@ -1442,18 +1435,15 @@ class DailySummaryUpdater
         $lpInc = ($lpClick && $landingPageId !== null && $offerId !== null) ? 1 : 0;
         $directInc = ($lpClick && $landingPageId === null) ? 1 : 0;
 
+        $roiSql = CampaignStatsExpressions::storedRoiPercentSql('GREATEST(0, revenue)', 'cost');
         $upd = $this->db->prepare("
             UPDATE clicks_daily_summary
             SET clicks = GREATEST(0, CAST(clicks AS SIGNED) - 1),
                 lp_clicks = GREATEST(0, CAST(lp_clicks AS SIGNED) - ?),
                 direct_clicks = GREATEST(0, CAST(direct_clicks AS SIGNED) - ?),
                 cost = GREATEST(0, cost - ?),
-                profit = GREATEST(0, revenue) - GREATEST(0, cost - ?),
-                roi = CASE
-                    WHEN GREATEST(0, cost - ?) > 0
-                    THEN ((GREATEST(0, revenue) - GREATEST(0, cost - ?)) / GREATEST(0, cost - ?)) * 100
-                    ELSE NULL
-                END,
+                profit = GREATEST(0, revenue) - cost,
+                roi = {$roiSql},
                 updated_at = NOW()
             WHERE campaign_id = ?
               AND (traffic_source_id <=> ?)
@@ -1463,13 +1453,9 @@ class DailySummaryUpdater
         ");
         if ($upd) {
             $upd->bind_param(
-                'iidddddiiiis',
+                'iidiiiis',
                 $lpInc,
                 $directInc,
-                $cost,
-                $cost,
-                $cost,
-                $cost,
                 $cost,
                 $campaignId,
                 $trafficSourceId,

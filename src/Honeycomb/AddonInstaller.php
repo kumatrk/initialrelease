@@ -204,6 +204,7 @@ final class AddonInstaller
             if (is_string($tmpDir) && is_dir($tmpDir)) {
                 $this->deleteTree($tmpDir);
             }
+            \SimpleKuma\Support\ApiFailureLog::record($this->db, 'honeycomb', 'Install addon', null, $e->getMessage(), $slug);
             return ['ok' => false, 'message' => $e->getMessage()];
         }
     }

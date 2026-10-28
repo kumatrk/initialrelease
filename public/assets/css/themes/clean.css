@@ -1,0 +1,168 @@
+/**
+ * Clean theme: white surfaces and a blue accent.
+ * Stored id: clean. Base polarity is light.
+ */
+[data-theme="clean"] {
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --accent-muted: #3b82f6;
+    --accent-soft: #eff6ff;
+
+    --color-forest-dark: var(--accent-hover);
+    --color-forest: var(--accent);
+    --color-forest-light: var(--accent-muted);
+    --color-bark: #64748b;
+    --color-bark-dark: #475569;
+    --color-cream: #f8fafc;
+    --color-cream-dark: #e2e8f0;
+
+    --color-white: #ffffff;
+    --color-gray-100: #f8fafc;
+    --color-gray-200: #e2e8f0;
+    --color-gray-300: #cbd5e1;
+    --color-gray-600: #64748b;
+    --color-gray-800: #0f172a;
+    --color-black: #020617;
+
+    --heading-color: #0f172a;
+    --link-color: var(--accent);
+    --link-hover: var(--accent-hover);
+
+    --sidebar-bg: #ffffff;
+    --sidebar-text: #1e293b;
+    --sidebar-text-muted: #64748b;
+    --sidebar-hover-bg: #f1f5f9;
+    --sidebar-active-bg: var(--accent-soft);
+    --sidebar-active-border: var(--accent);
+    --sidebar-active-text: #1d4ed8;
+    --sidebar-scrollbar-track: #f1f5f9;
+    --sidebar-scrollbar-thumb: #cbd5e1;
+    --sidebar-scrollbar-thumb-hover: #94a3b8;
+    --sidebar-border: #e2e8f0;
+
+    --page-bg: #f8fafc;
+    --surface: #ffffff;
+    --surface-raised: #ffffff;
+    --text-primary: #0f172a;
+    --text-muted: #64748b;
+    --border-color: #e2e8f0;
+    --navbar-bg: #ffffff;
+    --navbar-border: #e2e8f0;
+    --card-header-border: #e2e8f0;
+
+    --input-bg: #ffffff;
+    --input-border: #cbd5e1;
+    --input-text: #0f172a;
+    --input-placeholder: rgba(100, 116, 139, 0.8);
+
+    --table-bg: #ffffff;
+    --table-header-bg: #f8fafc;
+    --table-header-text: #334155;
+    --table-header-accent: inset 0 -2px 0 var(--accent);
+    --table-row-hover: #f8fafc;
+    --table-border: #e2e8f0;
+
+    --color-success: var(--accent);
+    --color-success-bg: var(--accent-soft);
+
+    --btn-on-primary-text: #ffffff;
+    --btn-outline-hover-text: #ffffff;
+    --btn-radius: 8px;
+    --btn-padding-y: 8px;
+    --btn-padding-x: 16px;
+
+    --logo-max-width: 120px;
+    --logo-max-height: 40px;
+    --auth-logo-max-height: 72px;
+
+    --auth-page-bg: #f8fafc;
+    --auth-header-bg: #ffffff;
+    --auth-header-text: #0f172a;
+    --auth-container-shadow: 0 10px 40px rgba(15, 23, 42, 0.08);
+    --auth-tagline-text: #64748b;
+    --auth-tagline-shadow: none;
+
+    --chart-clicks: var(--accent);
+    --chart-clicks-fill: color-mix(in srgb, var(--accent) 12%, transparent);
+    --chart-tooltip-border: var(--accent);
+}
+
+[data-theme="clean"] .sidebar-header {
+    padding: 10px 8px 0;
+    border-bottom: none;
+}
+
+[data-theme="clean"] .sidebar-logo {
+    line-height: 0;
+}
+
+[data-theme="clean"] .sidebar-logo-img {
+    width: auto;
+    height: auto;
+    max-width: 64px;
+    max-height: 60px;
+    object-fit: contain;
+    object-position: center;
+}
+
+[data-theme="clean"] .sidebar-nav {
+    padding-top: 0;
+}
+
+[data-theme="clean"] .sidebar-nav-section:first-child {
+    margin-top: 0;
+}
+
+[data-theme="clean"] .sidebar-nav-section:first-child .sidebar-nav-title {
+    padding-top: 2px;
+}
+
+[data-theme="clean"] .sidebar {
+    box-shadow: none;
+    border-right: 1px solid var(--sidebar-border);
+}
+
+[data-theme="clean"] .sidebar-collapse-toggle {
+    border-color: var(--border-color);
+    background: #ffffff;
+    color: #334155;
+}
+
+[data-theme="clean"] .sidebar-collapse-toggle:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent-hover);
+}
+
+[data-theme="clean"] .card {
+    border: 1px solid var(--border-color);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+[data-theme="clean"] .dashboard-stats-grid .card {
+    border-left: 3px solid var(--accent);
+}
+
+[data-theme="clean"] .stats-v2-page {
+    --stats-v2-surface: #ffffff;
+    --stats-v2-surface-muted: #f8fafc;
+    --stats-v2-surface-hover: var(--accent-soft);
+    --stats-v2-border: var(--border-color);
+    --stats-v2-border-strong: #cbd5e1;
+}
+
+[data-theme="clean"] .btn-secondary {
+    background: #ffffff;
+    color: #334155;
+    border: 1px solid var(--border-color);
+}
+
+[data-theme="clean"] .btn-secondary:hover {
+    background: var(--accent-soft);
+    color: #1d4ed8;
+}
+
+[data-theme="clean"] body.auth-page .login-header .retro-text {
+    color: var(--auth-tagline-text);
+    text-shadow: none;
+}

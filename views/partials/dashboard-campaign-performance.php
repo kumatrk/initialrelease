@@ -6,6 +6,20 @@
  */
 use SimpleKuma\Utils\Formatter;
 
+if (!function_exists('kumaDashMetricAttrs')) {
+    function kumaDashMetricAttrs(int $views, int $lp, int $direct, float $cost, float $revenue): string
+    {
+        return sprintf(
+            ' data-views="%d" data-lp="%d" data-direct="%d" data-cost="%s" data-revenue="%s"',
+            $views,
+            $lp,
+            $direct,
+            htmlspecialchars(sprintf('%.6F', $cost), ENT_QUOTES, 'UTF-8'),
+            htmlspecialchars(sprintf('%.6F', $revenue), ENT_QUOTES, 'UTF-8')
+        );
+    }
+}
+
 $campaignStats = $campaignStats ?? [];
 $campaignStatsTotal = (int)($campaignStatsTotal ?? 0);
 $campaignsPage = (int)($campaignsPage ?? 1);
@@ -99,20 +113,20 @@ foreach ($groupedCampaigns as $groupName => $campaigns) {
                 <table class="table">
                     <thead>
                         <tr>
-                            <th>Campaign</th>
-                            <th>Traffic Source</th>
-                            <th>Views</th>
-                            <th>Clicks</th>
-                            <th>Direct</th>
-                            <th>Conv</th>
-                            <th>Cost</th>
-                            <th>Revenue</th>
-                            <th>Profit</th>
-                            <th>ROI</th>
-                            <th>EPC</th>
-                            <th>CTR</th>
-                            <th>CR</th>
-                            <th style="width: 90px;">Actions</th>
+                            <th data-col="campaign">Campaign</th>
+                            <th data-col="traffic_source">Traffic Source</th>
+                            <th data-col="views">Views</th>
+                            <th data-col="lp_clicks">Clicks</th>
+                            <th data-col="direct">Direct</th>
+                            <th data-col="conversions">Conv</th>
+                            <th data-col="cost">Cost</th>
+                            <th data-col="revenue">Revenue</th>
+                            <th data-col="profit">Profit</th>
+                            <th data-col="roi">ROI</th>
+                            <th data-col="epc">EPC</th>
+                            <th data-col="ctr">CTR</th>
+                            <th data-col="cr">CR</th>
+                            <th data-col="actions" style="width: 90px;">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -121,8 +135,8 @@ foreach ($groupedCampaigns as $groupName => $campaigns) {
                         foreach ($groupedCampaigns as $groupName => $campaigns):
                             $groupTotal = $groupTotals[$groupName];
                         ?>
-                            <tr class="group-header" onclick="toggleDashboardGroup('<?= md5($groupName) ?>')" style="cursor: pointer; background: #f9f9f9; font-weight: 600;">
-                                <td style="color: #3d5a26; padding: 12px;">
+                            <tr class="group-header" onclick="toggleDashboardGroup('<?= md5($groupName) ?>')" style="cursor: pointer; background: #f9f9f9; font-weight: 600;"<?= kumaDashMetricAttrs((int)$groupTotal['views'], (int)$groupTotal['lp_clicks'], (int)$groupTotal['direct_clicks'], (float)$groupTotal['cost'], (float)$groupTotal['revenue']) ?>>
+                                <td style="color: var(--accent); padding: 12px;">
                                     <span id="toggle-<?= md5($groupName) ?>">▶</span>
                                     📁 <?= htmlspecialchars($groupName) ?>
                                     <span style="color: #999; font-weight: normal; margin-left: 8px;">(<?= count($campaigns) ?> campaigns)</span>
@@ -160,7 +174,7 @@ foreach ($groupedCampaigns as $groupName => $campaigns) {
                                 $groupId = md5($groupName);
                                 $isAutoDetect = empty($row['traffic_source_id']) || (int)$row['traffic_source_id'] === 0;
                                 ?>
-                            <tr id="group-<?= $groupId ?>-row-<?= $row['id'] ?>" class="group-campaign-row group-<?= $groupId ?>" style="background: #fafafa; display: none;">
+                            <tr id="group-<?= $groupId ?>-row-<?= $row['id'] ?>" class="group-campaign-row group-<?= $groupId ?>" style="background: #fafafa; display: none;"<?= kumaDashMetricAttrs($cViews, $cLpClicks, $cDirectClicks, $cCost, $cRevenue) ?>>
                                 <td style="padding-left: 40px;">
                                     <strong><?= htmlspecialchars($row['name']) ?></strong>
                                     <span class="badge badge-<?= $row['status'] === 'active' ? 'success' : 'warning' ?>" style="margin-left: 8px; font-size: 10px;">
@@ -169,7 +183,7 @@ foreach ($groupedCampaigns as $groupName => $campaigns) {
                                 </td>
                                 <td>
                                     <?php if ($isAutoDetect): ?>
-                                        <span style="color: #558b2f; font-weight: 500; display: inline-flex; align-items: center; gap: 6px;">
+                                        <span style="color: var(--accent-hover); font-weight: 500; display: inline-flex; align-items: center; gap: 6px;">
                                             <img src="<?= ASSETS_BASE_URL ?>/assets/images/autodetectbear.png" alt="Auto Detected" style="width: 20px; height: 20px; object-fit: contain; vertical-align: middle;">
                                             Auto Detected
                                         </span>
@@ -260,7 +274,7 @@ foreach ($groupedCampaigns as $groupName => $campaigns) {
                                     $tsCtr = $tsViews > 0 ? ($tsLpClicks / $tsViews) * 100 : 0;
                                     $tsCr = $tsViews > 0 ? ((int)$tsStat['conversions'] / $tsViews) * 100 : 0;
                                     ?>
-                                    <tr id="group-<?= $groupId ?>-row-<?= $row['id'] ?>-ts-<?= $tsStat['traffic_source_id'] ?>" class="group-campaign-row group-<?= $groupId ?> traffic-source-row campaign-<?= $row['id'] ?>" style="background: #f5f5f5; display: none;">
+                                    <tr id="group-<?= $groupId ?>-row-<?= $row['id'] ?>-ts-<?= $tsStat['traffic_source_id'] ?>" class="group-campaign-row group-<?= $groupId ?> traffic-source-row campaign-<?= $row['id'] ?>" style="background: #f5f5f5; display: none;"<?= kumaDashMetricAttrs($tsViews, $tsLpClicks, $tsDirectClicks, $tsCost, $tsRevenue) ?>>
                                         <td style="padding-left: 80px; color: #999; font-size: 12px;">
                                             <span style="opacity: 0.5;">└─</span>
                                         </td>
@@ -304,7 +318,7 @@ foreach ($groupedCampaigns as $groupName => $campaigns) {
                             $cCr = $cViews > 0 ? ((int)$row['conversions'] / $cViews) * 100 : 0;
                             $isAutoDetect = empty($row['traffic_source_id']) || (int)$row['traffic_source_id'] === 0;
                         ?>
-                        <tr>
+                        <tr<?= kumaDashMetricAttrs($cViews, $cLpClicks, $cDirectClicks, $cCost, $cRevenue) ?>>
                             <td>
                                 <strong><?= htmlspecialchars($row['name']) ?></strong>
                                 <span class="badge badge-<?= $row['status'] === 'active' ? 'success' : 'warning' ?>" style="margin-left: 8px; font-size: 10px;">
@@ -313,7 +327,7 @@ foreach ($groupedCampaigns as $groupName => $campaigns) {
                             </td>
                             <td>
                                 <?php if ($isAutoDetect): ?>
-                                    <span style="color: #558b2f; font-weight: 500; display: inline-flex; align-items: center; gap: 6px;">
+                                    <span style="color: var(--accent-hover); font-weight: 500; display: inline-flex; align-items: center; gap: 6px;">
                                         <img src="<?= ASSETS_BASE_URL ?>/assets/images/autodetectbear.png" alt="Auto Detected" style="width: 20px; height: 20px; object-fit: contain; vertical-align: middle;">
                                         Auto Detected
                                     </span>
@@ -379,7 +393,7 @@ foreach ($groupedCampaigns as $groupName => $campaigns) {
                                 $tsCtr = $tsViews > 0 ? ($tsLpClicks / $tsViews) * 100 : 0;
                                 $tsCr = $tsViews > 0 ? ((int)$tsStat['conversions'] / $tsViews) * 100 : 0;
                                 ?>
-                                <tr class="traffic-source-row campaign-<?= $row['id'] ?>" style="background: #f5f5f5; display: none;">
+                                <tr class="traffic-source-row campaign-<?= $row['id'] ?>" style="background: #f5f5f5; display: none;"<?= kumaDashMetricAttrs($tsViews, $tsLpClicks, $tsDirectClicks, $tsCost, $tsRevenue) ?>>
                                     <td style="padding-left: 40px; color: #999; font-size: 12px;">
                                         <span style="opacity: 0.5;">└─</span>
                                     </td>
@@ -457,7 +471,7 @@ foreach ($groupedCampaigns as $groupName => $campaigns) {
                                         <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
                                             <span class="badge badge-<?= $row['status'] === 'active' ? 'success' : 'warning' ?>" style="font-size: 11px; padding: 4px 8px; font-weight: 500;"><?= strtoupper($row['status']) ?></span>
                                             <?php if ($isAutoDetect): ?>
-                                                <span style="color: #558b2f; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; font-weight: 500;">
+                                                <span style="color: var(--accent-hover); font-size: 12px; display: inline-flex; align-items: center; gap: 4px; font-weight: 500;">
                                                     <img src="<?= ASSETS_BASE_URL ?>/assets/images/autodetectbear.png" alt="Auto" style="width: 16px; height: 16px;"> Auto
                                                 </span>
                                             <?php else: ?>
@@ -467,7 +481,7 @@ foreach ($groupedCampaigns as $groupName => $campaigns) {
                                     </div>
                                     
                                     <!-- Key Metrics - Highlighted -->
-                                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: var(--spacing-md); padding: 8px 4px; background: <?= $cRoi >= 0 ? 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)' : 'linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%)' ?>; border-radius: var(--radius-sm); border: 2px solid <?= $cRoi >= 0 ? '#4caf50' : '#f44336' ?>;">
+                                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: var(--spacing-md); padding: 8px 4px; background: <?= $cRoi >= 0 ? 'linear-gradient(135deg, var(--accent-soft) 0%, var(--accent-soft) 100%)' : 'linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%)' ?>; border-radius: var(--radius-sm); border: 2px solid <?= $cRoi >= 0 ? 'var(--accent)' : '#f44336' ?>;">
                                         <div style="text-align: center;">
                                             <div style="font-size: 10px; color: #555; margin-bottom: 3px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Revenue</div>
                                             <div style="font-size: 22px; color: #28a745; font-weight: 700; line-height: 1.1;"><?= Formatter::formatCurrency($cRevenue, $userCurrency) ?></div>
@@ -520,7 +534,7 @@ foreach ($groupedCampaigns as $groupName => $campaigns) {
                                     
                                     <!-- Action Buttons -->
                                     <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: var(--spacing-md); padding-top: var(--spacing-md); border-top: 1px solid var(--color-gray-200);">
-                                        <a href="?page=campaign-stats&campaign_id=<?= $row['id'] ?>" style="flex: 1 1 calc(33.333% - 6px); min-width: calc(33.333% - 6px); padding: 12px 10px; font-size: 13px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; text-decoration: none; color: #666; display: inline-flex; align-items: center; justify-content: center; touch-action: manipulation; -webkit-tap-highlight-color: transparent; font-weight: 500; transition: all 0.2s;" onmouseover="this.style.background='#f0f0f0'; this.style.borderColor='#4caf50'; this.style.color='#4caf50';" onmouseout="this.style.background='#fff'; this.style.borderColor='#ddd'; this.style.color='#666';">
+                                        <a href="?page=campaign-stats&campaign_id=<?= $row['id'] ?>" style="flex: 1 1 calc(33.333% - 6px); min-width: calc(33.333% - 6px); padding: 12px 10px; font-size: 13px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; text-decoration: none; color: #666; display: inline-flex; align-items: center; justify-content: center; touch-action: manipulation; -webkit-tap-highlight-color: transparent; font-weight: 500; transition: all 0.2s;" onmouseover="this.style.background='#f0f0f0'; this.style.borderColor='var(--accent)'; this.style.color='var(--accent)';" onmouseout="this.style.background='#fff'; this.style.borderColor='#ddd'; this.style.color='#666';">
                                             📊 Stats
                                         </a>
                                         <a href="?page=campaign-list&action=edit&id=<?= $row['id'] ?>" style="flex: 1 1 calc(50% - 6px); min-width: calc(50% - 6px); padding: 12px 10px; font-size: 13px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; text-decoration: none; color: #666; display: inline-flex; align-items: center; justify-content: center; touch-action: manipulation; -webkit-tap-highlight-color: transparent; font-weight: 500; transition: all 0.2s;" onmouseover="this.style.background='#fff3e0'; this.style.borderColor='#ff9800'; this.style.color='#ff9800';" onmouseout="this.style.background='#fff'; this.style.borderColor='#ddd'; this.style.color='#666';">
@@ -589,7 +603,7 @@ foreach ($groupedCampaigns as $groupName => $campaigns) {
                             <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
                                 <span class="badge badge-<?= $row['status'] === 'active' ? 'success' : 'warning' ?>" style="font-size: 11px; padding: 4px 8px; font-weight: 500;"><?= strtoupper($row['status']) ?></span>
                                 <?php if ($isAutoDetect): ?>
-                                    <span style="color: #558b2f; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; font-weight: 500;">
+                                    <span style="color: var(--accent-hover); font-size: 12px; display: inline-flex; align-items: center; gap: 4px; font-weight: 500;">
                                         <img src="<?= ASSETS_BASE_URL ?>/assets/images/autodetectbear.png" alt="Auto" style="width: 16px; height: 16px;"> Auto
                                     </span>
                                 <?php else: ?>
@@ -599,7 +613,7 @@ foreach ($groupedCampaigns as $groupName => $campaigns) {
                         </div>
                         
                         <!-- Key Metrics - Highlighted -->
-                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: var(--spacing-md); padding: 8px 4px; background: <?= $cRoi >= 0 ? 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)' : 'linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%)' ?>; border-radius: var(--radius-sm); border: 2px solid <?= $cRoi >= 0 ? '#4caf50' : '#f44336' ?>;">
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: var(--spacing-md); padding: 8px 4px; background: <?= $cRoi >= 0 ? 'linear-gradient(135deg, var(--accent-soft) 0%, var(--accent-soft) 100%)' : 'linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%)' ?>; border-radius: var(--radius-sm); border: 2px solid <?= $cRoi >= 0 ? 'var(--accent)' : '#f44336' ?>;">
                             <div style="text-align: center;">
                                 <div style="font-size: 10px; color: #555; margin-bottom: 3px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Revenue</div>
                                 <div style="font-size: 22px; color: #28a745; font-weight: 700; line-height: 1.1;"><?= Formatter::formatCurrency($cRevenue, $userCurrency) ?></div>
@@ -652,7 +666,7 @@ foreach ($groupedCampaigns as $groupName => $campaigns) {
                         
                         <!-- Action Buttons -->
                         <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: var(--spacing-md); padding-top: var(--spacing-md); border-top: 1px solid var(--color-gray-200);">
-                            <a href="?page=campaign-stats&campaign_id=<?= $row['id'] ?>" style="flex: 1 1 calc(33.333% - 6px); min-width: calc(33.333% - 6px); padding: 12px 10px; font-size: 13px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; text-decoration: none; color: #666; display: inline-flex; align-items: center; justify-content: center; touch-action: manipulation; -webkit-tap-highlight-color: transparent; font-weight: 500; transition: all 0.2s;" onmouseover="this.style.background='#f0f0f0'; this.style.borderColor='#4caf50'; this.style.color='#4caf50';" onmouseout="this.style.background='#fff'; this.style.borderColor='#ddd'; this.style.color='#666';">
+                            <a href="?page=campaign-stats&campaign_id=<?= $row['id'] ?>" style="flex: 1 1 calc(33.333% - 6px); min-width: calc(33.333% - 6px); padding: 12px 10px; font-size: 13px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; text-decoration: none; color: #666; display: inline-flex; align-items: center; justify-content: center; touch-action: manipulation; -webkit-tap-highlight-color: transparent; font-weight: 500; transition: all 0.2s;" onmouseover="this.style.background='#f0f0f0'; this.style.borderColor='var(--accent)'; this.style.color='var(--accent)';" onmouseout="this.style.background='#fff'; this.style.borderColor='#ddd'; this.style.color='#666';">
                                 📊 Stats
                             </a>
                             <a href="?page=campaign-list&action=edit&id=<?= $row['id'] ?>" style="flex: 1 1 calc(50% - 6px); min-width: calc(50% - 6px); padding: 12px 10px; font-size: 13px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; text-decoration: none; color: #666; display: inline-flex; align-items: center; justify-content: center; touch-action: manipulation; -webkit-tap-highlight-color: transparent; font-weight: 500; transition: all 0.2s;" onmouseover="this.style.background='#fff3e0'; this.style.borderColor='#ff9800'; this.style.color='#ff9800';" onmouseout="this.style.background='#fff'; this.style.borderColor='#ddd'; this.style.color='#666';">

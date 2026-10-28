@@ -4122,7 +4122,7 @@ unset($camp);
 <style>
 /* Earthy green theme for stats page - matching Kuma style */
 .campaign-stats-page {
-    background: #f5f1e8;
+    background: var(--color-cream);
     min-height: 100vh;
     padding: 20px;
     color: #2c3e2d;
@@ -4160,7 +4160,7 @@ unset($camp);
     width: 50px;
     height: 50px;
     border: 4px solid #f3f3f3;
-    border-top: 4px solid #3d5a26;
+    border-top: 4px solid var(--accent);
     border-radius: 50%;
     animation: spin 1s linear infinite;
     margin-bottom: 20px;
@@ -4192,12 +4192,12 @@ unset($camp);
 }
 
 .stats-table th {
-    background: linear-gradient(135deg, #3d5a26 0%, #5a7a3a 100%);
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-muted) 100%);
     color: #ffffff;
     padding: 12px;
     text-align: left;
     font-weight: 600;
-    border-bottom: 2px solid #3d5a26;
+    border-bottom: 2px solid var(--accent);
 }
 
 .stats-table .sortable-col {
@@ -4222,7 +4222,7 @@ unset($camp);
 
 .stats-table tbody tr:hover {
     background: #f0f7ed !important;
-    box-shadow: 0 0 12px rgba(61, 90, 38, 0.15), inset 0 0 0 1px rgba(61, 90, 38, 0.1);
+    box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 15%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
     transform: translateY(-1px);
     cursor: pointer;
 }
@@ -4251,8 +4251,8 @@ unset($camp);
 .stats-filter-panel input[type="date"]:focus,
 .stats-filter-panel input[type="text"]:focus {
     outline: none;
-    border-color: #4caf50;
-    box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .stats-filter-panel select:disabled {
@@ -4266,7 +4266,7 @@ unset($camp);
     display: block;
     margin-bottom: 6px;
     font-weight: 600;
-    color: #3d5a26;
+    color: var(--accent);
     font-size: 11px;
     line-height: 1.3;
     letter-spacing: 0.3px;
@@ -4305,7 +4305,7 @@ unset($camp);
 .filter-field label {
     font-size: 11px;
     font-weight: 600;
-    color: #3d5a26;
+    color: var(--accent);
     margin: 0;
     line-height: 1.2;
     letter-spacing: 0.5px;
@@ -4371,7 +4371,7 @@ unset($camp);
 .campaign-edit-btn {
     flex-shrink: 0;
     padding: 0;
-    background: #3d5a26;
+    background: var(--accent);
     border-radius: 6px;
     color: #ffffff;
     text-decoration: none;
@@ -4383,15 +4383,15 @@ unset($camp);
     justify-content: center;
     height: 40px;
     width: 48px;
-    box-shadow: 0 2px 4px rgba(61, 90, 38, 0.15);
+    box-shadow: 0 2px 4px color-mix(in srgb, var(--accent) 15%, transparent);
     margin: 0;
     vertical-align: middle;
 }
 
 .campaign-edit-btn:hover {
-    background: #5a7a3a;
+    background: var(--accent-muted);
     transform: translateY(-1px);
-    box-shadow: 0 3px 6px rgba(61, 90, 38, 0.25);
+    box-shadow: 0 3px 6px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 /* Apply button - left-aligned, under everything, tighter spacing */
@@ -4407,7 +4407,7 @@ unset($camp);
 
 .apply-button-wrapper button {
     padding: 12px 36px;
-    background: linear-gradient(135deg, #3d5a26 0%, #5a7a3a 100%);
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-muted) 100%);
     border: none;
     border-radius: 8px;
     color: #ffffff;
@@ -4417,14 +4417,14 @@ unset($camp);
     transition: all 0.2s;
     white-space: nowrap;
     width: 100%;
-    box-shadow: 0 3px 6px rgba(61, 90, 38, 0.2);
+    box-shadow: 0 3px 6px color-mix(in srgb, var(--accent) 20%, transparent);
     letter-spacing: 0.5px;
 }
 
 .apply-button-wrapper button:hover {
     transform: translateY(-2px);
-    box-shadow: 0 5px 12px rgba(61, 90, 38, 0.3);
-    background: linear-gradient(135deg, #5a7a3a 0%, #6a8a4a 100%);
+    box-shadow: 0 5px 12px color-mix(in srgb, var(--accent) 30%, transparent);
+    background: linear-gradient(135deg, var(--accent-muted) 0%, var(--accent-muted) 100%);
 }
 
 .apply-button-wrapper button:active {
@@ -4481,7 +4481,7 @@ unset($camp);
 
 <div class="campaign-stats-page">
     <div class="page-header" style="margin-bottom: 16px;">
-        <h1 class="page-title" style="color: #3d5a26; font-size: 24px; font-weight: 700; margin: 0 0 4px 0;">
+        <h1 class="page-title" style="color: var(--accent); font-size: 24px; font-weight: 700; margin: 0 0 4px 0;">
             Campaign Stats
         </h1>
         <p style="color: #666; margin: 0; font-size: 13px;">Advanced performance analytics and reporting</p>
@@ -4609,35 +4609,35 @@ unset($camp);
                     <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
                         <label style="font-size: 13px; font-weight: 600; color: #666; display: flex; align-items: center; margin-right: 4px;">Presets:</label>
                         <button type="button" onclick="setStatsDateRange('today')" 
-                                style="padding: 6px 12px; background: <?= $activePreset === 'today' ? '#3d5a26' : '#fff' ?>; color: <?= $activePreset === 'today' ? '#fff' : '#666' ?>; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap;">
+                                style="padding: 6px 12px; background: <?= $activePreset === 'today' ? 'var(--accent)' : '#fff' ?>; color: <?= $activePreset === 'today' ? '#fff' : '#666' ?>; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap;">
                             Today
                         </button>
                         <button type="button" onclick="setStatsDateRange('yesterday')" 
-                                style="padding: 6px 12px; background: <?= $activePreset === 'yesterday' ? '#3d5a26' : '#fff' ?>; color: <?= $activePreset === 'yesterday' ? '#fff' : '#666' ?>; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap;">
+                                style="padding: 6px 12px; background: <?= $activePreset === 'yesterday' ? 'var(--accent)' : '#fff' ?>; color: <?= $activePreset === 'yesterday' ? '#fff' : '#666' ?>; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap;">
                             Yesterday
                         </button>
                         <button type="button" onclick="setStatsDateRange('last7')" 
-                                style="padding: 6px 12px; background: <?= $activePreset === 'last7' ? '#3d5a26' : '#fff' ?>; color: <?= $activePreset === 'last7' ? '#fff' : '#666' ?>; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap;">
+                                style="padding: 6px 12px; background: <?= $activePreset === 'last7' ? 'var(--accent)' : '#fff' ?>; color: <?= $activePreset === 'last7' ? '#fff' : '#666' ?>; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap;">
                             Last 7 Days
                         </button>
                         <button type="button" onclick="setStatsDateRange('last14')" 
-                                style="padding: 6px 12px; background: <?= $activePreset === 'last14' ? '#3d5a26' : '#fff' ?>; color: <?= $activePreset === 'last14' ? '#fff' : '#666' ?>; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap;">
+                                style="padding: 6px 12px; background: <?= $activePreset === 'last14' ? 'var(--accent)' : '#fff' ?>; color: <?= $activePreset === 'last14' ? '#fff' : '#666' ?>; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap;">
                             Last 14 Days
                         </button>
                         <button type="button" onclick="setStatsDateRange('last30')" 
-                                style="padding: 6px 12px; background: <?= $activePreset === 'last30' ? '#3d5a26' : '#fff' ?>; color: <?= $activePreset === 'last30' ? '#fff' : '#666' ?>; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap;">
+                                style="padding: 6px 12px; background: <?= $activePreset === 'last30' ? 'var(--accent)' : '#fff' ?>; color: <?= $activePreset === 'last30' ? '#fff' : '#666' ?>; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap;">
                             Last 30 Days
                         </button>
                         <button type="button" onclick="setStatsDateRange('lastmonth')" 
-                                style="padding: 6px 12px; background: <?= $activePreset === 'lastmonth' ? '#3d5a26' : '#fff' ?>; color: <?= $activePreset === 'lastmonth' ? '#fff' : '#666' ?>; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap;">
+                                style="padding: 6px 12px; background: <?= $activePreset === 'lastmonth' ? 'var(--accent)' : '#fff' ?>; color: <?= $activePreset === 'lastmonth' ? '#fff' : '#666' ?>; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap;">
                             Last Month
                         </button>
                         <button type="button" onclick="setStatsDateRange('thismonth')" 
-                                style="padding: 6px 12px; background: <?= $activePreset === 'thismonth' ? '#3d5a26' : '#fff' ?>; color: <?= $activePreset === 'thismonth' ? '#fff' : '#666' ?>; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap;">
+                                style="padding: 6px 12px; background: <?= $activePreset === 'thismonth' ? 'var(--accent)' : '#fff' ?>; color: <?= $activePreset === 'thismonth' ? '#fff' : '#666' ?>; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap;">
                             This Month
                         </button>
                         <button type="button" onclick="setStatsDateRange('alltime')" 
-                                style="padding: 6px 12px; background: <?= $activePreset === 'alltime' ? '#3d5a26' : '#fff' ?>; color: <?= $activePreset === 'alltime' ? '#fff' : '#666' ?>; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap;">
+                                style="padding: 6px 12px; background: <?= $activePreset === 'alltime' ? 'var(--accent)' : '#fff' ?>; color: <?= $activePreset === 'alltime' ? '#fff' : '#666' ?>; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; cursor: pointer; white-space: nowrap;">
                             ALL TIME
                         </button>
                     </div>
@@ -4688,7 +4688,7 @@ unset($camp);
                         Filter by Traffic Source
                     </label>
                     <select name="traffic_source_id" id="traffic-source-select" onchange="this.form.submit()" 
-                            style="width: 100%; padding: 10px; border: 2px solid #3d5a26; border-radius: 4px; font-size: 14px; background: #fff;"
+                            style="width: 100%; padding: 10px; border: 2px solid var(--accent); border-radius: 4px; font-size: 14px; background: #fff;"
                             <?= empty($detectedTrafficSources) ? 'disabled' : '' ?>>
                         <option value="">All Traffic Sources</option>
                         <?php if (!empty($detectedTrafficSources)): ?>
@@ -4912,7 +4912,7 @@ unset($camp);
 
     <!-- Performance Chart -->
     <div class="chart-container" style="margin-top: 20px;">
-        <h3 style="margin-top: 0; color: #3d5a26; font-size: 18px; font-weight: 600; margin-bottom: 16px;">
+        <h3 style="margin-top: 0; color: var(--accent); font-size: 18px; font-weight: 600; margin-bottom: 16px;">
             Performance Chart
         </h3>
         <div style="position: relative; height: 400px;">
@@ -4936,7 +4936,7 @@ unset($camp);
     
     <!-- Offer Performance Table -->
     <div class="stats-table-container">
-        <h3 style="margin-top: 0; color: #3d5a26; font-size: 18px; font-weight: 600; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; color: var(--accent); font-size: 18px; font-weight: 600; margin-bottom: 20px;">
             Offer Performance<?= ($viewMode === 'target' && !empty($selectedTokens)) ? ' - ' . htmlspecialchars(implode(' → ', $selectedTokenNames)) : '' ?>
         </h3>
         <p style="color: #666; margin-bottom: 16px; font-size: 14px;">
@@ -4950,7 +4950,7 @@ unset($camp);
         <!-- Traffic Source Header Banner (if traffic source selected) -->
         <?php if ($selectedTrafficSourceId && $selectedTrafficSourceName): ?>
             <?php $trafficSourceIcon = $getTrafficSourceIcon($selectedTrafficSourceName); ?>
-            <div style="background: linear-gradient(135deg, #3d5a26 0%, #5a7a3a 100%); color: #ffffff; padding: 28px 32px; border-radius: 12px; margin: 20px 0 24px 0; box-shadow: 0 4px 12px rgba(61, 90, 38, 0.2); text-align: center;">
+            <div style="background: linear-gradient(135deg, var(--accent) 0%, var(--accent-muted) 100%); color: #ffffff; padding: 28px 32px; border-radius: 12px; margin: 20px 0 24px 0; box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 20%, transparent); text-align: center;">
                 <h2 style="margin: 0; font-size: 32px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap;">
                     <?php if ($trafficSourceIcon): ?>
                         <img src="<?= htmlspecialchars($trafficSourceIcon) ?>" alt="<?= htmlspecialchars($selectedTrafficSourceName) ?>" style="width: 48px; height: 48px; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));">
@@ -5504,10 +5504,10 @@ unset($camp);
                                                     
                                                     $tokenName = $tokenValue;
                                                     ?>
-                                                    <tr data-block-id="offer-<?= $offerId ?>" data-sort-offer_name="<?= htmlspecialchars($tokenName) ?>" data-sort-visitors="<?= (int)$tokenVisitors ?>" data-sort-cost="<?= (float)$tokenCost ?>" data-sort-cpc="<?= (float)$tokenCpc ?>" data-sort-lp_clicks="<?= (int)$tokenLpClicks ?>" data-sort-conversions="<?= (int)$tokenConversions ?>" data-sort-cr="<?= (float)$tokenCr ?>" data-sort-cpa="<?= (float)$tokenCpa ?>" data-sort-revenue="<?= (float)$tokenRevenue ?>" data-sort-pl="<?= (float)$tokenPl ?>" data-sort-roi="<?= (float)$tokenRoi ?>" style="background: #f8f9fa; border-left: 3px solid #3d5a26;">
+                                                    <tr data-block-id="offer-<?= $offerId ?>" data-sort-offer_name="<?= htmlspecialchars($tokenName) ?>" data-sort-visitors="<?= (int)$tokenVisitors ?>" data-sort-cost="<?= (float)$tokenCost ?>" data-sort-cpc="<?= (float)$tokenCpc ?>" data-sort-lp_clicks="<?= (int)$tokenLpClicks ?>" data-sort-conversions="<?= (int)$tokenConversions ?>" data-sort-cr="<?= (float)$tokenCr ?>" data-sort-cpa="<?= (float)$tokenCpa ?>" data-sort-revenue="<?= (float)$tokenRevenue ?>" data-sort-pl="<?= (float)$tokenPl ?>" data-sort-roi="<?= (float)$tokenRoi ?>" style="background: #f8f9fa; border-left: 3px solid var(--accent);">
                                                         <td style="padding-left: <?= $indent + 30 ?>px;">
-                                                            <span style="color: #5a7a3a; font-size: 13px;"><?= $prefix ?></span>
-                                                            <strong style="color: #5a7a3a; font-size: 13px;"><?= htmlspecialchars($tokenName) ?></strong>
+                                                            <span style="color: var(--accent-muted); font-size: 13px;"><?= $prefix ?></span>
+                                                            <strong style="color: var(--accent-muted); font-size: 13px;"><?= htmlspecialchars($tokenName) ?></strong>
                                                         </td>
                                                         <td><?= number_format($tokenVisitors) ?></td>
                                                         <td><?= Formatter::formatCurrency($tokenCost, $userCurrency) ?></td>
@@ -5807,10 +5807,10 @@ unset($camp);
                                                         $tokenName = ($selectedTokenNames[$level] ?? '') . ': ' . $tokenValue;
                                                     }
                                                     ?>
-                                                    <tr data-block-id="offer-<?= $offerId ?>" data-sort-offer_name="<?= htmlspecialchars($tokenName) ?>" data-sort-visitors="<?= (int)$tokenVisitors ?>" data-sort-cost="<?= (float)$tokenCost ?>" data-sort-cpc="<?= (float)$tokenCpc ?>" data-sort-lp_clicks="<?= (int)$tokenLpClicks ?>" data-sort-conversions="<?= (int)$tokenConversions ?>" data-sort-cr="<?= (float)$tokenCr ?>" data-sort-cpa="<?= (float)$tokenCpa ?>" data-sort-revenue="<?= (float)$tokenRevenue ?>" data-sort-pl="<?= (float)$tokenPl ?>" data-sort-roi="<?= (float)$tokenRoi ?>" style="background: #f8f9fa; border-left: 3px solid #3d5a26;">
+                                                    <tr data-block-id="offer-<?= $offerId ?>" data-sort-offer_name="<?= htmlspecialchars($tokenName) ?>" data-sort-visitors="<?= (int)$tokenVisitors ?>" data-sort-cost="<?= (float)$tokenCost ?>" data-sort-cpc="<?= (float)$tokenCpc ?>" data-sort-lp_clicks="<?= (int)$tokenLpClicks ?>" data-sort-conversions="<?= (int)$tokenConversions ?>" data-sort-cr="<?= (float)$tokenCr ?>" data-sort-cpa="<?= (float)$tokenCpa ?>" data-sort-revenue="<?= (float)$tokenRevenue ?>" data-sort-pl="<?= (float)$tokenPl ?>" data-sort-roi="<?= (float)$tokenRoi ?>" style="background: #f8f9fa; border-left: 3px solid var(--accent);">
                                                         <td style="padding-left: <?= $indent + 30 ?>px;">
-                                                            <span style="color: #5a7a3a; font-size: 13px;"><?= $prefix ?></span>
-                                                            <strong style="color: #5a7a3a; font-size: 13px;"><?= htmlspecialchars($tokenName) ?></strong>
+                                                            <span style="color: var(--accent-muted); font-size: 13px;"><?= $prefix ?></span>
+                                                            <strong style="color: var(--accent-muted); font-size: 13px;"><?= htmlspecialchars($tokenName) ?></strong>
                                                         </td>
                                                         <td><?= number_format($tokenVisitors) ?></td>
                                                         <td><?= Formatter::formatCurrency($tokenCost, $userCurrency) ?></td>
@@ -5876,7 +5876,7 @@ unset($camp);
                 $mobileTotalPl = $totalRevenue - $totalCost;
                 $mobileTotalRoi = $totalCost > 0 ? (($mobileTotalPl / $totalCost) * 100) : 0;
                 ?>
-                <div class="mobile-offer-performance-card" style="background: #e8f0e8; border-left: 4px solid #3d5a26;">
+                <div class="mobile-offer-performance-card" style="background: #e8f0e8; border-left: 4px solid var(--accent);">
                     <div class="offer-name" style="font-weight: 700;">Total</div>
                     <div class="offer-stats">
                         <div class="offer-stat"><span class="offer-stat-label">Visitors</span><span class="offer-stat-value"><?= number_format($totalVisitors) ?></span></div>
@@ -6177,7 +6177,7 @@ unset($camp);
 
     <!-- Landing Page Performance Table -->
     <div class="stats-table-container">
-        <h3 style="margin-top: 0; color: #3d5a26; font-size: 18px; font-weight: 600; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; color: var(--accent); font-size: 18px; font-weight: 600; margin-bottom: 20px;">
             Landing Page Performance<?= ($viewMode === 'target' && !empty($selectedTokens)) ? ' - ' . htmlspecialchars(implode(' → ', $selectedTokenNames)) : '' ?>
         </h3>
         <p style="color: #666; margin-bottom: 16px; font-size: 14px;">
@@ -6191,7 +6191,7 @@ unset($camp);
         <!-- Traffic Source Header Banner (if traffic source selected) -->
         <?php if ($selectedTrafficSourceId && $selectedTrafficSourceName): ?>
             <?php $trafficSourceIcon = $getTrafficSourceIcon($selectedTrafficSourceName); ?>
-            <div style="background: linear-gradient(135deg, #3d5a26 0%, #5a7a3a 100%); color: #ffffff; padding: 28px 32px; border-radius: 12px; margin: 20px 0 24px 0; box-shadow: 0 4px 12px rgba(61, 90, 38, 0.2); text-align: center;">
+            <div style="background: linear-gradient(135deg, var(--accent) 0%, var(--accent-muted) 100%); color: #ffffff; padding: 28px 32px; border-radius: 12px; margin: 20px 0 24px 0; box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 20%, transparent); text-align: center;">
                 <h2 style="margin: 0; font-size: 32px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap;">
                     <?php if ($trafficSourceIcon): ?>
                         <img src="<?= htmlspecialchars($trafficSourceIcon) ?>" alt="<?= htmlspecialchars($selectedTrafficSourceName) ?>" style="width: 48px; height: 48px; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));">
@@ -6279,7 +6279,7 @@ unset($camp);
                                            target="_blank" 
                                            rel="noopener noreferrer"
                                            title="View landing page"
-                                           style="color: #3d5a26; text-decoration: none; font-size: 16px; display: inline-flex; align-items: center; transition: opacity 0.2s;"
+                                           style="color: var(--accent); text-decoration: none; font-size: 16px; display: inline-flex; align-items: center; transition: opacity 0.2s;"
                                            onmouseover="this.style.opacity='0.7'"
                                            onmouseout="this.style.opacity='1'">
                                             👁️
@@ -6311,10 +6311,10 @@ unset($camp);
                                 $oCr = $oLpClicks > 0 ? ($oConversions / $oLpClicks) * 100 : 0;
                                 $oEpc = $oLpClicks > 0 ? ($oRevenue / $oLpClicks) : 0;
                                 ?>
-                                <tr data-block-id="lp-<?= $lpId ?>" class="lp-offer-breakdown-row" style="background: #f8f9fa; border-left: 3px solid #3d5a26;">
+                                <tr data-block-id="lp-<?= $lpId ?>" class="lp-offer-breakdown-row" style="background: #f8f9fa; border-left: 3px solid var(--accent);">
                                     <td style="padding-left: 30px;">
-                                        <span style="color: #5a7a3a; font-size: 13px;">└─ </span>
-                                        <span style="color: #5a7a3a; font-size: 13px;"><?= htmlspecialchars($offerData['offer_name']) ?>: <?= number_format($oLpClicks) ?> LP Clicks</span>
+                                        <span style="color: var(--accent-muted); font-size: 13px;">└─ </span>
+                                        <span style="color: var(--accent-muted); font-size: 13px;"><?= htmlspecialchars($offerData['offer_name']) ?>: <?= number_format($oLpClicks) ?> LP Clicks</span>
                                     </td>
                                     <td><?= number_format($oVisitors) ?></td>
                                     <td><?= Formatter::formatCurrency($oCost, $userCurrency) ?></td>
@@ -6392,10 +6392,10 @@ unset($camp);
                                         // Get token name for display
                                         $tokenName = $tokenValue;
                                         ?>
-                                        <tr data-block-id="lp-<?= $lpId ?>" data-sort-lp_name="<?= htmlspecialchars($tokenName) ?>" data-sort-visitors="<?= (int)$tokenVisitors ?>" data-sort-cost="<?= (float)$tokenCost ?>" data-sort-lp_clicks="<?= (int)$tokenLpClicks ?>" data-sort-lp_ctr="<?= (float)$tokenLpCtr ?>" data-sort-conversions="<?= (int)$tokenConversions ?>" data-sort-cr="<?= (float)$tokenCr ?>" data-sort-revenue="<?= (float)$tokenRevenue ?>" data-sort-epc="<?= (float)$tokenEpc ?>" style="background: #f8f9fa; border-left: 3px solid #3d5a26;">
+                                        <tr data-block-id="lp-<?= $lpId ?>" data-sort-lp_name="<?= htmlspecialchars($tokenName) ?>" data-sort-visitors="<?= (int)$tokenVisitors ?>" data-sort-cost="<?= (float)$tokenCost ?>" data-sort-lp_clicks="<?= (int)$tokenLpClicks ?>" data-sort-lp_ctr="<?= (float)$tokenLpCtr ?>" data-sort-conversions="<?= (int)$tokenConversions ?>" data-sort-cr="<?= (float)$tokenCr ?>" data-sort-revenue="<?= (float)$tokenRevenue ?>" data-sort-epc="<?= (float)$tokenEpc ?>" style="background: #f8f9fa; border-left: 3px solid var(--accent);">
                                             <td style="padding-left: <?= $indent + 30 ?>px;">
-                                                <span style="color: #5a7a3a; font-size: 13px;"><?= $prefix ?></span>
-                                                <strong style="color: #5a7a3a; font-size: 13px;"><?= htmlspecialchars($tokenName) ?></strong>
+                                                <span style="color: var(--accent-muted); font-size: 13px;"><?= $prefix ?></span>
+                                                <strong style="color: var(--accent-muted); font-size: 13px;"><?= htmlspecialchars($tokenName) ?></strong>
                                             </td>
                                             <td><?= number_format($tokenVisitors) ?></td>
                                             <td><?= Formatter::formatCurrency($tokenCost, $userCurrency) ?></td>
@@ -6431,10 +6431,10 @@ unset($camp);
                                             $tokenName = ($selectedTokenNames[$level] ?? '') . ': ' . $tokenValue;
                                         }
                                         ?>
-                                        <tr data-block-id="lp-<?= $lpId ?>" data-sort-lp_name="<?= htmlspecialchars($tokenName) ?>" data-sort-visitors="<?= (int)$tokenVisitors ?>" data-sort-cost="<?= (float)$tokenCost ?>" data-sort-lp_clicks="<?= (int)$tokenLpClicks ?>" data-sort-lp_ctr="<?= (float)$tokenLpCtr ?>" data-sort-conversions="<?= (int)$tokenConversions ?>" data-sort-cr="<?= (float)$tokenCr ?>" data-sort-revenue="<?= (float)$tokenRevenue ?>" data-sort-epc="<?= (float)$tokenEpc ?>" style="background: #f8f9fa; border-left: 3px solid #3d5a26;">
+                                        <tr data-block-id="lp-<?= $lpId ?>" data-sort-lp_name="<?= htmlspecialchars($tokenName) ?>" data-sort-visitors="<?= (int)$tokenVisitors ?>" data-sort-cost="<?= (float)$tokenCost ?>" data-sort-lp_clicks="<?= (int)$tokenLpClicks ?>" data-sort-lp_ctr="<?= (float)$tokenLpCtr ?>" data-sort-conversions="<?= (int)$tokenConversions ?>" data-sort-cr="<?= (float)$tokenCr ?>" data-sort-revenue="<?= (float)$tokenRevenue ?>" data-sort-epc="<?= (float)$tokenEpc ?>" style="background: #f8f9fa; border-left: 3px solid var(--accent);">
                                             <td style="padding-left: <?= $indent + 30 ?>px;">
-                                                <span style="color: #5a7a3a; font-size: 13px;"><?= $prefix ?></span>
-                                                <strong style="color: #5a7a3a; font-size: 13px;"><?= htmlspecialchars($tokenName) ?></strong>
+                                                <span style="color: var(--accent-muted); font-size: 13px;"><?= $prefix ?></span>
+                                                <strong style="color: var(--accent-muted); font-size: 13px;"><?= htmlspecialchars($tokenName) ?></strong>
                                             </td>
                                             <td><?= number_format($tokenVisitors) ?></td>
                                             <td><?= Formatter::formatCurrency($tokenCost, $userCurrency) ?></td>
@@ -6489,7 +6489,7 @@ unset($camp);
                                    target="_blank" 
                                    rel="noopener noreferrer"
                                    title="View landing page"
-                                   style="color: #3d5a26; text-decoration: none; font-size: 16px; display: inline-flex; align-items: center; transition: opacity 0.2s;"
+                                   style="color: var(--accent); text-decoration: none; font-size: 16px; display: inline-flex; align-items: center; transition: opacity 0.2s;"
                                    onmouseover="this.style.opacity='0.7'"
                                    onmouseout="this.style.opacity='1'">
                                     👁️
@@ -6533,7 +6533,7 @@ unset($camp);
                         <?php if ($showLpOfferBreakdown && !empty($lpOfferBreakdown[$lpId])): ?>
                             <div class="mobile-lp-offer-breakdown" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e0e0e0;">
                                 <?php foreach ($lpOfferBreakdown[$lpId] as $offerData): ?>
-                                    <div class="mobile-offer-breakdown-item" style="font-size: 13px; color: #5a7a3a; margin-bottom: 6px;">
+                                    <div class="mobile-offer-breakdown-item" style="font-size: 13px; color: var(--accent-muted); margin-bottom: 6px;">
                                         └─ <?= htmlspecialchars($offerData['offer_name']) ?>: <?= number_format((int)($offerData['lp_clicks'] ?? 0)) ?> LP Clicks
                                     </div>
                                 <?php endforeach; ?>
@@ -6697,14 +6697,14 @@ unset($camp);
     <!-- Campaign Performance Table -->
     <?php if ($viewMode === 'standard'): ?>
     <div class="stats-table-container">
-        <h3 style="margin-top: 0; color: #3d5a26; font-size: 18px; font-weight: 600; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; color: var(--accent); font-size: 18px; font-weight: 600; margin-bottom: 20px;">
             Campaign Performance
         </h3>
         
         <!-- Traffic Source Header Banner (if traffic source selected) -->
         <?php if ($selectedTrafficSourceId && $selectedTrafficSourceName): ?>
             <?php $trafficSourceIcon = $getTrafficSourceIcon($selectedTrafficSourceName); ?>
-            <div style="background: linear-gradient(135deg, #3d5a26 0%, #5a7a3a 100%); color: #ffffff; padding: 28px 32px; border-radius: 12px; margin: 0 0 24px 0; box-shadow: 0 4px 12px rgba(61, 90, 38, 0.2); text-align: center;">
+            <div style="background: linear-gradient(135deg, var(--accent) 0%, var(--accent-muted) 100%); color: #ffffff; padding: 28px 32px; border-radius: 12px; margin: 0 0 24px 0; box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 20%, transparent); text-align: center;">
                 <h2 style="margin: 0; font-size: 32px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap;">
                     <?php if ($trafficSourceIcon): ?>
                         <img src="<?= htmlspecialchars($trafficSourceIcon) ?>" alt="<?= htmlspecialchars($selectedTrafficSourceName) ?>" style="width: 48px; height: 48px; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));">
@@ -6944,7 +6944,7 @@ unset($camp);
             <div style="display: flex; gap: 8px;">
                 <?php if ($page > 1): ?>
                     <button type="submit" name="page" value="<?= $page - 1 ?>" 
-                            style="padding: 6px 12px; background: #fff; border: 1px solid #d4d4d4; border-radius: 4px; cursor: pointer; color: #3d5a26;"
+                            style="padding: 6px 12px; background: #fff; border: 1px solid #d4d4d4; border-radius: 4px; cursor: pointer; color: var(--accent);"
                             onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='#fff'">
                         Previous
                     </button>
@@ -6952,12 +6952,12 @@ unset($camp);
                 
                 <?php for ($p = max(1, $page - 2); $p <= min($totalPages, $page + 2); $p++): ?>
                     <?php if ($p == $page): ?>
-                        <span style="padding: 6px 12px; background: #3d5a26; color: #fff; border-radius: 4px; font-weight: 600;">
+                        <span style="padding: 6px 12px; background: var(--accent); color: #fff; border-radius: 4px; font-weight: 600;">
                             <?= $p ?>
                         </span>
                     <?php else: ?>
                         <button type="submit" name="page" value="<?= $p ?>" 
-                                style="padding: 6px 12px; background: #fff; border: 1px solid #d4d4d4; border-radius: 4px; cursor: pointer; color: #3d5a26;"
+                                style="padding: 6px 12px; background: #fff; border: 1px solid #d4d4d4; border-radius: 4px; cursor: pointer; color: var(--accent);"
                                 onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='#fff'">
                             <?= $p ?>
                         </button>
@@ -6966,7 +6966,7 @@ unset($camp);
                 
                 <?php if ($page < $totalPages): ?>
                     <button type="submit" name="page" value="<?= $page + 1 ?>" 
-                            style="padding: 6px 12px; background: #fff; border: 1px solid #d4d4d4; border-radius: 4px; cursor: pointer; color: #3d5a26;"
+                            style="padding: 6px 12px; background: #fff; border: 1px solid #d4d4d4; border-radius: 4px; cursor: pointer; color: var(--accent);"
                             onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='#fff'">
                         Next
                     </button>
@@ -7351,8 +7351,8 @@ document.addEventListener('DOMContentLoaded', function() {
             {
                 label: 'Visitors',
                 data: visitorsData,
-                borderColor: '#3d5a26',
-                backgroundColor: 'rgba(61, 90, 38, 0.1)',
+                borderColor: 'var(--accent)',
+                backgroundColor: 'color-mix(in srgb, var(--accent) 10%, transparent)',
                 borderWidth: 2,
                 fill: false,
                 tension: 0.4
@@ -7465,7 +7465,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     padding: 12,
                     titleColor: '#fff',
                     bodyColor: '#fff',
-                    borderColor: '#3d5a26',
+                    borderColor: 'var(--accent)',
                     borderWidth: 1
                 }
             },
@@ -7585,7 +7585,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             loadingContainer.innerHTML = '<div style="color: #dc3545; padding: 20px; text-align: center; background: #ffebee; border-radius: 8px; margin: 20px;">' + 
                 errorMsg + 
-                '<br><button onclick="window.location.reload()" style="margin-top: 10px; padding: 8px 16px; background: #3d5a26; color: white; border: none; border-radius: 4px; cursor: pointer;">Retry</button></div>';
+                '<br><button onclick="window.location.reload()" style="margin-top: 10px; padding: 8px 16px; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer;">Retry</button></div>';
         });
     } else {
         console.log('Stats page loaded - data calculated synchronously (useAjaxLoading=false)');

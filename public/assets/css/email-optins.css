@@ -28,7 +28,7 @@
 .email-optin-card__header h2 {
     margin: 0;
     font-size: 20px;
-    color: var(--color-forest, #3d5a26);
+    color: var(--color-forest, var(--accent));
 }
 
 .email-optin-card__body {
@@ -82,8 +82,8 @@
 }
 
 .email-optins-page .visitor-date-preset.is-active {
-    background: #3d5a26;
-    border-color: #3d5a26;
+    background: var(--accent);
+    border-color: var(--accent);
     color: #fff;
 }
 
@@ -162,13 +162,13 @@
 }
 
 .email-optins-kpi__icon--optins {
-    background: rgba(61, 90, 38, 0.16);
-    color: #3d5a26;
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: var(--accent);
 }
 
 .email-optins-kpi__icon--rate {
     background: rgba(67, 160, 71, 0.16);
-    color: #43a047;
+    color: var(--accent);
 }
 
 .email-optins-kpi__icon--cost {
@@ -222,7 +222,7 @@
     margin-top: 3px;
     border-radius: 2px;
     flex-shrink: 0;
-    background: var(--color-forest, #3d5a26);
+    background: var(--color-forest, var(--accent));
 }
 
 .email-optins-chart {
@@ -310,7 +310,7 @@
 .email-optins-bars__bar {
     width: 100%;
     border-radius: 3px 3px 0 0;
-    background: var(--color-forest, #3d5a26);
+    background: var(--color-forest, var(--accent));
 }
 
 .email-optins-bars__bar:not(.is-empty) {
@@ -344,7 +344,7 @@
 .email-optins-rate__track {
     height: 6px;
     border-radius: 999px;
-    background: rgba(61, 90, 38, 0.12);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
     overflow: hidden;
 }
 
@@ -352,7 +352,7 @@
     display: block;
     height: 100%;
     border-radius: 999px;
-    background: var(--color-forest, #3d5a26);
+    background: var(--color-forest, var(--accent));
 }
 
 @media (max-width: 700px) {
@@ -386,8 +386,8 @@
 }
 
 [data-theme-base="dark"] .email-optins-page .visitor-date-preset.is-active {
-    background: var(--color-forest, #3d5a26);
-    border-color: var(--color-forest, #3d5a26);
+    background: var(--color-forest, var(--accent));
+    border-color: var(--color-forest, var(--accent));
     color: #fff;
 }
 
@@ -395,7 +395,7 @@
 [data-theme-base="dark"] .email-optins-filter-form select {
     background: var(--input-bg, #2a3139);
     border-color: var(--input-border, #4a5560);
-    color: var(--input-text, #f5f1e8);
+    color: var(--input-text, var(--color-cream));
 }
 
 [data-theme-base="dark"] .email-optins-filter-form input[type="date"] {
@@ -405,7 +405,7 @@
 [data-theme-base="dark"] .email-optin-card__header h2,
 [data-theme-base="dark"] .email-optins-kpi__value,
 [data-theme-base="dark"] .email-optins-bars__count {
-    color: var(--color-forest-light, #7fd67e);
+    color: var(--color-forest-light, var(--accent-muted));
 }
 
 [data-theme-base="dark"] .email-optins-kpi {
@@ -415,13 +415,13 @@
 
 [data-theme-base="dark"] .email-optins-kpi__icon--optins {
     background: rgba(127, 214, 126, 0.16);
-    color: #7fd67e;
+    color: var(--accent-muted);
 }
 
 [data-theme-base="dark"] .email-optins-chart-legend__swatch,
 [data-theme-base="dark"] .email-optins-bars__bar,
 [data-theme-base="dark"] .email-optins-rate__fill {
-    background: var(--color-forest-light, #7fd67e);
+    background: var(--color-forest-light, var(--accent-muted));
 }
 
 [data-theme-base="dark"] .email-optins-rate__track {

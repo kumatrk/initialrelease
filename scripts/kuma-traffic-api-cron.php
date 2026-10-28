@@ -2,7 +2,7 @@
 /**
  * Combined hourly traffic API cron
  *
- * Runs Facebook cost, Google Ads cost, and Honeycomb traffic-source addons.
+ * Runs Facebook cost, Google Ads cost, NewsBreak cost, and Honeycomb traffic-source addons.
  * Safe alongside legacy fb_cost_updater.php / google_ads_cost_updater.php:
  * each job runs at most once per UTC hour.
  *
@@ -37,7 +37,8 @@ try {
 
     echo 'Facebook cost exit: ' . (int) ($result['fb']['code'] ?? 1) . PHP_EOL;
     echo 'Google Ads cost exit: ' . (int) ($result['google']['code'] ?? 1) . PHP_EOL;
-    foreach (['fb', 'google'] as $child) {
+    echo 'NewsBreak cost exit: ' . (int) ($result['newsbreak']['code'] ?? 1) . PHP_EOL;
+    foreach (['fb', 'google', 'newsbreak'] as $child) {
         $out = (string) ($result[$child]['output'] ?? '');
         if ($out !== '' && str_contains($out, 'Skipped spawn')) {
             echo $out . PHP_EOL;
@@ -50,6 +51,7 @@ try {
 
     $failed = ((int) ($result['fb']['code'] ?? 1) !== 0)
         || ((int) ($result['google']['code'] ?? 1) !== 0)
+        || ((int) ($result['newsbreak']['code'] ?? 1) !== 0)
         || ((int) ($result['honeycomb']['failed'] ?? 0) > 0);
 
     exit($failed ? 1 : 0);

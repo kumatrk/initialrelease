@@ -52,25 +52,52 @@ final class TreePermissionNormalizer
             return;
         }
 
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($rootReal, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::SELF_FIRST
-        );
-
-        foreach ($iterator as $item) {
-            /** @var \SplFileInfo $item */
-            $path = $item->getPathname();
-            if (self::shouldSkip($rootReal, $path)) {
-                continue;
+        try {
+            foreach (self::managedEntries($rootReal) as $item) {
+                $path = $item->getPathname();
+                if (self::shouldSkip($rootReal, $path)) {
+                    continue;
+                }
+                if ($item->isDir()) {
+                    @chmod($path, self::DIR_MODE);
+                } elseif ($item->isFile()) {
+                    @chmod($path, self::FILE_MODE);
+                }
             }
-            if ($item->isDir()) {
-                @chmod($path, self::DIR_MODE);
-            } elseif ($item->isFile()) {
-                @chmod($path, self::FILE_MODE);
+        } catch (\UnexpectedValueException $e) {
+            // An unreadable skipped directory (storage backups at 0700) must not
+            // abort the walk. An unreadable application path still fails the
+            // one-shot so the next request can retry.
+            if (!self::isSkippableAccessError($rootReal, $e)) {
+                throw $e;
             }
         }
 
         @chmod($rootReal, self::DIR_MODE);
+    }
+
+    /**
+     * Paths the normalizer will chmod. Skip-listed directories are not opened.
+     *
+     * @return \Traversable<string, \SplFileInfo>
+     */
+    private static function managedEntries(string $rootReal): \Traversable
+    {
+        $directory = new \RecursiveDirectoryIterator(
+            $rootReal,
+            \FilesystemIterator::SKIP_DOTS
+        );
+        $filtered = new \RecursiveCallbackFilterIterator(
+            $directory,
+            static function (\SplFileInfo $current) use ($rootReal): bool {
+                return !self::shouldSkip($rootReal, $current->getPathname());
+            }
+        );
+
+        return new \RecursiveIteratorIterator(
+            $filtered,
+            \RecursiveIteratorIterator::SELF_FIRST
+        );
     }
 
     /**
@@ -159,6 +186,26 @@ final class TreePermissionNormalizer
         foreach (self::SKIP_PREFIXES as $prefix) {
             $dir = rtrim($prefix, '/');
             if ($rel === $dir || str_starts_with($rel, $prefix)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * True when PHP failed to open a directory we already intend to leave alone.
+     */
+    private static function isSkippableAccessError(string $rootReal, \UnexpectedValueException $e): bool
+    {
+        $message = str_replace('\\', '/', $e->getMessage());
+        $rootNorm = str_replace('\\', '/', $rootReal);
+        if (!str_contains($message, $rootNorm)) {
+            return false;
+        }
+        foreach (self::SKIP_PREFIXES as $prefix) {
+            $dir = rtrim($prefix, '/');
+            if (str_contains($message, '/' . $dir . '/') || str_contains($message, '/' . $dir . ':')) {
                 return true;
             }
         }

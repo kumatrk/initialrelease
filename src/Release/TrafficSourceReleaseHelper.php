@@ -54,6 +54,19 @@ class TrafficSourceReleaseHelper
     }
 
     /**
+     * True when this traffic source uses built-in NewsBreak cost + postback.
+     */
+    public static function usesNewsBreakIntegration(array $ts): bool
+    {
+        $provider = strtolower(trim((string) ($ts['provider_key'] ?? '')));
+        if ($provider === 'newsbreak') {
+            return true;
+        }
+
+        return stripos($ts['name'] ?? '', 'newsbreak') !== false;
+    }
+
+    /**
      * Google Ads integration ID from POST when traffic source is Google/YouTube; otherwise null.
      */
     public static function resolveGoogleAdsIntegrationId(?array $trafficSource, $postedValue): ?int

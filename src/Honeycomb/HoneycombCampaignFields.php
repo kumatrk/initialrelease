@@ -233,12 +233,11 @@ final class HoneycombCampaignFields
             $title = 'Honeycomb addon available';
         }
 
-        return '<div style="margin:0 0 16px 0;padding:14px 16px;background:#fff8e1;border:1px solid #ffe082;'
-            . 'border-left:4px solid #c9a227;border-radius:6px;font-size:14px;color:#5d4037;line-height:1.5;">'
-            . '<strong style="color:#3d5a26;">' . $title . '</strong> — '
+        return '<div class="honeycomb-ts-notice">'
+            . '<strong>' . $title . '</strong> — '
             . '<strong>' . $name . '</strong> (<code>' . $slug . '</code>). '
             . $detail . ' '
-            . '<a href="' . $url . '" style="color:#3d5a26;font-weight:600;">Open addon Options</a>'
+            . '<a href="' . $url . '">Open addon Options</a>'
             . '</div>';
     }
 

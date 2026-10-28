@@ -86,18 +86,38 @@ final class EdgeDeployer
         }
 
         $routeResult = null;
-        $zoneId = $this->settings->getZoneId();
-        $pattern = $this->settings->getRoutePattern();
-        if ($zoneId !== '' && $pattern !== '') {
-            $routeResult = $client->ensureWorkerRoute($zoneId, $pattern, $workerName);
-            if (!$routeResult['ok']) {
-                $this->settings->markHealth(false, 'Worker deployed but route failed: ' . $routeResult['message']);
-                return [
-                    'ok' => false,
-                    'message' => 'Worker deployed but route failed: ' . $routeResult['message'],
-                    'details' => ['kv_namespace_id' => $kv['namespace_id']],
-                ];
+        $routes = $this->settings->getRoutes();
+        $routeErrors = [];
+        foreach ($routes as $route) {
+            $one = $client->ensureWorkerRoute($route['zone_id'], $route['pattern'], $workerName);
+            if (!$one['ok']) {
+                $routeErrors[] = $route['pattern'] . ': ' . $one['message'];
+                continue;
             }
+            $routeResult = $one;
+        }
+        if ($routeErrors !== []) {
+            $message = 'Worker deployed but route failed: ' . implode('; ', $routeErrors);
+            $this->settings->markHealth(false, $message);
+            return [
+                'ok' => false,
+                'message' => $message,
+                'details' => ['kv_namespace_id' => $kv['namespace_id']],
+            ];
+        }
+
+        $ingestProbe = $this->probeOriginIngest();
+        if (!$ingestProbe['ok']) {
+            $this->settings->markHealth(false, $ingestProbe['message']);
+            return [
+                'ok' => false,
+                'message' => 'Worker uploaded, but origin /api/edge-click did not return 2xx: ' . $ingestProbe['message'],
+                'details' => [
+                    'kv_namespace_id' => $kv['namespace_id'],
+                    'worker_name' => $workerName,
+                    'ingest_url' => $ingestUrl,
+                ],
+            ];
         }
 
         $this->settings->settingsManager()->set(EdgeSettings::KEY_ENABLED, '1');
@@ -274,15 +294,13 @@ final class EdgeDeployer
 
         if ($accountId !== '' && $token !== '') {
             $client = new CloudflareClient($accountId, $token);
-            $zoneId = $this->settings->getZoneId();
-            $pattern = $this->settings->getRoutePattern();
-            if ($zoneId !== '' && $pattern !== '') {
-                $route = $client->deleteWorkerRoute($zoneId, $pattern);
-                $messages[] = $route['message'];
-                if (!$route['ok']) {
+            foreach ($this->settings->getRoutes() as $route) {
+                $deleted = $client->deleteWorkerRoute($route['zone_id'], $route['pattern']);
+                $messages[] = $route['pattern'] . ': ' . $deleted['message'];
+                if (!$deleted['ok']) {
                     return [
                         'ok' => false,
-                        'message' => 'Failed to remove Worker route: ' . $route['message'],
+                        'message' => 'Failed to remove Worker route ' . $route['pattern'] . ': ' . $deleted['message'],
                     ];
                 }
             }

@@ -54,7 +54,7 @@
     width: 0%;
     min-width: 0;
     border-radius: var(--radius-full);
-    background: linear-gradient(90deg, #2d5016 0%, var(--color-forest) 40%, var(--color-forest-light) 100%);
+    background: linear-gradient(90deg, var(--accent-hover) 0%, var(--color-forest) 40%, var(--color-forest-light) 100%);
     transition: width 0.55s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -127,12 +127,12 @@
 }
 
 .campaign-wizard-progress-step.is-done::before {
-    background: linear-gradient(90deg, #3d5a26, #558b2f);
+    background: linear-gradient(90deg, var(--accent), var(--accent-hover));
 }
 
 .campaign-wizard-progress-step.is-active::before {
     height: 6px;
-    background: linear-gradient(90deg, #2d5016, #558b2f);
+    background: linear-gradient(90deg, var(--accent-hover), var(--accent-hover));
     animation: wizardStepBarPulse 1.5s ease-in-out infinite;
 }
 
@@ -149,7 +149,7 @@
 }
 
 .campaign-wizard-progress-step.is-active {
-    color: #3d5a26;
+    color: var(--accent);
     font-weight: 600;
 }
 
@@ -170,7 +170,7 @@
 }
 
 .campaign-wizard-progress-step.is-done {
-    color: #558b2f;
+    color: var(--accent-hover);
 }
 
 .campaign-wizard-progress-step .step-label {
@@ -216,7 +216,7 @@
 @keyframes wizardStepBarPulse {
     0%, 100% {
         filter: brightness(1);
-        box-shadow: 0 0 4px rgba(61, 90, 38, 0.35);
+        box-shadow: 0 0 4px color-mix(in srgb, var(--accent) 35%, transparent);
     }
     50% {
         filter: brightness(1.4);
@@ -301,47 +301,30 @@
 .wizard-step-title {
     font-size: 20px;
     font-weight: 700;
-    color: #3d5a26;
+    color: var(--heading-color, var(--accent));
     margin: 0 0 8px;
-}
-
-[data-theme-base="dark"] .wizard-step-title {
-    color: var(--color-forest-light);
 }
 
 .wizard-step-desc {
     font-size: 14px;
-    color: #666;
+    color: var(--text-muted, #666);
     margin: 0 0 20px;
 }
 
-[data-theme-base="dark"] .wizard-step-desc {
-    color: var(--color-gray-600);
-}
-
 .wizard-review-summary {
-    background: #f8f9fa;
-    border: 2px solid #e0e0e0;
+    background: var(--surface-raised, #f8f9fa);
+    border: 2px solid var(--border-color, #e0e0e0);
     border-radius: 8px;
     padding: 16px 20px;
     font-size: 14px;
     line-height: 1.6;
-}
-
-[data-theme-base="dark"] .wizard-review-summary {
-    background: var(--color-gray-100);
-    border-color: var(--color-gray-200);
-    color: var(--color-gray-600);
+    color: var(--text-primary);
 }
 
 .wizard-review-summary dt {
     font-weight: 600;
-    color: #333;
+    color: var(--text-primary, #333);
     margin-top: 10px;
-}
-
-[data-theme-base="dark"] .wizard-review-summary dt {
-    color: var(--color-gray-800);
 }
 
 .wizard-review-summary dt:first-child {
@@ -350,11 +333,7 @@
 
 .wizard-review-summary dd {
     margin: 4px 0 0;
-    color: #555;
-}
-
-[data-theme-base="dark"] .wizard-review-summary dd {
-    color: var(--color-gray-600);
+    color: var(--text-muted, #555);
 }
 
 .wizard-field-error {
@@ -389,7 +368,7 @@
     background-repeat: no-repeat, no-repeat;
     background-position: 0 0, right 12px center;
     background-size: auto, 16px;
-    box-shadow: 0 1px 2px rgba(45, 80, 22, 0.06);
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--accent-hover) 6%, transparent);
     transition:
         border-color 0.2s ease,
         box-shadow 0.2s ease,
@@ -397,24 +376,25 @@
 }
 
 [data-theme-base="dark"] .campaign-wizard-card select {
-    border-color: var(--color-gray-300) !important;
-    background-color: var(--color-gray-100);
+    border-color: var(--input-border, var(--color-gray-300)) !important;
+    background-color: var(--input-bg, var(--color-gray-100));
+    color: var(--input-text, var(--color-gray-800));
     background-image:
-        linear-gradient(180deg, #2a3139 0%, #22272e 100%),
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%237fd67e' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+        linear-gradient(180deg, var(--input-bg, var(--color-gray-100)) 0%, var(--surface-raised, var(--color-gray-100)) 100%),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23aab8ca' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
 }
 
 .campaign-wizard-card select:hover:not(:disabled) {
     border-color: var(--color-forest-light) !important;
-    box-shadow: 0 2px 8px rgba(61, 90, 38, 0.12);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .campaign-wizard-card select:focus {
     outline: none;
     border-color: var(--color-forest) !important;
     box-shadow:
-        0 0 0 3px rgba(61, 90, 38, 0.18),
-        0 2px 8px rgba(61, 90, 38, 0.1);
+        0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent),
+        0 2px 8px color-mix(in srgb, var(--accent) 10%, transparent);
     background-color: var(--color-white);
 }
 
@@ -451,16 +431,17 @@
     border: 2px solid var(--color-cream-dark) !important;
     border-radius: var(--radius-md) !important;
     background: var(--color-white);
-    box-shadow: 0 1px 2px rgba(45, 80, 22, 0.06);
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--accent-hover) 6%, transparent);
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 [data-theme-base="dark"] .campaign-wizard-card input[type="text"],
 [data-theme-base="dark"] .campaign-wizard-card input[type="number"],
+[data-theme-base="dark"] .campaign-wizard-card input[type="url"],
 [data-theme-base="dark"] .campaign-wizard-card textarea {
-    border-color: var(--color-gray-300) !important;
-    background: var(--color-gray-100);
-    color: var(--color-gray-800);
+    border-color: var(--input-border, var(--color-gray-300)) !important;
+    background: var(--input-bg, var(--color-gray-100));
+    color: var(--input-text, var(--color-gray-800));
 }
 
 /* Wizard fieldsets & tinted panels (Flow, Traffic, etc.) */
@@ -513,7 +494,7 @@
 .campaign-wizard-card textarea:focus {
     outline: none;
     border-color: var(--color-forest) !important;
-    box-shadow: 0 0 0 3px rgba(61, 90, 38, 0.18);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 @media (max-width: 768px) {
@@ -566,4 +547,129 @@
         justify-content: center;
         box-sizing: border-box;
     }
+}
+
+/* Flow step: match classic editor rotation panels */
+.wizard-rotation-fieldset {
+    margin-bottom: 24px;
+    padding: 20px;
+    border-radius: 8px;
+    border: 2px solid var(--accent);
+    background: var(--accent-soft, linear-gradient(135deg, #f1f8e9 0%, #dcedc8 100%));
+}
+
+.wizard-rotation-fieldset--lp {
+    border-color: var(--color-info, #2196F3);
+    background: var(--color-info-bg, linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%));
+}
+
+.wizard-rotation-fieldset--split {
+    border-color: var(--color-warning, #ff9800);
+    background: var(--color-warning-bg, #fff3e0);
+    padding: 16px;
+    border-radius: 8px;
+    border: 2px solid var(--color-warning, #ff9800);
+}
+
+.wizard-rotation-fieldset > legend {
+    font-weight: 600;
+    color: var(--heading-color, var(--accent));
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 0 8px;
+}
+
+.wizard-rotation-fieldset--lp > legend {
+    color: var(--color-info, #0d47a1);
+}
+
+.wizard-equalize-btn {
+    margin-left: auto;
+    padding: 6px 16px;
+    font-size: 13px;
+    background: var(--surface, #fff);
+    font-weight: 600;
+}
+
+.wizard-rotation-fieldset--offers .wizard-equalize-btn {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.wizard-rotation-fieldset--lp .wizard-equalize-btn {
+    border-color: var(--color-info, #2196F3);
+    color: var(--color-info, #0d47a1);
+}
+
+.wizard-callout {
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.wizard-callout--whop {
+    background: var(--accent-soft, #f3eef8);
+    border: 1px solid var(--border-color, #c5b3d6);
+    color: var(--text-primary, #4a3563);
+}
+
+.campaign-form-panel--edge {
+    background: var(--color-info-bg, #eef6fb);
+    border-color: var(--border-color, #b3d4e8);
+}
+
+[data-theme-base="dark"] .wizard-rotation-fieldset,
+[data-theme-base="dark"] .wizard-rotation-fieldset--lp,
+[data-theme-base="dark"] .wizard-rotation-fieldset--split {
+    background: var(--surface-raised) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary);
+}
+
+[data-theme-base="dark"] .wizard-rotation-fieldset > legend,
+[data-theme-base="dark"] .wizard-rotation-fieldset--lp > legend {
+    color: var(--heading-color, var(--text-primary)) !important;
+}
+
+[data-theme-base="dark"] .wizard-equalize-btn {
+    background: var(--surface) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+}
+
+[data-theme-base="dark"] .campaign-wizard-card .campaign-optional-details > summary {
+    background: var(--surface-raised);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+[data-theme-base="dark"] .campaign-wizard-card .honeycomb-binding-panel {
+    background: var(--surface-raised) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+
+.wizard-rotation-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 2fr) minmax(0, 1fr) auto;
+    gap: 12px;
+    margin-bottom: 8px;
+    align-items: center;
+}
+
+.wizard-enable-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+    font-size: 12px;
+}
+
+.campaign-wizard-card .campaign-form-panel {
+    padding: 14px;
 }

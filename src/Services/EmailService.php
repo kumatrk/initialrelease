@@ -61,6 +61,32 @@ class EmailService
     }
 
     /**
+     * @param array<string, mixed> $config Notification settings, including a saved SMTP password.
+     */
+    public function applySmtp(array $config): void
+    {
+        if (empty($config['smtp_enabled']) || trim((string) ($config['smtp_host'] ?? '')) === '') {
+            return;
+        }
+        $username = trim((string) ($config['smtp_username'] ?? ''));
+        $password = (string) ($config['smtp_password'] ?? '');
+        if ($username !== '' && $password === '') {
+            return;
+        }
+        $this->config['use_smtp'] = true;
+        $this->config['smtp_host'] = trim((string) $config['smtp_host']);
+        $this->config['smtp_port'] = (int) ($config['smtp_port'] ?? 587) ?: 587;
+        $this->config['smtp_username'] = $username;
+        $this->config['smtp_password'] = $password;
+        $this->config['smtp_encryption'] = \SimpleKuma\Notify\MailCapability::normalizeEncryption((string) ($config['smtp_encryption'] ?? 'tls'));
+        $this->config['smtp_auth'] = $this->config['smtp_username'] !== '';
+        $from = trim((string) ($config['smtp_from'] ?? ''));
+        if ($from !== '') {
+            $this->config['from_email'] = $from;
+        }
+    }
+
+    /**
      * Send password reset email
      */
     public function sendPasswordResetEmail(string $email, string $token, string $resetUrl): bool
@@ -68,24 +94,22 @@ class EmailService
         $subject = 'Reset Your Simple KUMA Password';
         $body = $this->getPasswordResetEmailTemplate($resetUrl, $token);
 
-        // In development mode, log the email instead of sending
+        return $this->sendMessage($email, $subject, $body);
+    }
+
+    public function sendMessage(string $to, string $subject, string $body): bool
+    {
         if ($this->config['development_mode'] && !$this->config['enabled']) {
-            error_log("=== PASSWORD RESET EMAIL (Development Mode) ===");
-            error_log("To: {$email}");
-            error_log("Subject: {$subject}");
-            error_log("Reset URL: {$resetUrl}");
-            error_log("Token: {$token}");
-            error_log("===============================================");
-            return true; // Return true so flow continues
+            error_log('Simple KUMA email skipped because sending is disabled. To: ' . $to . ' Subject: ' . $subject);
+
+            return true;
         }
 
-        // Try PHPMailer first (if available)
         if (class_exists(\PHPMailer\PHPMailer\PHPMailer::class)) {
-            return $this->sendViaPHPMailer($email, $subject, $body);
+            return $this->sendViaPHPMailer($to, $subject, $body);
         }
 
-        // Fallback to PHP mail() function
-        return $this->sendViaPHPMail($email, $subject, $body);
+        return $this->sendViaPHPMail($to, $subject, $body);
     }
 
     /**
@@ -104,16 +128,10 @@ class EmailService
                 $mail->SMTPAuth = $this->config['smtp_auth'];
                 $mail->Username = $this->config['smtp_username'];
                 $mail->Password = $this->config['smtp_password'];
-                $mail->SMTPSecure = $this->config['smtp_encryption'];
+                $mail->SMTPSecure = $this->config['smtp_encryption'] === 'ssl'
+                    ? \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS
+                    : \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
                 $mail->Port = $this->config['smtp_port'];
-                
-                // Enable verbose debug output (only in development)
-                if ($this->config['development_mode']) {
-                    $mail->SMTPDebug = 2;
-                    $mail->Debugoutput = function($str, $level) {
-                        error_log("PHPMailer: $str");
-                    };
-                }
             } else {
                 // Use PHP mail() function via PHPMailer (better headers and encoding)
                 $mail->isMail();
@@ -138,9 +156,11 @@ class EmailService
             return true;
             
         } catch (\Exception $e) {
-            error_log("PHPMailer Error: " . $e->getMessage());
-            
-            // Fallback to PHP mail() if PHPMailer fails
+            error_log('PHPMailer Error: ' . $e->getMessage());
+            if (!empty($this->config['use_smtp'])) {
+                return false;
+            }
+
             return $this->sendViaPHPMail($to, $subject, $body);
         }
     }

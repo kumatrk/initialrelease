@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SimpleKuma\Tracking;
 
 use mysqli;
+use SimpleKuma\Database\SchemaProbe;
 
 /**
  * Optional Meta CAPI PageView on tracked click (non-blocking).
@@ -27,10 +28,7 @@ final class MetaCapiPageViewSender
     public function maybeSendForClick(int $campaignId, string $clickId, array $clickContext = []): void
     {
         try {
-            $colCheck = $this->db->query(
-                "SHOW COLUMNS FROM facebook_capi_integrations LIKE 'send_pageview_on_click'"
-            );
-            if (!$colCheck || $colCheck->num_rows === 0) {
+            if (!SchemaProbe::columnExists($this->db, 'facebook_capi_integrations', 'send_pageview_on_click')) {
                 return;
             }
 
@@ -121,6 +119,15 @@ final class MetaCapiPageViewSender
                 . "http={$httpCode}" . ($err !== '' ? " err={$err}" : '')
                 . ' body=' . substr((string)$body, 0, 200)
             );
+            if ($err !== '' || $httpCode < 200 || $httpCode >= 300) {
+                \SimpleKuma\Support\ApiFailureLog::record(
+                    $this->db,
+                    'meta',
+                    'Meta page view',
+                    $httpCode > 0 ? $httpCode : null,
+                    $err !== '' ? $err : self::graphFailure($body)
+                );
+            }
         } catch (\Throwable $e) {
             error_log('MetaCapiPageViewSender: ' . $e->getMessage());
         }
@@ -166,5 +173,18 @@ final class MetaCapiPageViewSender
         $upd->bind_param('ss', $json, $clickId);
         $upd->execute();
         $upd->close();
+    }
+
+    private static function graphFailure(mixed $body): string
+    {
+        $data = is_string($body) ? json_decode($body, true) : null;
+        if (is_array($data) && is_array($data['error'] ?? null)) {
+            $message = (string) ($data['error']['error_user_message'] ?? $data['error']['message'] ?? '');
+            if ($message !== '') {
+                return $message;
+            }
+        }
+
+        return 'Meta rejected the page view.';
     }
 }

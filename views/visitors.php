@@ -235,14 +235,14 @@ function generatePagination($currentPage, $totalPages, $getParams) {
         }
         ?>
         <div class="visitor-date-presets" style="display: flex; gap: 6px; flex-wrap: wrap;">
-            <button type="button" onclick="setVisitorDate('today')" style="padding: 4px 8px; font-size: 11px; border: 1px solid #ddd; border-radius: 3px; background: <?= $activePreset === 'today' ? '#3d5a26' : '#fff' ?>; color: <?= $activePreset === 'today' ? '#fff' : '#666' ?>; cursor: pointer;">Today</button>
-            <button type="button" onclick="setVisitorDate('yesterday')" style="padding: 4px 8px; font-size: 11px; border: 1px solid #ddd; border-radius: 3px; background: <?= $activePreset === 'yesterday' ? '#3d5a26' : '#fff' ?>; color: <?= $activePreset === 'yesterday' ? '#fff' : '#666' ?>; cursor: pointer;">Yesterday</button>
-            <button type="button" onclick="setVisitorDate('last7')" style="padding: 4px 8px; font-size: 11px; border: 1px solid #ddd; border-radius: 3px; background: <?= $activePreset === 'last7' ? '#3d5a26' : '#fff' ?>; color: <?= $activePreset === 'last7' ? '#fff' : '#666' ?>; cursor: pointer;">7d</button>
-            <button type="button" onclick="setVisitorDate('last14')" style="padding: 4px 8px; font-size: 11px; border: 1px solid #ddd; border-radius: 3px; background: <?= $activePreset === 'last14' ? '#3d5a26' : '#fff' ?>; color: <?= $activePreset === 'last14' ? '#fff' : '#666' ?>; cursor: pointer;">14d</button>
-            <button type="button" onclick="setVisitorDate('last30')" style="padding: 4px 8px; font-size: 11px; border: 1px solid #ddd; border-radius: 3px; background: <?= $activePreset === 'last30' ? '#3d5a26' : '#fff' ?>; color: <?= $activePreset === 'last30' ? '#fff' : '#666' ?>; cursor: pointer;">30d</button>
-            <button type="button" onclick="setVisitorDate('lastmonth')" style="padding: 4px 8px; font-size: 11px; border: 1px solid #ddd; border-radius: 3px; background: <?= $activePreset === 'lastmonth' ? '#3d5a26' : '#fff' ?>; color: <?= $activePreset === 'lastmonth' ? '#fff' : '#666' ?>; cursor: pointer;">Last Mo</button>
-            <button type="button" onclick="setVisitorDate('thismonth')" style="padding: 4px 8px; font-size: 11px; border: 1px solid #ddd; border-radius: 3px; background: <?= $activePreset === 'thismonth' ? '#3d5a26' : '#fff' ?>; color: <?= $activePreset === 'thismonth' ? '#fff' : '#666' ?>; cursor: pointer;">This Mo</button>
-            <button type="button" onclick="setVisitorDate('alltime')" style="padding: 4px 8px; font-size: 11px; border: 1px solid #ddd; border-radius: 3px; background: <?= $activePreset === 'alltime' ? '#3d5a26' : '#fff' ?>; color: <?= $activePreset === 'alltime' ? '#fff' : '#666' ?>; cursor: pointer;">ALL TIME</button>
+            <button type="button" onclick="setVisitorDate('today')" style="padding: 4px 8px; font-size: 11px; border: 1px solid #ddd; border-radius: 3px; background: <?= $activePreset === 'today' ? 'var(--accent)' : '#fff' ?>; color: <?= $activePreset === 'today' ? '#fff' : '#666' ?>; cursor: pointer;">Today</button>
+            <button type="button" onclick="setVisitorDate('yesterday')" style="padding: 4px 8px; font-size: 11px; border: 1px solid #ddd; border-radius: 3px; background: <?= $activePreset === 'yesterday' ? 'var(--accent)' : '#fff' ?>; color: <?= $activePreset === 'yesterday' ? '#fff' : '#666' ?>; cursor: pointer;">Yesterday</button>
+            <button type="button" onclick="setVisitorDate('last7')" style="padding: 4px 8px; font-size: 11px; border: 1px solid #ddd; border-radius: 3px; background: <?= $activePreset === 'last7' ? 'var(--accent)' : '#fff' ?>; color: <?= $activePreset === 'last7' ? '#fff' : '#666' ?>; cursor: pointer;">7d</button>
+            <button type="button" onclick="setVisitorDate('last14')" style="padding: 4px 8px; font-size: 11px; border: 1px solid #ddd; border-radius: 3px; background: <?= $activePreset === 'last14' ? 'var(--accent)' : '#fff' ?>; color: <?= $activePreset === 'last14' ? '#fff' : '#666' ?>; cursor: pointer;">14d</button>
+            <button type="button" onclick="setVisitorDate('last30')" style="padding: 4px 8px; font-size: 11px; border: 1px solid #ddd; border-radius: 3px; background: <?= $activePreset === 'last30' ? 'var(--accent)' : '#fff' ?>; color: <?= $activePreset === 'last30' ? '#fff' : '#666' ?>; cursor: pointer;">30d</button>
+            <button type="button" onclick="setVisitorDate('lastmonth')" style="padding: 4px 8px; font-size: 11px; border: 1px solid #ddd; border-radius: 3px; background: <?= $activePreset === 'lastmonth' ? 'var(--accent)' : '#fff' ?>; color: <?= $activePreset === 'lastmonth' ? '#fff' : '#666' ?>; cursor: pointer;">Last Mo</button>
+            <button type="button" onclick="setVisitorDate('thismonth')" style="padding: 4px 8px; font-size: 11px; border: 1px solid #ddd; border-radius: 3px; background: <?= $activePreset === 'thismonth' ? 'var(--accent)' : '#fff' ?>; color: <?= $activePreset === 'thismonth' ? '#fff' : '#666' ?>; cursor: pointer;">This Mo</button>
+            <button type="button" onclick="setVisitorDate('alltime')" style="padding: 4px 8px; font-size: 11px; border: 1px solid #ddd; border-radius: 3px; background: <?= $activePreset === 'alltime' ? 'var(--accent)' : '#fff' ?>; color: <?= $activePreset === 'alltime' ? '#fff' : '#666' ?>; cursor: pointer;">ALL TIME</button>
         </div>
         
         <form method="get" action="" id="visitor-date-form" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; align-items: end;">
@@ -374,15 +374,15 @@ function setVisitorDate(preset) {
 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 24px;">
     <div class="card" style="padding: 16px;">
         <div style="font-size: 12px; color: #666;">Total Clicks</div>
-        <div style="font-size: 28px; font-weight: 700; color: #3d5a26;"><?= number_format($totalRows) ?></div>
+        <div style="font-size: 28px; font-weight: 700; color: var(--accent);"><?= number_format($totalRows) ?></div>
     </div>
     <div class="card" style="padding: 16px;">
         <div style="font-size: 12px; color: #666;">Showing</div>
-        <div style="font-size: 28px; font-weight: 700; color: #3d5a26;"><?= min($perPage, count($clicks)) ?></div>
+        <div style="font-size: 28px; font-weight: 700; color: var(--accent);"><?= min($perPage, count($clicks)) ?></div>
     </div>
     <div class="card" style="padding: 16px;">
         <div style="font-size: 12px; color: #666;">Page</div>
-        <div style="font-size: 28px; font-weight: 700; color: #3d5a26;"><?= $page ?> / <?= max(1, $totalPages) ?></div>
+        <div style="font-size: 28px; font-weight: 700; color: var(--accent);"><?= $page ?> / <?= max(1, $totalPages) ?></div>
     </div>
 </div>
 
@@ -460,7 +460,12 @@ function setVisitorDate(preset) {
                                 </div>
                             </td>
                             <td><strong><?= htmlspecialchars($click['campaign_name']) ?></strong></td>
-                            <td><?= htmlspecialchars($click['landing_page_name'] ?? '-') ?></td>
+                            <td><?= htmlspecialchars($click['landing_page_name'] ?? '-') ?><?php
+                                $guardExtra = json_decode($click['extra_json'] ?? '{}', true) ?? [];
+                                if (($guardExtra['emergency_bypass'] ?? '') === 'lp') {
+                                    echo '<div style="font-size: 11px; font-weight: 600;">Emergency bypassed</div>';
+                                }
+                            ?></td>
                             <td>
                                 <?php
                                 $extraJson = json_decode($click['extra_json'] ?? '{}', true) ?? [];
@@ -629,11 +634,16 @@ function setVisitorDate(preset) {
                     
                     <!-- Main info: Campaign, LP, Offer -->
                     <div style="margin-bottom: var(--spacing-sm);">
-                        <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px; color: #3d5a26;">
+                        <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px; color: var(--accent);">
                             <?= htmlspecialchars($click['campaign_name']) ?>
                         </div>
                         <div style="font-size: 12px; color: #666; display: flex; flex-direction: column; gap: 2px;">
-                            <div><strong>LP:</strong> <?= htmlspecialchars($click['landing_page_name'] ?? '-') ?></div>
+                            <div><strong>LP:</strong> <?= htmlspecialchars($click['landing_page_name'] ?? '-') ?><?php
+                                $guardExtra = json_decode($click['extra_json'] ?? '{}', true) ?? [];
+                                if (($guardExtra['emergency_bypass'] ?? '') === 'lp') {
+                                    echo ' <span style="font-weight: 600;">Emergency bypassed</span>';
+                                }
+                            ?></div>
                             <div><strong>Offer:</strong> 
                                 <?php
                                 $extraJson = json_decode($click['extra_json'] ?? '{}', true) ?? [];
@@ -732,8 +742,8 @@ function showCopyFeedback(element, status, message) {
         if (row) {
             row.classList.add('is-copied');
         } else {
-            element.style.background = '#e8f5e9';
-            element.style.color = '#1b5e20';
+            element.style.background = 'var(--accent-soft)';
+            element.style.color = 'var(--accent-hover)';
             element.style.fontWeight = '600';
         }
     } else if (status === 'error') {

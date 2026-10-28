@@ -25,6 +25,10 @@ if ($honeycombCampaignFieldProviders === []) {
             continue;
         }
         $slug = $provider->addonSlug();
+        // Deep Funnels replaces the landing-page rotation block, not the Honeycomb section.
+        if ($slug === 'deep-funnels') {
+            continue;
+        }
         $postForSlug = is_array($honeycombFieldPost[$slug] ?? null) ? $honeycombFieldPost[$slug] : [];
         echo $provider->renderHtml([
             'binding' => $honeycombBindingsBySlug[$slug] ?? null,

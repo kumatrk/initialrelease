@@ -15,6 +15,7 @@
         "ip2location/ip2location-php": "^9.0",
         "jaybizzle/crawler-detect": "^1.4",
         "matomo/device-detector": "^6.0",
+        "minishlink/web-push": "^9.0",
         "phpmailer/phpmailer": "^6.9"
     },
     "autoload": {

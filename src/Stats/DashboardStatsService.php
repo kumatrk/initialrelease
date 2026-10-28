@@ -84,7 +84,9 @@ final class DashboardStatsService
         string $dateTo,
         string $userTimezone,
         ?array $allowedStatuses,
-        bool $includeChart = true
+        bool $includeChart = true,
+        string $periodBucket = 'day',
+        bool $includePeriod = true
     ): array {
         $utcRange = Formatter::convertDateRangeToUTC($dateFrom, $dateTo, $userTimezone);
         $utcFrom = $utcRange['from'];
@@ -145,6 +147,27 @@ final class DashboardStatsService
         $ctr = $clicks > 0 ? ($lpClicks / $clicks) * 100 : 0.0;
         $cr = $clicks > 0 ? ($conversions / $clicks) * 100 : 0.0;
 
+        $periodBucket = in_array($periodBucket, ['day', 'week', 'month'], true) ? $periodBucket : 'day';
+        if (!$includePeriod) {
+            $period = [
+                'rows' => [],
+                'note' => null,
+            ];
+        } elseif (!$this->dailySummaryExists()) {
+            $period = [
+                'rows' => [],
+                'note' => 'The daily summary is not available yet.',
+            ];
+        } else {
+            $period = $this->queryPeriodTotalsFromSummary($summaryDateFrom, $summaryDateTo, $allowedStatuses, $periodBucket);
+            if ($source !== 'pre_aggregate') {
+                $alignNote = 'These rows are the daily summary for the UTC dates in this range. The cards above can include hours outside those dates.';
+                $period['note'] = $period['note'] !== null && $period['note'] !== ''
+                    ? $alignNote . ' ' . $period['note']
+                    : $alignNote;
+            }
+        }
+
         return [
             'source' => $source,
             'stats' => [
@@ -173,6 +196,9 @@ final class DashboardStatsService
             'utcDateFrom' => $utcFrom,
             'utcDateTo' => $utcTo,
             'chartIncluded' => $includeChart,
+            'periodBucket' => $periodBucket,
+            'periodRows' => $period['rows'],
+            'periodNote' => $period['note'],
         ];
     }
 
@@ -256,22 +282,25 @@ final class DashboardStatsService
         $fbCostMap = $costMap['fb'] ?? [];
         $gaCostMap = $costMap['ga'] ?? [];
         $honeyCostMap = $costMap['honey'] ?? [];
+        $nbCostMap = $costMap['newsbreak'] ?? [];
 
         foreach ($pageRows as &$row) {
             $cid = (int)$row['id'];
             $manual = (float)($row['manual_cost'] ?? 0);
             $gaCost = (float)($gaCostMap[$cid] ?? 0.0);
             $honeyCost = (float)($honeyCostMap[$cid] ?? 0.0);
+            $nbCost = (float)($nbCostMap[$cid] ?? 0.0);
             if (isset($fbCostMap[$cid])) {
                 $fbPlusManual = (float)$fbCostMap[$cid];
                 $row['fb_cost'] = max(0.0, $fbPlusManual - $manual);
-                $row['cost'] = $fbPlusManual + $gaCost + $honeyCost;
+                $row['cost'] = $fbPlusManual + $gaCost + $honeyCost + $nbCost;
             } else {
                 $row['fb_cost'] = 0.0;
-                $row['cost'] = $manual + $gaCost + $honeyCost;
+                $row['cost'] = $manual + $gaCost + $honeyCost + $nbCost;
             }
             $row['ga_cost'] = $gaCost;
             $row['honey_cost'] = $honeyCost;
+            $row['newsbreak_cost'] = $nbCost;
             $row['invalid_clicks'] = (int)($row['invalid_clicks'] ?? 0);
         }
         unset($row);
@@ -314,11 +343,10 @@ final class DashboardStatsService
 
         $costMap = $this->batchCampaignCosts($ids, $utcFrom, $utcTo, $userTimezone);
         $total = 0.0;
-        foreach ($costMap['fb'] as $amount) {
-            $total += (float)$amount;
-        }
-        foreach ($costMap['ga'] as $amount) {
-            $total += (float)$amount;
+        foreach (['fb', 'ga', 'honey', 'newsbreak'] as $bucket) {
+            foreach ($costMap[$bucket] ?? [] as $amount) {
+                $total += (float) $amount;
+            }
         }
 
         return $total;
@@ -484,6 +512,113 @@ final class DashboardStatsService
             'revenue' => (float)($row['revenue'] ?? 0),
             'active_campaigns' => (int)($row['active_campaigns'] ?? 0),
         ];
+    }
+
+    /**
+     * Account totals by day, Monday-start week, or month from clicks_daily_summary.
+     * Cost is the summary's tracked click cost, not an ad-network overlay and not a clicks-table scan.
+     *
+     * @param list<string>|null $allowedStatuses
+     * @return array{rows: list<array<string, mixed>>, note: ?string}
+     */
+    private function queryPeriodTotalsFromSummary(
+        string $dateFrom,
+        string $dateTo,
+        ?array $allowedStatuses,
+        string $bucket
+    ): array {
+        $bucketExpr = match ($bucket) {
+            'week' => 'DATE_SUB(s.summary_date, INTERVAL WEEKDAY(s.summary_date) DAY)',
+            'month' => "DATE_FORMAT(s.summary_date, '%Y-%m-01')",
+            default => 's.summary_date',
+        };
+
+        $statusSql = '';
+        $types = 'ss';
+        $params = [$dateFrom, $dateTo];
+        if ($allowedStatuses !== null && $allowedStatuses !== []) {
+            $placeholders = implode(',', array_fill(0, count($allowedStatuses), '?'));
+            $statusSql = " AND cp.status IN ({$placeholders})";
+            $types .= str_repeat('s', count($allowedStatuses));
+            $params = array_merge($params, $allowedStatuses);
+        }
+
+        $sql = "
+            SELECT
+                {$bucketExpr} AS bucket_date,
+                COALESCE(SUM(s.clicks), 0) AS views,
+                COALESCE(SUM(s.lp_clicks), 0) AS lp_clicks,
+                COALESCE(SUM(s.direct_clicks), 0) AS direct_clicks,
+                COALESCE(SUM(s.conversions), 0) AS conversions,
+                COALESCE(SUM(s.revenue), 0) AS revenue,
+                COALESCE(SUM(s.cost), 0) AS cost
+            FROM clicks_daily_summary s
+            INNER JOIN campaigns cp ON cp.id = s.campaign_id
+            WHERE s.summary_date >= ? AND s.summary_date <= ?
+            {$statusSql}
+            GROUP BY bucket_date
+            ORDER BY bucket_date DESC
+            LIMIT 400
+        ";
+
+        $stmt = $this->db->prepare($sql);
+        if ($stmt === false) {
+            return [
+                'rows' => [],
+                'note' => 'The daily summary could not be grouped for this range.',
+            ];
+        }
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $rows = [];
+        if ($result) {
+            while ($row = $result->fetch_assoc()) {
+                $views = (int)($row['views'] ?? 0);
+                $lp = (int)($row['lp_clicks'] ?? 0);
+                $direct = (int)($row['direct_clicks'] ?? 0);
+                $conversions = (int)($row['conversions'] ?? 0);
+                $revenue = (float)($row['revenue'] ?? 0);
+                $cost = (float)($row['cost'] ?? 0);
+                $profit = $revenue - $cost;
+                $rows[] = [
+                    'bucket' => (string)($row['bucket_date'] ?? ''),
+                    'label' => $this->formatPeriodLabel((string)($row['bucket_date'] ?? ''), $bucket),
+                    'views' => $views,
+                    'lp_clicks' => $lp,
+                    'direct_clicks' => $direct,
+                    'clicks' => $lp + $direct,
+                    'conversions' => $conversions,
+                    'revenue' => $revenue,
+                    'cost' => $cost,
+                    'profit' => $profit,
+                    'roi' => $cost > 0 ? ($profit / $cost) * 100 : 0.0,
+                ];
+            }
+        }
+        $stmt->close();
+
+        return [
+            'rows' => $rows,
+            'note' => count($rows) >= 400 ? 'Showing the latest 400 periods.' : null,
+        ];
+    }
+
+    private function formatPeriodLabel(string $bucketDate, string $bucket): string
+    {
+        $date = substr($bucketDate, 0, 10);
+        $dt = \DateTimeImmutable::createFromFormat('Y-m-d', $date);
+        if ($dt === false) {
+            return $bucketDate;
+        }
+        if ($bucket === 'week') {
+            return 'Week of ' . $dt->format('M j, Y');
+        }
+        if ($bucket === 'month') {
+            return $dt->format('F Y');
+        }
+
+        return $dt->format('M j, Y');
     }
 
     /**
@@ -1021,7 +1156,20 @@ final class DashboardStatsService
             error_log('DashboardStatsService: batch Honeycomb cost error: ' . $e->getMessage());
         }
 
-        return ['fb' => $fbMap, 'ga' => $gaMap, 'honey' => $honeyMap];
+        $nbMap = [];
+        try {
+            $apiNb = (new \SimpleKuma\NewsBreak\NewsBreakCostAggregator($this->db))
+                ->getCostsByCampaignIds($campaignIds, $utcFrom, $utcTo);
+            foreach ($apiNb as $cid => $amount) {
+                if ((float)$amount > 0) {
+                    $nbMap[(int)$cid] = (float)$amount;
+                }
+            }
+        } catch (\Exception $e) {
+            error_log('DashboardStatsService: batch NewsBreak cost error: ' . $e->getMessage());
+        }
+
+        return ['fb' => $fbMap, 'ga' => $gaMap, 'honey' => $honeyMap, 'newsbreak' => $nbMap];
     }
 
     /**

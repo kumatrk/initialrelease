@@ -107,14 +107,13 @@ final class GenericBindingCampaignFields implements CampaignFieldsProvider
         $campaignEsc = htmlspecialchars($remoteCampaign, ENT_QUOTES, 'UTF-8');
         $alwaysAttr = $this->alwaysVisible() ? ' data-always-visible="1"' : '';
 
-        $html = '<div class="honeycomb-binding-panel" data-provider-key="' . $keyEsc . '"' . $alwaysAttr
-            . ' style="display:none;margin-bottom:16px;padding:14px;background:#f5f8f2;border:1px solid #c5d4b8;border-radius:6px;">'
-            . '<strong style="color:#3d5a26;">' . $nameEsc . ' (Honeycomb)</strong>';
+        $html = '<div class="honeycomb-binding-panel" data-provider-key="' . $keyEsc . '"' . $alwaysAttr . '>'
+            . '<strong>' . $nameEsc . ' (Honeycomb)</strong>';
 
         if ($hasConversionExport) {
-            $html .= '<p style="font-size:12px;color:#666;margin:8px 0 12px;line-height:1.45;">'
+            $html .= '<p class="honeycomb-panel-hint">'
                 . 'Send conversions to this network’s Events API when this campaign converts. '
-                . 'Credentials are under <a href="?page=honeycomb" style="color:#3d5a26;">Honeycomb</a>.'
+                . 'Credentials are under <a href="?page=honeycomb">Honeycomb</a>.'
                 . ($this->providerKey === 'whop'
                     ? ' Copy-ready Whop Pixel + Kuma CTA codes appear below when this traffic source is selected.'
                     : '')
@@ -124,11 +123,11 @@ final class GenericBindingCampaignFields implements CampaignFieldsProvider
                 . '<input type="checkbox" name="honeycomb_binding[' . $slugEsc . '][conversion_export]" value="1"'
                 . ($exportOn ? ' checked' : '')
                 . ' style="width:18px;height:18px;">'
-                . '<span style="font-weight:600;color:#333;">Send conversions to ' . $nameEsc . '</span>'
+                . '<span class="honeycomb-panel-label-text">Send conversions to ' . $nameEsc . '</span>'
                 . '</label>'
-                . '<label style="display:block;font-weight:600;margin-bottom:6px;">Event name</label>'
-                . '<select name="honeycomb_binding[' . $slugEsc . '][event_name]"'
-                . ' style="width:100%;padding:10px;border:2px solid #ddd;border-radius:4px;margin-bottom:12px;">';
+                . '<label class="campaign-form-label" for="honeycomb_event_' . $slugEsc . '">Event name</label>'
+                . '<select id="honeycomb_event_' . $slugEsc . '" name="honeycomb_binding[' . $slugEsc . '][event_name]"'
+                . ' class="campaign-form-input">';
             foreach (['lead', 'schedule', 'contact', 'complete_registration', 'submit_application'] as $ev) {
                 $html .= '<option value="' . $ev . '"' . ($eventName === $ev ? ' selected' : '') . '>' . $ev . '</option>';
             }
@@ -136,21 +135,18 @@ final class GenericBindingCampaignFields implements CampaignFieldsProvider
         }
 
         if ($hasCostSync) {
-            $margin = $hasConversionExport ? '12px' : '8px';
-            $html .= '<p style="font-size:12px;color:#666;margin:' . $margin . ' 0 12px;line-height:1.45;">'
+            $html .= '<p class="honeycomb-panel-hint">'
                 . 'Link this Kuma campaign to the remote account + campaign IDs so Honeycomb can sync ad spend hourly. '
-                . 'Credentials are managed under <a href="?page=honeycomb" style="color:#3d5a26;">Honeycomb</a>.'
+                . 'Credentials are managed under <a href="?page=honeycomb">Honeycomb</a>.'
                 . '</p>'
-                . '<label style="display:block;font-weight:600;margin-bottom:6px;">Remote account ID</label>'
-                . '<input type="text" name="honeycomb_binding[' . $slugEsc . '][remote_account_id]"'
-                . ' value="' . $accountEsc . '"'
-                . ' placeholder="e.g. biz_… or advertiser id"'
-                . ' style="width:100%;padding:10px;border:2px solid #ddd;border-radius:4px;margin-bottom:12px;">'
-                . '<label style="display:block;font-weight:600;margin-bottom:6px;">Remote campaign ID</label>'
-                . '<input type="text" name="honeycomb_binding[' . $slugEsc . '][remote_campaign_id]"'
-                . ' value="' . $campaignEsc . '"'
-                . ' placeholder="Ad campaign id from the network"'
-                . ' style="width:100%;padding:10px;border:2px solid #ddd;border-radius:4px;">';
+                . '<label class="campaign-form-label" for="honeycomb_acct_' . $slugEsc . '">Remote account ID</label>'
+                . '<input type="text" id="honeycomb_acct_' . $slugEsc . '" name="honeycomb_binding[' . $slugEsc . '][remote_account_id]"'
+                . ' class="campaign-form-input" value="' . $accountEsc . '"'
+                . ' placeholder="e.g. biz_… or advertiser id">'
+                . '<label class="campaign-form-label" for="honeycomb_camp_' . $slugEsc . '">Remote campaign ID</label>'
+                . '<input type="text" id="honeycomb_camp_' . $slugEsc . '" name="honeycomb_binding[' . $slugEsc . '][remote_campaign_id]"'
+                . ' class="campaign-form-input" value="' . $campaignEsc . '"'
+                . ' placeholder="Ad campaign id from the network">';
         } elseif ($hasConversionExport) {
             $html .= '<input type="hidden" name="honeycomb_binding[' . $slugEsc . '][remote_account_id]" value="">'
                 . '<input type="hidden" name="honeycomb_binding[' . $slugEsc . '][remote_campaign_id]" value="">';

@@ -98,9 +98,27 @@ try {
         $status = (int) $result['_http_status'];
         unset($result['_http_status']);
     }
+    $errorText = '';
+    if (isset($result['error']) && is_string($result['error']) && $result['error'] !== '') {
+        $errorText = $result['error'];
+    } elseif (($result['success'] ?? true) === false && isset($result['message']) && is_string($result['message'])) {
+        $errorText = $result['message'];
+    }
+    if ($errorText !== '' || $status >= 400) {
+        \SimpleKuma\Support\ApiFailureLog::record(
+            $db,
+            'honeycomb',
+            $action,
+            $status >= 400 ? $status : null,
+            $errorText !== '' ? $errorText : 'Addon request failed.',
+            $slug
+        );
+    }
     http_response_code($status > 0 ? $status : 200);
     echo json_encode($result);
 } catch (Throwable $e) {
+    error_log('honeycomb-addon: ' . $e->getMessage());
+    \SimpleKuma\Support\ApiFailureLog::record($db, 'honeycomb', $action, 500, $e->getMessage(), $slug);
     http_response_code(500);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['success' => false, 'error' => 'Addon request failed.']);
 }

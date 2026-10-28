@@ -163,4 +163,12 @@ class GoogleAdsApiCallTracker
 
         return (int)($row['count'] ?? 0);
     }
+
+    /**
+     * Store a user-visible failure. The call count stays on google_ads_api_calls.
+     */
+    public function noteFailure(string $action, ?int $httpCode, string $message): void
+    {
+        \SimpleKuma\Support\ApiFailureLog::record($this->db, 'google_ads', $action, $httpCode, $message);
+    }
 }

@@ -1,0 +1,109 @@
+/**
+ * Onyx: warm near-black with champagne-gold actions.
+ * Stored id: onyx. Base polarity is dark.
+ */
+[data-theme="onyx"] {
+    --accent: #d5a45d;
+    --accent-hover: #e6bc7b;
+    --accent-muted: #e6bc7b;
+    --accent-soft: #34312f;
+
+    --color-forest-dark: #e6bc7b;
+    --color-forest: #d5a45d;
+    --color-forest-light: #e6bc7b;
+    --color-bark: #d5a45d;
+    --color-bark-dark: #b8893f;
+    --color-cream: #181a20;
+    --color-cream-dark: #202127;
+
+    --color-white: #24262e;
+    --color-gray-100: #202127;
+    --color-gray-200: #45444a;
+    --color-gray-300: #5a585f;
+    --color-gray-600: #bdb4a8;
+    --color-gray-800: #f0e6d6;
+    --color-black: #f0e6d6;
+
+    --heading-color: #f0e6d6;
+    --link-color: #e6bc7b;
+    --link-hover: #f4d49c;
+
+    --color-success: #6ccb91;
+    --color-success-bg: #1c3328;
+    --color-warning: #e6be70;
+    --color-warning-bg: #3a3018;
+    --color-error: #f08080;
+    --color-error-bg: #3d2222;
+    --color-info: #e6bc7b;
+    --color-info-bg: #2c2a26;
+
+    --sidebar-bg: #111216;
+    --sidebar-text: #f0e6d6;
+    --sidebar-text-muted: #b9ad9b;
+    --sidebar-hover-bg: #242220;
+    --sidebar-active-bg: #34312f;
+    --sidebar-active-border: #d5a45d;
+    --sidebar-active-text: #f0e6d6;
+    --sidebar-scrollbar-track: #0c0d10;
+    --sidebar-scrollbar-thumb: #45444a;
+    --sidebar-scrollbar-thumb-hover: #d5a45d;
+    --sidebar-border: #45444a;
+
+    --page-bg: #181a20;
+    --surface: #24262e;
+    --surface-raised: #202127;
+    --text-primary: #f0e6d6;
+    --text-muted: #bdb4a8;
+    --border-color: #45444a;
+    --navbar-bg: #202127;
+    --navbar-border: #45444a;
+    --card-header-border: #45444a;
+
+    --input-bg: #1b1d23;
+    --input-border: #45444a;
+    --input-text: #f0e6d6;
+    --input-placeholder: rgba(189, 180, 168, 0.75);
+
+    --table-bg: #24262e;
+    --table-header-bg: #202127;
+    --table-header-text: #f0e6d6;
+    --table-header-accent: inset 0 -2px 0 #d5a45d;
+    --table-row-hover: #30323b;
+    --table-border: #45444a;
+
+    --btn-on-primary-text: #201b14;
+    --btn-outline-hover-text: #201b14;
+    --btn-radius: 4px;
+    --btn-padding-y: 8px;
+    --btn-padding-x: 24px;
+    --badge-warning-text: #e6be70;
+
+    --logo-max-width: 64px;
+    --logo-max-height: 60px;
+    --auth-logo-max-height: 140px;
+
+    --auth-page-bg: #181a20;
+    --auth-header-bg: #111216;
+    --auth-header-text: #f0e6d6;
+    --auth-container-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    --auth-tagline-text: #b9ad9b;
+    --auth-tagline-shadow: none;
+
+    --chart-grid: rgba(240, 230, 214, 0.08);
+    --chart-tick: #bdb4a8;
+    --chart-legend: #bdb4a8;
+    --chart-point-border: #24262e;
+    --chart-clicks: #d5a45d;
+    --chart-clicks-fill: rgba(213, 164, 93, 0.16);
+    --chart-tooltip-border: #d5a45d;
+    --chart-tooltip-bg: rgba(17, 18, 22, 0.96);
+
+    --shadow-sm: none;
+    --shadow-md: none;
+    --shadow-lg: none;
+}
+
+[data-theme="onyx"] .card {
+    box-shadow: none;
+    border: 1px solid var(--border-color);
+}

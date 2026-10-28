@@ -11,37 +11,30 @@ namespace SimpleKuma;
 class Logger
 {
     private string $logDir;
-    private string $logFile;
+    private string $logFile = '';
+    private bool $fileLogging = true;
     private int $retentionDays = 7;
 
     public function __construct(?string $logDir = null)
     {
-        // Use public/logs as default since storage/logs may not be writable on public servers
-        // Try storage/logs first, fallback to public/logs if storage is not writable
+        // Logs stay outside the document root. If storage/logs cannot be
+        // written, fall back to the PHP error log rather than public/logs.
         $defaultLogDir = dirname(__DIR__) . '/storage/logs';
-        $fallbackLogDir = dirname(__DIR__) . '/public/logs';
-        
+
         if ($logDir === null) {
-            // Check if storage/logs is writable, otherwise use public/logs
-            if (is_dir($defaultLogDir) && is_writable($defaultLogDir)) {
-                $this->logDir = $defaultLogDir;
-            } else {
-                // Try to create storage/logs, if fails use public/logs
-                if (!is_dir($defaultLogDir)) {
-                    @mkdir($defaultLogDir, 0755, true);
-                }
-                if (is_dir($defaultLogDir) && is_writable($defaultLogDir)) {
-                    $this->logDir = $defaultLogDir;
-                } else {
-                    $this->logDir = $fallbackLogDir;
-                }
+            if (!is_dir($defaultLogDir)) {
+                @mkdir($defaultLogDir, 0755, true);
             }
+            $this->logDir = $defaultLogDir;
+            $this->fileLogging = is_dir($defaultLogDir) && is_writable($defaultLogDir);
         } else {
             $this->logDir = $logDir;
         }
-        
-        $this->ensureLogDirectory();
-        $this->logFile = $this->logDir . '/fb_cost_updater.log';
+
+        if ($this->fileLogging) {
+            $this->ensureLogDirectory();
+            $this->logFile = $this->logDir . '/fb_cost_updater.log';
+        }
     }
 
     /**
@@ -132,6 +125,10 @@ class Logger
      */
     private function writeLog(string $message): void
     {
+        if (!$this->fileLogging || $this->logFile === '') {
+            error_log('SimpleKuma cost sync: ' . trim($message));
+            return;
+        }
         file_put_contents($this->logFile, $message, FILE_APPEND | LOCK_EX);
     }
 

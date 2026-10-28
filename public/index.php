@@ -26,10 +26,13 @@ use SimpleKuma\Auth\Permission;
 use SimpleKuma\Auth\SingleAdminMode;
 use SimpleKuma\Database\DbTimezone;
 use SimpleKuma\Theme\ThemeRegistry;
+use SimpleKuma\Edge\EdgeIngestFrontDispatch;
 use SimpleKuma\Tracking\FrontControllerClickDispatch;
 
-// Nginx (and misconfigured Apache) may fall through /km|/go|/c → index.php.
-// Hand off before auth so tracking never redirects to the login page.
+// Nginx (and misconfigured Apache) may fall through /km|/go|/c or
+// /api/edge-click → index.php. Hand off before auth so tracking never
+// redirects to the login page.
+EdgeIngestFrontDispatch::dispatchIfNeeded(__DIR__ . '/api/edge-click.php');
 FrontControllerClickDispatch::dispatchIfNeeded(__DIR__ . '/km.php');
 
 // UTF-8 for admin HTML (campaign redirect-rule fields with diacritics, etc.)
@@ -120,6 +123,12 @@ if ($currentUser && array_key_exists('dashboard_charts_hidden', $currentUser)) {
     $dashboardChartsHidden = (int) $currentUser['dashboard_charts_hidden'] === 1;
 }
 $GLOBALS['dashboardChartsHidden'] = $dashboardChartsHidden;
+
+$dashboardPeriodHidden = true;
+if ($currentUser && array_key_exists('dashboard_period_hidden', $currentUser)) {
+    $dashboardPeriodHidden = (int) $currentUser['dashboard_period_hidden'] === 1;
+}
+$GLOBALS['dashboardPeriodHidden'] = $dashboardPeriodHidden;
 
 // Simple router
 $page = $_GET['page'] ?? 'dashboard';
@@ -387,6 +396,7 @@ if ($page === 'conversions' && isset($_GET['export']) && $_GET['export'] === 'cs
     if (!in_array($eventTypeFilter, ['all', 'optins', 'conversions'], true)) {
         $eventTypeFilter = 'all';
     }
+    $extraFilters = \SimpleKuma\Tracking\ConversionPostbackParams::parseLogFilters($_GET);
 
     $service = new \SimpleKuma\Stats\ConversionsQueryService($db);
     $result = $service->listConversionsForLog(
@@ -398,14 +408,26 @@ if ($page === 'conversions' && isset($_GET['export']) && $_GET['export'] === 'cs
         500,
         100000,
         0,
-        $eventTypeFilter
+        $eventTypeFilter,
+        $extraFilters
     );
+
+    $reportKeys = \SimpleKuma\Tracking\ConversionPostbackParams::reportKeys();
+    $extraHeaders = [];
+    foreach ($reportKeys as $rk) {
+        $extraHeaders[] = match ($rk) {
+            'offer_name' => 'offer_name',
+            'offer_id' => 'offer_id',
+            'lander_id' => 'lander_id',
+            default => ucfirst($rk),
+        };
+    }
 
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment; filename="conversion-log-' . $todayInTz . '.csv"');
 
     $output = fopen('php://output', 'w');
-    fputcsv($output, [
+    fputcsv($output, array_merge([
         'Conversion Time',
         'Conversion ID',
         'Click ID',
@@ -426,10 +448,14 @@ if ($page === 'conversions' && isset($_GET['export']) && $_GET['export'] === 'cs
         'State',
         'IP',
         'Source',
-    ]);
+    ], $extraHeaders));
 
     foreach ($result['rows'] as $row) {
-        fputcsv($output, [
+        $extraCells = [];
+        foreach ($reportKeys as $rk) {
+            $extraCells[] = $row['pb_' . $rk] ?? '';
+        }
+        fputcsv($output, array_merge([
             \SimpleKuma\Utils\Formatter::formatDateTime($row['ts'], $csvTz),
             $row['id'],
             $row['click_id'],
@@ -450,7 +476,7 @@ if ($page === 'conversions' && isset($_GET['export']) && $_GET['export'] === 'cs
             $row['region'] ?? '',
             $row['ip'] ?? '',
             $row['source'] ?? '',
-        ]);
+        ], $extraCells));
     }
 
     fclose($output);

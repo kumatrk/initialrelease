@@ -2,9 +2,9 @@
 .postbacks-page {
     --pb-section-bg: #fafbf9;
     --pb-section-border: #dde5d4;
-    --pb-header-bg: #eef3ea;
+    --pb-header-bg: var(--accent-soft);
     --pb-header-border: #c8d4bc;
-    --pb-accent: #3d5a26;
+    --pb-accent: var(--accent);
 }
 
 .postbacks-page .postback-page-card {
@@ -59,7 +59,7 @@
     display: block;
     margin-bottom: 8px;
     font-weight: 600;
-    color: #2c3e1f;
+    color: var(--accent-hover);
     font-size: 14px;
 }
 
@@ -94,7 +94,7 @@
 }
 
 .postbacks-page .postback-url-box {
-    background: #f5f8f2;
+    background: var(--accent-soft);
     border: 1px solid #d4e4c4;
     border-radius: 8px;
     padding: 16px;
@@ -115,7 +115,7 @@
     min-width: 0;
     font-family: ui-monospace, monospace;
     font-size: 14px;
-    color: #2c3e1f;
+    color: var(--accent-hover);
     word-break: break-all;
     overflow-wrap: break-word;
     line-height: 1.5;
@@ -150,7 +150,7 @@
 }
 
 .postbacks-page .postback-doc-section--neutral {
-    background: #f8faf6;
+    background: var(--accent-soft);
 }
 
 .postbacks-page .postback-section-heading {
@@ -197,7 +197,7 @@
     padding: 8px 12px;
     font-size: 0.95rem;
     font-weight: 700;
-    color: #2c3e1f;
+    color: var(--accent-hover);
     background: var(--pb-header-bg);
     border-left: 3px solid var(--pb-accent);
     border-radius: 0 6px 6px 0;

@@ -162,6 +162,8 @@ $honeycombBindingsBySlug = [];
 $honeycombCampaignFieldProviders = [];
 $whopBizAccountId = '';
 $ringbaAddonEnabled = false;
+$deepFunnelsAddonEnabled = false;
+$deepFunnelsProvider = null;
 $ringbaBindingExtra = [
     'click_param' => 'click_id',
     'js_tag_id' => '',
@@ -174,6 +176,10 @@ try {
     foreach ($honeycombCampaignFieldProviders as $honeyProvider) {
         if ($honeyProvider->addonSlug() === 'ringba') {
             $ringbaAddonEnabled = true;
+        }
+        if ($honeyProvider->addonSlug() === 'deep-funnels') {
+            $deepFunnelsAddonEnabled = true;
+            $deepFunnelsProvider = $honeyProvider;
         }
     }
     $honeyPost = is_array($_POST['honeycomb_binding']['ringba'] ?? null) ? $_POST['honeycomb_binding']['ringba'] : [];

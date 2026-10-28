@@ -3,6 +3,7 @@
 
     var SIDEBAR_STORAGE_KEY = 'kuma_sidebar_collapsed';
     var CHART_STORAGE_KEY = 'kuma_dashboard_charts_hidden';
+    var PERIOD_STORAGE_KEY = 'kuma_dashboard_period_hidden';
 
     function cfg() {
         return window.KUMA_UI_PREFS_CONFIG || null;
@@ -41,6 +42,39 @@
             });
         }).catch(function (err) {
             console.warn('Failed to save UI pref:', err);
+            return { ok: false };
+        });
+    }
+
+    function saveReportColumns(payload) {
+        var c = cfg();
+        if (!c || !c.apiUrl || !c.csrfToken) {
+            return Promise.resolve({ ok: false });
+        }
+
+        var body = new URLSearchParams();
+        body.set('report_columns', JSON.stringify(payload || {}));
+        body.set('app_csrf', c.csrfToken);
+
+        return fetch(c.apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: body.toString(),
+            credentials: 'same-origin'
+        }).then(function (res) {
+            return res.json().catch(function () {
+                return { ok: false };
+            }).then(function (data) {
+                if (!res.ok || !data.ok) {
+                    console.warn('Failed to save report columns:', (data && data.error) || res.status);
+                }
+                return data;
+            });
+        }).catch(function (err) {
+            console.warn('Failed to save report columns:', err);
             return { ok: false };
         });
     }
@@ -127,9 +161,37 @@
         });
     }
 
+    function initDashboardPeriodToggle() {
+        var buttons = document.querySelectorAll('[data-dashboard-period-toggle]');
+        if (!buttons.length) {
+            return;
+        }
+
+        var c = cfg();
+        var hidden = c ? toBool(c.dashboardPeriodHidden) : true;
+        try {
+            localStorage.setItem(PERIOD_STORAGE_KEY, hidden ? '1' : '0');
+        } catch (e) { /* ignore */ }
+
+        buttons.forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var nextHidden = btn.getAttribute('data-dashboard-period-toggle') === 'hide';
+                btn.disabled = true;
+                try {
+                    localStorage.setItem(PERIOD_STORAGE_KEY, nextHidden ? '1' : '0');
+                } catch (e) { /* ignore */ }
+
+                savePref('dashboard_period_hidden', nextHidden).then(function () {
+                    window.location.reload();
+                });
+            });
+        });
+    }
+
     function init() {
         initSidebarToggle();
         initDashboardChartToggle();
+        initDashboardPeriodToggle();
     }
 
     if (document.readyState === 'loading') {
@@ -140,6 +202,7 @@
 
     window.KumaUiPrefs = {
         save: savePref,
+        saveReportColumns: saveReportColumns,
         applySidebarCollapsed: applySidebarCollapsed
     };
 })();

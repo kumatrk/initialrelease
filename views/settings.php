@@ -38,7 +38,9 @@ use SimpleKuma\Entity\CampaignGroup;
 use SimpleKuma\Entity\FacebookCapiIntegration;
 use SimpleKuma\Entity\GoogleAdsIntegration;
 use SimpleKuma\Entity\FacebookMarketingIntegration;
+use SimpleKuma\Entity\NewsBreakIntegration;
 use SimpleKuma\Entity\CustomPostback;
+use SimpleKuma\NewsBreak\NewsBreakClient;
 use SimpleKuma\Entity\Campaign;
 use SimpleKuma\Entity\TrafficSource;
 use SimpleKuma\Entity\User;
@@ -56,6 +58,7 @@ $campaignGroup = new CampaignGroup($db);
 $facebookCapi = new FacebookCapiIntegration($db);
 $googleAds = new GoogleAdsIntegration($db);
 $facebookMarketing = new FacebookMarketingIntegration($db);
+$newsBreakIntegrations = new NewsBreakIntegration($db);
 $customPostback = new CustomPostback($db);
 $campaignEntity = new Campaign($db);
 $trafficSourceEntity = new TrafficSource($db);
@@ -404,6 +407,10 @@ if (isset($_GET['success'])) {
         'ga_cost_integration_created' => 'Google Ads cost integration created successfully. Conversion CSV URL is under Integrations (delivery defaults to CSV).',
         'ga_cost_integration_updated' => 'Google Ads cost integration updated successfully',
         'ga_cost_integration_deleted' => 'Google Ads cost integration deleted successfully',
+        'nb_integration_created' => 'NewsBreak integration created successfully. Cost syncs on the hourly traffic API cron.',
+        'nb_integration_updated' => 'NewsBreak integration updated successfully',
+        'nb_integration_deleted' => 'NewsBreak integration deleted successfully',
+        'nb_integration_tested' => 'NewsBreak Access Token test succeeded',
         'fm_integration_created' => 'Facebook Marketing API integration created successfully',
         'fm_integration_updated' => 'Facebook Marketing API integration updated successfully',
         'custom_postback_created' => 'Custom postback created successfully',
@@ -428,8 +435,20 @@ if (isset($_GET['success'])) {
         'edge_health_ok' => 'Edge health check passed',
         'edge_synced' => 'Campaigns synced to Cloudflare KV',
         'edge_secret_rotated' => 'Ingest secret rotated — redeploy the Worker to push the new secret',
+        'grizzly_guard_saved' => 'Grizzly Guard settings saved.',
+        'grizzly_guard_ran' => 'Grizzly Guard finished a check.',
+        'grizzly_guard_off' => 'Grizzly Guard is off, so the check did not change any campaigns.',
+        'grizzly_guard_missing' => 'Grizzly Guard needs the database update first. Open Updates and run Update database.',
+        'grizzly_guard_busy' => 'A Grizzly Guard check is already running.',
+        'notifications_saved' => 'Notification settings saved.',
+        'notifications_tested' => 'Test message sent to the channels you turned on.',
     ];
     $success = $successMap[$_GET['success']] ?? '';
+    if ($_GET['success'] === 'grizzly_guard_ran') {
+        $checked = isset($_GET['checked']) ? (int) $_GET['checked'] : 0;
+        $guardActions = isset($_GET['actions']) ? (int) $_GET['actions'] : 0;
+        $success = 'Grizzly Guard finished a check. Campaigns looked at: ' . $checked . '. Changes: ' . $guardActions . '.';
+    }
     if ($_GET['success'] === 'login_gate_saved' && !empty($_SESSION['login_gate_url_reveal'])) {
         $success = 'Login page privacy settings saved. Copy your private login URL below — it will not be shown again.';
     }
@@ -584,6 +603,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'create_ga_cost_integration',
             'update_ga_cost_integration',
             'delete_ga_cost_integration',
+            'create_nb_integration',
+            'update_nb_integration',
+            'delete_nb_integration',
+            'test_nb_integration',
             'create_custom_postback',
             'update_custom_postback',
             'delete_custom_postback',
@@ -597,6 +620,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ], true) && !$canEditSettings
     ) {
         $errors['general'] = 'You do not have permission to edit settings.';
+    } elseif ($action === 'save_grizzly_guard' || $action === 'run_grizzly_guard') {
+        if (!$canEditSettings) {
+            $errors['general'] = 'You do not have permission to edit settings.';
+        } elseif ($action === 'save_grizzly_guard') {
+            try {
+                $guardError = \SimpleKuma\Guard\GrizzlyGuardSettings::saveFromPost(new \SimpleKuma\Settings\SettingsManager($db), $_POST, $db);
+            } catch (Throwable $e) {
+                $guardError = 'Grizzly Guard settings could not be saved.';
+                error_log('Grizzly Guard settings save failed: ' . $e->getMessage());
+            }
+            if ($guardError !== null) {
+                $errors['general'] = $guardError;
+            } else {
+                header('Location: ?page=settings&tab=grizzly-guard&success=grizzly_guard_saved');
+                exit;
+            }
+        } else {
+            @set_time_limit(90);
+            try {
+                $guardResult = \SimpleKuma\Guard\GrizzlyGuardRunner::run($db, 40);
+            } catch (Throwable $e) {
+                $errors['general'] = 'Grizzly Guard could not finish the check.';
+                error_log('Grizzly Guard run failed: ' . $e->getMessage());
+                $guardResult = null;
+            }
+            if (is_array($guardResult)) {
+                $guardStatus = (string) ($guardResult['status'] ?? 'ok');
+                if ($guardStatus === 'off') {
+                    header('Location: ?page=settings&tab=grizzly-guard&success=grizzly_guard_off');
+                } elseif ($guardStatus === 'missing') {
+                    header('Location: ?page=settings&tab=grizzly-guard&success=grizzly_guard_missing');
+                } elseif ($guardStatus === 'busy') {
+                    header('Location: ?page=settings&tab=grizzly-guard&success=grizzly_guard_busy');
+                } else {
+                    $checked = (int) ($guardResult['checked'] ?? 0);
+                    $guardActions = (int) ($guardResult['actions'] ?? 0);
+                    header('Location: ?page=settings&tab=grizzly-guard&success=grizzly_guard_ran&checked=' . $checked . '&actions=' . $guardActions);
+                }
+                exit;
+            }
+        }
+    } elseif ($action === 'save_notifications' || $action === 'test_notifications') {
+        if (!$canEditSettings) {
+            $errors['general'] = 'You do not have permission to edit settings.';
+        } else {
+            try {
+                $notifyError = \SimpleKuma\Notify\NotificationSettings::saveFromPost(new \SimpleKuma\Settings\SettingsManager($db), $_POST);
+            } catch (Throwable $e) {
+                $notifyError = 'Notification settings could not be saved.';
+                error_log('Notification settings save failed: ' . $e->getMessage());
+            }
+            if ($notifyError !== null) {
+                $errors['general'] = $notifyError;
+            } elseif ($action === 'test_notifications') {
+                $notifyFailures = \SimpleKuma\Notify\NotificationDispatcher::sendTest($db);
+                if ($notifyFailures !== []) {
+                    $errors['general'] = 'The test did not reach every channel. ' . implode(' ', $notifyFailures);
+                } else {
+                    header('Location: ?page=settings&tab=account&success=notifications_tested');
+                    exit;
+                }
+            } else {
+                header('Location: ?page=settings&tab=account&success=notifications_saved');
+                exit;
+            }
+        }
     } elseif ($action === 'install_composer') {
         if (!$canEditSettings) {
             $errors['general'] = 'You do not have permission to install dependencies.';
@@ -765,9 +854,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $edgeSettings = new \SimpleKuma\Edge\EdgeSettings($db);
             $sm = $edgeSettings->settingsManager();
             $sm->set(\SimpleKuma\Edge\EdgeSettings::KEY_CF_ACCOUNT_ID, trim((string) ($_POST['cf_account_id'] ?? '')));
-            $sm->set(\SimpleKuma\Edge\EdgeSettings::KEY_CF_ZONE_ID, trim((string) ($_POST['cf_zone_id'] ?? '')));
             $sm->set(\SimpleKuma\Edge\EdgeSettings::KEY_CF_WORKER_NAME, trim((string) ($_POST['cf_worker_name'] ?? '')) ?: \SimpleKuma\Edge\EdgeSettings::DEFAULT_WORKER_NAME);
-            $sm->set(\SimpleKuma\Edge\EdgeSettings::KEY_CF_ROUTE_PATTERN, trim((string) ($_POST['cf_route_pattern'] ?? '')));
+            $postedZones = $_POST['route_zone_id'] ?? [];
+            $postedPatterns = $_POST['route_pattern'] ?? [];
+            $postedRoutes = [];
+            if (is_array($postedZones) && is_array($postedPatterns)) {
+                $routeCount = min(count($postedZones), count($postedPatterns));
+                for ($routeIndex = 0; $routeIndex < $routeCount; $routeIndex++) {
+                    $postedRoutes[] = [
+                        'zone_id' => $postedZones[$routeIndex] ?? '',
+                        'pattern' => $postedPatterns[$routeIndex] ?? '',
+                    ];
+                }
+            }
+            $edgeSettings->saveRoutes($postedRoutes);
             $sm->set(\SimpleKuma\Edge\EdgeSettings::KEY_ORIGIN_BASE_URL, rtrim(trim((string) ($_POST['origin_base_url'] ?? '')), '/'));
 
             $apiToken = trim((string) ($_POST['cf_api_token'] ?? ''));
@@ -888,7 +988,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'success' => false,
                         'errors' => array_merge(
                             ['Current database migrations must succeed before application files can be updated.'],
-                            $preUpdateRunner->getErrors()
+                            array_map(
+                                static fn ($err) => \SimpleKuma\Update\UpdateInstaller::capFlashError((string) $err),
+                                $preUpdateRunner->getErrors()
+                            )
                         ),
                     ];
                 } else {
@@ -910,7 +1013,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         } catch (Throwable $e) {
                             $installResult = [
                                 'success' => false,
-                                'errors' => [$e->getMessage()],
+                                'errors' => [\SimpleKuma\Update\UpdateInstaller::capFlashError($e->getMessage())],
                             ];
                         } finally {
                             $db->query("SELECT RELEASE_LOCK('simplekuma_application_update')");
@@ -985,7 +1088,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'message' => count($applied) > 0
                     ? 'Database update stopped after applying: ' . implode(', ', $applied) . '.'
                     : 'Database update failed.',
-                'errors' => $runErrors !== [] ? $runErrors : ['Unknown migration error.'],
+                'errors' => $runErrors !== []
+                    ? array_map(
+                        static fn ($err) => \SimpleKuma\Update\UpdateInstaller::capFlashError((string) $err),
+                        $runErrors
+                    )
+                    : ['Unknown migration error.'],
             ];
             header('Location: ?page=settings&tab=updates');
             exit;
@@ -1859,6 +1967,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $errors['general'] = 'Failed to delete Google Ads cost integration';
         }
+    } elseif ($action === 'create_nb_integration') {
+        $payload = [
+            'name' => trim((string) ($_POST['nb_name'] ?? 'NewsBreak')),
+            'access_token' => trim((string) ($_POST['nb_access_token'] ?? '')),
+            'timezone' => trim((string) ($_POST['nb_timezone'] ?? 'UTC')),
+            'ad_account_id' => trim((string) ($_POST['nb_ad_account_id'] ?? '')),
+            'status' => trim((string) ($_POST['nb_status'] ?? 'active')),
+        ];
+        $nbErrors = [];
+        if ($payload['access_token'] === '') {
+            $nbErrors[] = 'Access Token is required';
+        }
+        if (!$newsBreakIntegrations->tableExists()) {
+            $nbErrors[] = 'Run Settings → Updates → Update database first (NewsBreak tables missing)';
+        }
+        if ($nbErrors !== []) {
+            $errors['nb_integration'] = $nbErrors;
+        } else {
+            $newId = $newsBreakIntegrations->create($payload);
+            if ($newId) {
+                header('Location: ?page=settings&tab=api-costs&success=nb_integration_created');
+                exit;
+            }
+            $errors['general'] = 'Failed to create NewsBreak integration';
+        }
+    } elseif ($action === 'update_nb_integration') {
+        $id = (int) ($_POST['nb_integration_id'] ?? 0);
+        if ($id <= 0) {
+            $errors['general'] = 'Invalid NewsBreak integration ID';
+        } elseif (!$newsBreakIntegrations->update($id, [
+            'name' => trim((string) ($_POST['nb_name'] ?? 'NewsBreak')),
+            'access_token' => trim((string) ($_POST['nb_access_token'] ?? '')),
+            'timezone' => trim((string) ($_POST['nb_timezone'] ?? 'UTC')),
+            'ad_account_id' => trim((string) ($_POST['nb_ad_account_id'] ?? '')),
+            'status' => trim((string) ($_POST['nb_status'] ?? 'active')),
+        ])) {
+            $errors['general'] = 'Failed to update NewsBreak integration';
+        } else {
+            header('Location: ?page=settings&tab=api-costs&success=nb_integration_updated');
+            exit;
+        }
+    } elseif ($action === 'delete_nb_integration') {
+        $id = (int) ($_POST['nb_integration_id'] ?? 0);
+        if ($id <= 0) {
+            $errors['general'] = 'Invalid NewsBreak integration ID';
+        } elseif ($newsBreakIntegrations->delete($id)) {
+            header('Location: ?page=settings&tab=api-costs&success=nb_integration_deleted');
+            exit;
+        } else {
+            $errors['general'] = 'Failed to delete NewsBreak integration';
+        }
+    } elseif ($action === 'test_nb_integration') {
+        $id = (int) ($_POST['nb_integration_id'] ?? 0);
+        $full = $id > 0 ? $newsBreakIntegrations->getById($id, true) : null;
+        if ($full === null || empty($full['access_token'])) {
+            $errors['general'] = 'NewsBreak integration or token not found';
+        } else {
+            $test = (new NewsBreakClient((string) $full['access_token'], $db))->testConnection();
+            if ($test['ok']) {
+                header('Location: ?page=settings&tab=api-costs&success=nb_integration_tested');
+                exit;
+            }
+            $errors['general'] = 'NewsBreak test failed: ' . $test['message'];
+        }
     } elseif ($action === 'create_custom_postback') {
         $name = trim($_POST['custom_postback_name'] ?? '');
         $postbackUrl = trim($_POST['custom_postback_url'] ?? '');
@@ -2373,6 +2545,14 @@ if (isset($_GET['edit_ga_cost_integration'])) {
         ? ($googleAds->getById($gaCostEditId) ?? [])
         : [];
 }
+$allNewsBreakIntegrations = $newsBreakIntegrations->getAllIncludingPaused();
+$editingNewsBreakIntegration = null;
+if (isset($_GET['edit_nb_integration'])) {
+    $nbEditId = (int) $_GET['edit_nb_integration'];
+    $editingNewsBreakIntegration = $nbEditId > 0
+        ? ($newsBreakIntegrations->getById($nbEditId) ?? [])
+        : [];
+}
 // Load Facebook Marketing integrations for display
 $allFacebookMarketingIntegrations = $facebookMarketing->getAllIncludingPaused();
 // Check if editing Facebook Marketing integration
@@ -2470,7 +2650,7 @@ $currentUser['pass_hash'] = $userRow['pass_hash'];
 </div>
 
 <?php if ($success): ?>
-<div style="background: #d4edda; color: #155724; padding: 15px; border-radius: 4px; margin-bottom: 20px; border-left: 4px solid #28a745;">
+<div style="background: var(--accent-soft); color: var(--accent-hover); padding: 15px; border-radius: 4px; margin-bottom: 20px; border-left: 4px solid var(--color-success);">
     ✅ <?= htmlspecialchars($success) ?>
 </div>
 <?php endif; ?>
@@ -2489,6 +2669,7 @@ $showUsersTab = !SingleAdminMode::isEnabled()
 $settingsTabs = [
     ['slug' => 'account', 'label' => 'Account'],
     ['slug' => 'domains', 'label' => 'Domains'],
+    ['slug' => 'grizzly-guard', 'label' => 'Grizzly Guard'],
     ['slug' => 'integrations', 'label' => 'Integrations'],
     ['slug' => 'api-costs', 'label' => 'API Cost Updates'],
     ['slug' => 'privacy', 'label' => 'Data Retention'],
@@ -2577,7 +2758,7 @@ $settingsTabs = array_values(array_filter(
                     <!-- Empty State -->
                     <div style="text-align: center; padding: 60px 20px; color: #666;">
                         <img src="<?= ASSETS_BASE_URL ?>/assets/images/domainbear.png" alt="Domains" style="width: 64px; height: 64px; margin-bottom: 16px; object-fit: contain;">
-                        <h3 style="color: #3d5a26; margin-bottom: 12px;">No custom domains yet</h3>
+                        <h3 style="color: var(--accent); margin-bottom: 12px;">No custom domains yet</h3>
                         <p style="margin-bottom: 24px; max-width: 500px; margin-left: auto; margin-right: auto;">
                             Add custom tracking domains to use branded URLs in your campaigns. This helps keep your main tracker domain private and allows you to match your landing page domains.
                         </p>
@@ -2591,22 +2772,22 @@ $settingsTabs = array_values(array_filter(
                         $testIsFailed = ($testResult['status'] ?? '') === 'failed';
                         $testIsSuccess = in_array($testResult['status'] ?? '', TrackingDomain::usableStatuses(), true);
                         ?>
-                        <div style="background: <?= $testIsSuccess ? '#d4edda' : ($testIsFailed ? '#f8d7da' : '#fff3cd') ?>; 
-                                    border: 2px solid <?= $testIsSuccess ? '#28a745' : ($testIsFailed ? '#dc3545' : '#ffc107') ?>; 
+                        <div style="background: <?= $testIsSuccess ? 'var(--accent-soft)' : ($testIsFailed ? '#f8d7da' : '#fff3cd') ?>; 
+                                    border: 2px solid <?= $testIsSuccess ? 'var(--color-success)' : ($testIsFailed ? '#dc3545' : '#ffc107') ?>; 
                                     border-radius: 6px; padding: 16px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
                             <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
                                 <span style="font-size: 24px;">
                                     <?= $testIsSuccess ? '✅' : ($testIsFailed ? '❌' : '⚠️') ?>
                                 </span>
-                                <h4 style="margin: 0; color: <?= $testIsSuccess ? '#155724' : ($testIsFailed ? '#721c24' : '#856404') ?>;">
+                                <h4 style="margin: 0; color: <?= $testIsSuccess ? 'var(--accent-hover)' : ($testIsFailed ? '#721c24' : '#856404') ?>;">
                                     Domain Test Results
                                 </h4>
                             </div>
-                            <div style="font-size: 13px; color: <?= $testIsSuccess ? '#155724' : ($testIsFailed ? '#721c24' : '#856404') ?>;">
-                                <div style="margin-bottom: 8px; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 4px; border-left: 3px solid <?= $testResult['dns_ok'] ? '#28a745' : '#dc3545' ?>;">
+                            <div style="font-size: 13px; color: <?= $testIsSuccess ? 'var(--accent-hover)' : ($testIsFailed ? '#721c24' : '#856404') ?>;">
+                                <div style="margin-bottom: 8px; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 4px; border-left: 3px solid <?= $testResult['dns_ok'] ? 'var(--color-success)' : '#dc3545' ?>;">
                                     <strong>DNS Check:</strong> 
                                     <?php if ($testResult['dns_ok']): ?>
-                                        <span style="color: #28a745;">✅ OK</span>
+                                        <span style="color: var(--color-success);">✅ OK</span>
                                     <?php else: ?>
                                         <span style="color: #dc3545;">❌ Failed</span>
                                     <?php endif; ?>
@@ -2614,10 +2795,10 @@ $settingsTabs = array_values(array_filter(
                                         <?= !empty($testResult['dns_message']) ? htmlspecialchars($testResult['dns_message']) : 'No DNS check information available' ?>
                                     </div>
                                 </div>
-                                <div style="margin-bottom: 8px; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 4px; border-left: 3px solid <?= $testResult['ssl_ok'] ? '#28a745' : '#dc3545' ?>;">
+                                <div style="margin-bottom: 8px; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 4px; border-left: 3px solid <?= $testResult['ssl_ok'] ? 'var(--color-success)' : '#dc3545' ?>;">
                                     <strong>SSL Check:</strong> 
                                     <?php if ($testResult['ssl_ok']): ?>
-                                        <span style="color: #28a745;">✅ OK</span>
+                                        <span style="color: var(--color-success);">✅ OK</span>
                                     <?php else: ?>
                                         <span style="color: #dc3545;">❌ Failed</span>
                                     <?php endif; ?>
@@ -2763,7 +2944,7 @@ $settingsTabs = array_values(array_filter(
                             <div class="mobile-domain-card" style="background: var(--color-white); border: 1px solid var(--color-gray-200); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-md); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                                 <!-- Header: Domain -->
                                 <div style="margin-bottom: var(--spacing-sm); border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: var(--spacing-xs);">
-                                    <div style="font-weight: 600; font-size: 16px; color: #3d5a26; font-family: monospace; word-break: break-all;">
+                                    <div style="font-weight: 600; font-size: 16px; color: var(--accent); font-family: monospace; word-break: break-all;">
                                         <?= htmlspecialchars($domain['domain']) ?>
                                     </div>
                                 </div>
@@ -2842,12 +3023,12 @@ $settingsTabs = array_values(array_filter(
                 <p style="margin-bottom: 16px;">To use a custom tracking domain, you need to configure DNS records at your domain registrar and set up the domain on your server:</p>
                 
                 <!-- DNS Configuration -->
-                <div style="background: #f9f9f9; padding: 16px; border-radius: 6px; border-left: 4px solid #3d5a26; margin-bottom: 20px;">
-                    <h4 style="margin: 0 0 12px 0; color: #3d5a26;">Step 1: Configure DNS Records</h4>
+                <div style="background: #f9f9f9; padding: 16px; border-radius: 6px; border-left: 4px solid var(--accent); margin-bottom: 20px;">
+                    <h4 style="margin: 0 0 12px 0; color: var(--accent);">Step 1: Configure DNS Records</h4>
                     <p style="margin: 0 0 12px 0; font-size: 14px;">At your domain registrar, add one of the following DNS records:</p>
                     
                     <div style="background: #fff; padding: 12px; border-radius: 4px; margin-bottom: 12px;">
-                        <strong style="color: #3d5a26;">Option 1: A Record (Recommended for Addon Domains)</strong>
+                        <strong style="color: var(--accent);">Option 1: A Record (Recommended for Addon Domains)</strong>
                         <p style="margin: 8px 0 0 0; font-size: 14px;">
                             Point your domain to the same IP address as your main Kuma installation:<br>
                             <code style="background: #f5f5f5; padding: 4px 8px; border-radius: 4px; display: inline-block; margin-top: 4px;">Type: A | Host: @ (or subdomain) | Value: [Your Server IP Address]</code>
@@ -2858,7 +3039,7 @@ $settingsTabs = array_values(array_filter(
                     </div>
                     
                     <div style="background: #fff; padding: 12px; border-radius: 4px;">
-                        <strong style="color: #3d5a26;">Option 2: CNAME Record</strong>
+                        <strong style="color: var(--accent);">Option 2: CNAME Record</strong>
                         <p style="margin: 8px 0 0 0; font-size: 14px;">
                             Point your domain to your main tracker domain:<br>
                             <code style="background: #f5f5f5; padding: 4px 8px; border-radius: 4px; display: inline-block; margin-top: 4px;">Type: CNAME | Host: @ (or subdomain) | Value: <?= parse_url(BASE_URL, PHP_URL_HOST) ?></code>
@@ -2901,12 +3082,12 @@ $settingsTabs = array_values(array_filter(
                 </div>
                 
                 <!-- Verification -->
-                <div style="background: #d4edda; padding: 16px; border-radius: 6px; border-left: 4px solid #28a745;">
-                    <h4 style="margin: 0 0 12px 0; color: #155724;">Step 4: Verify Setup</h4>
-                    <p style="margin: 0; font-size: 14px; color: #155724;">
+                <div style="background: var(--accent-soft); padding: 16px; border-radius: 6px; border-left: 4px solid var(--color-success);">
+                    <h4 style="margin: 0 0 12px 0; color: var(--accent-hover);">Step 4: Verify Setup</h4>
+                    <p style="margin: 0; font-size: 14px; color: var(--accent-hover);">
                         Once DNS has propagated and SSL is configured, use the <strong>"Test Domain"</strong> button (🔍) next to your domain in the list above to verify:
                     </p>
-                    <ul style="margin: 12px 0 0 0; padding-left: 20px; font-size: 14px; line-height: 1.8; color: #155724;">
+                    <ul style="margin: 12px 0 0 0; padding-left: 20px; font-size: 14px; line-height: 1.8; color: var(--accent-hover);">
                         <li>DNS resolution is working correctly</li>
                         <li>SSL certificate is valid and active</li>
                         <li>Domain is accessible and pointing to your Kuma installation</li>
@@ -2950,8 +3131,8 @@ $settingsTabs = array_values(array_filter(
                         <?php endif; ?>
                     </div>
                     
-                    <div style="background: #f9f9f9; padding: 16px; border-radius: 6px; border-left: 4px solid #3d5a26; margin-bottom: 24px;">
-                        <h4 style="margin: 0 0 12px 0; color: #3d5a26;">Before Adding:</h4>
+                    <div style="background: #f9f9f9; padding: 16px; border-radius: 6px; border-left: 4px solid var(--accent); margin-bottom: 24px;">
+                        <h4 style="margin: 0 0 12px 0; color: var(--accent);">Before Adding:</h4>
                         <ol style="margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.8;">
                             <li>Purchase the domain (if you don't own it)</li>
                             <li>Configure DNS records (A record or CNAME) at your domain registrar</li>
@@ -2959,16 +3140,16 @@ $settingsTabs = array_values(array_filter(
                             <li>Set up SSL certificate (Let's Encrypt or Cloudflare)</li>
                             <li>Add the domain here and use "Test Domain" to verify</li>
                         </ol>
-                        <div style="background: #d4edda; border: 1px solid #28a745; border-radius: 4px; padding: 12px; margin-top: 16px;">
-                            <p style="margin: 0; font-size: 13px; color: #155724; line-height: 1.6;">
+                        <div style="background: var(--accent-soft); border: 1px solid var(--color-success); border-radius: 4px; padding: 12px; margin-top: 16px;">
+                            <p style="margin: 0; font-size: 13px; color: var(--accent-hover); line-height: 1.6;">
                                 <strong>✅ Seamless Integration:</strong> Once configured, your custom tracking domain will work seamlessly for:
                             </p>
-                            <ul style="margin: 8px 0 0 0; padding-left: 20px; font-size: 13px; color: #155724; line-height: 1.6;">
+                            <ul style="margin: 8px 0 0 0; padding-left: 20px; font-size: 13px; color: var(--accent-hover); line-height: 1.6;">
                                 <li><strong>Campaign Tracking Links:</strong> Use custom domains in campaign settings - all tracking links will use your branded domain</li>
                                 <li><strong>Postback URLs:</strong> Select custom domains in Postback URLs page - networks can send conversions to your branded domain</li>
                                 <li><strong>Conversion Pixels:</strong> Use custom domains for client-side tracking pixels on thank-you pages</li>
                             </ul>
-                            <p style="margin: 8px 0 0 0; font-size: 13px; color: #155724; line-height: 1.6;">
+                            <p style="margin: 8px 0 0 0; font-size: 13px; color: var(--accent-hover); line-height: 1.6;">
                                 All tracking, redirects, and postbacks work automatically because the addon domain shares the same document root and application files.
                             </p>
                         </div>
@@ -3073,7 +3254,7 @@ $settingsTabs = array_values(array_filter(
                         <div class="mobile-fb-capi-card" style="background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                             <!-- Header: Name -->
                             <div style="margin-bottom: var(--spacing-sm); border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: var(--spacing-xs);">
-                                <div style="font-weight: 600; font-size: 16px; color: #3d5a26;">
+                                <div style="font-weight: 600; font-size: 16px; color: var(--accent);">
                                     <?= htmlspecialchars($integration['name']) ?>
                                 </div>
                             </div>
@@ -3390,15 +3571,15 @@ $settingsTabs = array_values(array_filter(
             </a>
         </div>
         <div class="card-body">
-            <div style="background: #e8f5e9; border-left: 4px solid #4caf50; padding: 12px; border-radius: 4px; margin-bottom: 16px;">
-                <p style="margin: 0; font-size: 13px; color: #2e7d32; line-height: 1.6;">
+            <div style="background: var(--accent-soft); border-left: 4px solid var(--accent); padding: 12px; border-radius: 4px; margin-bottom: 16px;">
+                <p style="margin: 0; font-size: 13px; color: var(--accent-hover); line-height: 1.6;">
                     <strong>Recommended:</strong> use <strong>CSV / Data Manager</strong> so Google pulls conversions from your endpoint on a schedule.
                     Capture <code style="background: rgba(46,125,50,0.12); padding: 1px 5px; border-radius: 3px; font-size: 12px; white-space: nowrap;">gclid</code>,
                     <code style="background: rgba(46,125,50,0.12); padding: 1px 5px; border-radius: 3px; font-size: 12px; white-space: nowrap;">wbraid</code>, and
                     <code style="background: rgba(46,125,50,0.12); padding: 1px 5px; border-radius: 3px; font-size: 12px; white-space: nowrap;">gbraid</code>
                     on Google/YouTube campaigns. For braids, set the Google conversion action count to <strong>Every</strong>.
                     Hourly <strong>cost sync</strong> is configured under
-                    <a href="?page=settings&tab=api-costs" style="color: #1b5e20; font-weight: 600;">API Cost Updates</a>
+                    <a href="?page=settings&tab=api-costs" style="color: var(--accent-hover); font-weight: 600;">API Cost Updates</a>
                     (same integration credentials). API conversion push is optional for advanced setups.
                 </p>
             </div>
@@ -3498,7 +3679,7 @@ $settingsTabs = array_values(array_filter(
                         <div class="mobile-google-ads-card" style="background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                             <!-- Header: Name -->
                             <div style="margin-bottom: var(--spacing-sm); border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: var(--spacing-xs);">
-                                <div style="font-weight: 600; font-size: 16px; color: #3d5a26;">
+                                <div style="font-weight: 600; font-size: 16px; color: var(--accent);">
                                     <?= htmlspecialchars($integration['name']) ?>
                                 </div>
                             </div>
@@ -3665,20 +3846,20 @@ $settingsTabs = array_values(array_filter(
                         </script>
 
                         <?php if ($editingGoogleAdsIntegration && !empty($editingGoogleAdsIntegration['conversion_key'])): ?>
-                        <div style="margin-bottom: 24px; padding: 16px; background: #e8f5e9; border: 2px solid #4caf50; border-radius: 8px;">
-                            <h3 style="margin: 0 0 12px 0; color: #2e7d32; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                        <div style="margin-bottom: 24px; padding: 16px; background: var(--accent-soft); border: 2px solid var(--accent); border-radius: 8px;">
+                            <h3 style="margin: 0 0 12px 0; color: var(--accent-hover); font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
                                 <span>🔗</span>
                                 Google Ads Conversion Script URL
                             </h3>
                             <p style="margin: 0 0 12px 0; color: #333; font-size: 14px; line-height: 1.5;">
                                 Copy this URL and paste it into Google Ads <strong>Data Manager → Connect to HTTPS</strong>. The path ends in <code>.csv</code> (required by Google); auth uses the <code>key</code> query param.
                             </p>
-                            <div style="background: #fff; padding: 12px; border: 1px solid #4caf50; border-radius: 4px; margin-bottom: 12px;">
-                                <code id="ga-conversion-url" style="font-size: 12px; color: #2e7d32; word-break: break-all; font-family: 'Courier New', monospace; display: block;">
+                            <div style="background: #fff; padding: 12px; border: 1px solid var(--accent); border-radius: 4px; margin-bottom: 12px;">
+                                <code id="ga-conversion-url" style="font-size: 12px; color: var(--accent-hover); word-break: break-all; font-family: 'Courier New', monospace; display: block;">
                                     <?= htmlspecialchars(APP_BASE_URL . '/api/google-conversions.csv?key=' . urlencode($editingGoogleAdsIntegration['conversion_key']) . '&camp=google') ?>
                                 </code>
                                 <button type="button" onclick="copyToClipboard('<?= htmlspecialchars(APP_BASE_URL . '/api/google-conversions.csv?key=' . urlencode($editingGoogleAdsIntegration['conversion_key']) . '&camp=google') ?>', this)" 
-                                        style="margin-top: 8px; padding: 6px 16px; background: #4caf50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;">
+                                        style="margin-top: 8px; padding: 6px 16px; background: var(--accent); color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;">
                                     📋 Copy Data Manager URL
                                 </button>
                                 <div style="margin-top: 10px; font-size: 12px; color: #555;">
@@ -3718,7 +3899,7 @@ $settingsTabs = array_values(array_filter(
             
             // Update button to show success
             button.textContent = '✓ COPIED!';
-            button.style.background = '#4caf50';
+            button.style.background = 'var(--accent)';
             button.disabled = true;
             
             // Revert after 2 seconds
@@ -3800,7 +3981,7 @@ $settingsTabs = array_values(array_filter(
                                 </label>
                                 <select id="campaign_selector_for_tokens" 
                                         onchange="updateCustomTokenLabels()"
-                                        style="width: 100%; padding: 6px; border: 1px solid #66bb6a; border-radius: 3px; font-size: 12px;">
+                                        style="width: 100%; padding: 6px; border: 1px solid var(--accent); border-radius: 3px; font-size: 12px;">
                                     <option value="">-- None selected (generic {tokenN} and {ts_tokenN}) --</option>
                                     <?php
                                     foreach ($allCampaignsForTokens as $camp): 
@@ -3860,7 +4041,7 @@ $settingsTabs = array_values(array_filter(
                                 border: 1.5px solid #e2e8f0;
                             }
                             .token-heading--builtin, .token-heading--custom {
-                                color: #166534;
+                                color: var(--accent-hover);
                                 font-size: 12px;
                                 display: block;
                                 margin-bottom: 8px;
@@ -3903,16 +4084,16 @@ $settingsTabs = array_values(array_filter(
                                 transform: translateY(1px) scale(0.98) !important;
                             }
                             .custom-token-btn.token-btn--builtin, .custom-token-btn {
-                                background: #f0fdf4 !important;
-                                border-color: #86efac !important;
-                                color: #166534 !important;
+                                background: var(--accent-soft) !important;
+                                border-color: var(--accent-muted) !important;
+                                color: var(--accent-hover) !important;
                             }
                             .custom-token-btn.token-btn--builtin:hover, .custom-token-btn:hover {
-                                background: #166534 !important;
-                                border-color: #166534 !important;
+                                background: var(--accent-hover) !important;
+                                border-color: var(--accent-hover) !important;
                                 color: #ffffff !important;
                                 transform: translateY(-1px) !important;
-                                box-shadow: 0 3px 6px rgba(22, 101, 52, 0.25) !important;
+                                box-shadow: 0 3px 6px color-mix(in srgb, var(--accent-hover) 25%, transparent) !important;
                             }
                             .custom-token-btn.token-btn--campaign {
                                 background: #eff6ff !important;
@@ -3947,13 +4128,13 @@ $settingsTabs = array_values(array_filter(
                                 border-color: #244b2c !important;
                             }
                             [data-theme-base="dark"] .token-selector-box label, [data-theme="dark"] .token-selector-box label {
-                                color: #86efac !important;
+                                color: var(--accent-muted) !important;
                             }
                             [data-theme-base="dark"] .token-selector-box .token-selector-hint, [data-theme="dark"] .token-selector-box .token-selector-hint {
                                 color: #94a3b8 !important;
                             }
                             [data-theme-base="dark"] .token-heading--builtin, [data-theme-base="dark"] .token-heading--custom, [data-theme="dark"] .token-heading--builtin, [data-theme="dark"] .token-heading--custom {
-                                color: #86efac !important;
+                                color: var(--accent-muted) !important;
                             }
                             [data-theme-base="dark"] .token-heading--campaign, [data-theme="dark"] .token-heading--campaign {
                                 color: #93c5fd !important;
@@ -3963,13 +4144,13 @@ $settingsTabs = array_values(array_filter(
                             }
                             [data-theme-base="dark"] .custom-token-btn.token-btn--builtin, [data-theme-base="dark"] .custom-token-btn, [data-theme="dark"] .custom-token-btn.token-btn--builtin, [data-theme="dark"] .custom-token-btn {
                                 background: #142e1b !important;
-                                border-color: #22c55e !important;
-                                color: #86efac !important;
+                                border-color: var(--accent) !important;
+                                color: var(--accent-muted) !important;
                                 box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
                             }
                             [data-theme-base="dark"] .custom-token-btn.token-btn--builtin:hover, [data-theme-base="dark"] .custom-token-btn:hover, [data-theme="dark"] .custom-token-btn.token-btn--builtin:hover, [data-theme="dark"] .custom-token-btn:hover {
-                                background: #22c55e !important;
-                                border-color: #86efac !important;
+                                background: var(--accent) !important;
+                                border-color: var(--accent-muted) !important;
                                 color: #052e16 !important;
                                 transform: translateY(-1px) !important;
                                 box-shadow: 0 3px 8px rgba(34, 197, 94, 0.4) !important;
@@ -4343,7 +4524,7 @@ $settingsTabs = array_values(array_filter(
                             <div class="mobile-custom-postback-card" style="background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                                 <!-- Header: Name -->
                                 <div style="margin-bottom: var(--spacing-sm); border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: var(--spacing-xs);">
-                                    <div style="font-weight: 600; font-size: 16px; color: #3d5a26;">
+                                    <div style="font-weight: 600; font-size: 16px; color: var(--accent);">
                                         <?= htmlspecialchars($postback['name']) ?>
                                     </div>
                                 </div>
@@ -4440,7 +4621,7 @@ $settingsTabs = array_values(array_filter(
                 <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; border-radius: 4px;">
                     <div style="font-size: 13px; color: #856404;">
                         <strong>⚠️ Setup Required:</strong> The postback logs table hasn't been created yet. 
-                        <a href="../public/run-migration-046.php" target="_blank" style="color: #3d5a26; font-weight: 600; text-decoration: underline;">
+                        <a href="../public/run-migration-046.php" target="_blank" style="color: var(--accent); font-weight: 600; text-decoration: underline;">
                             Run Migration 046
                         </a>
                     </div>
@@ -4589,7 +4770,7 @@ $settingsTabs = array_values(array_filter(
                                         <?= !empty($integration['ad_account_id']) ? htmlspecialchars($integration['ad_account_id']) : '<span style="color: #999;">—</span>' ?>
                                     </td>
                                     <td style="padding: 12px;">
-                                        <span style="display: inline-block; padding: 4px 10px; background: <?= $integration['status'] === 'active' ? '#d4edda' : '#fff3cd' ?>; color: <?= $integration['status'] === 'active' ? '#155724' : '#856404' ?>; border-radius: 12px; font-size: 12px; font-weight: 500; text-transform: capitalize;">
+                                        <span style="display: inline-block; padding: 4px 10px; background: <?= $integration['status'] === 'active' ? 'var(--accent-soft)' : '#fff3cd' ?>; color: <?= $integration['status'] === 'active' ? 'var(--accent-hover)' : '#856404' ?>; border-radius: 12px; font-size: 12px; font-weight: 500; text-transform: capitalize;">
                                             <?= htmlspecialchars($integration['status'] ?? 'active') ?>
                                         </span>
                                     </td>
@@ -4662,7 +4843,7 @@ $settingsTabs = array_values(array_filter(
                             <div id="fm_ad_account_loading" style="display: none; padding: 10px; background: #f0f0f0; border-radius: 4px; font-size: 13px; color: #666; margin-bottom: 10px;">
                                 🔄 Fetching and saving ad accounts...
                             </div>
-                            <div id="fm_ad_account_success" style="display: none; padding: 10px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 4px; font-size: 13px; color: #155724; margin-bottom: 10px;">
+                            <div id="fm_ad_account_success" style="display: none; padding: 10px; background: var(--accent-soft); border: 1px solid #c3e6cb; border-radius: 4px; font-size: 13px; color: var(--accent-hover); margin-bottom: 10px;">
                                 ✅ <span id="fm_ad_account_success_msg"></span>
                             </div>
                             <div id="fm_ad_account_error" style="display: none; padding: 10px; background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 4px; font-size: 13px; color: #721c24; margin-bottom: 10px;">
@@ -5079,7 +5260,7 @@ $settingsTabs = array_values(array_filter(
                             }
                             if (statusEl) {
                                 if (data.success) {
-                                    statusEl.style.color = '#155724';
+                                    statusEl.style.color = 'var(--accent-hover)';
                                     statusEl.textContent = data.message || 'Proxy OK';
                                 } else {
                                     statusEl.style.color = '#d32f2f';
@@ -5151,6 +5332,7 @@ $settingsTabs = array_values(array_filter(
     <?php endif; ?>
 
     <?php require __DIR__ . '/settings-partials/google-api-costs.php'; ?>
+    <?php require __DIR__ . '/settings-partials/newsbreak-api-costs.php'; ?>
 
 <?php elseif ($activeTab === 'privacy'): ?>
     <div class="card">
@@ -5163,7 +5345,7 @@ $settingsTabs = array_values(array_filter(
                 
                 <div style="max-width: 600px;">
                     <div style="margin-bottom: 32px;">
-                        <h3 style="margin: 0 0 16px 0; color: #3d5a26; font-size: 18px; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px;">Privacy Settings</h3>
+                        <h3 style="margin: 0 0 16px 0; color: var(--accent); font-size: 18px; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px;">Privacy Settings</h3>
                         <div style="margin-bottom: 24px;">
                             <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
                                 <input type="checkbox" name="ip_anonymization" 
@@ -5178,7 +5360,7 @@ $settingsTabs = array_values(array_filter(
                     </div>
 
                     <div style="margin-bottom: 32px;">
-                        <h3 style="margin: 0 0 16px 0; color: #3d5a26; font-size: 18px; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px;">Bot Detection</h3>
+                        <h3 style="margin: 0 0 16px 0; color: var(--accent); font-size: 18px; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px;">Bot Detection</h3>
                         <p style="font-size: 13px; color: #666; margin: 0 0 16px 0;">
                             Detects known crawlers and bots on click write (Matomo DeviceDetector + Crawler-Detect).
                             Known bots are stored but excluded from reports via the existing stats flag — redirects and dashboards stay fast.
@@ -5219,12 +5401,12 @@ $settingsTabs = array_values(array_filter(
                     </div>
 
                     <div style="margin-bottom: 32px;">
-                        <h3 style="margin: 0 0 16px 0; color: #3d5a26; font-size: 18px; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px;">Retention Policies</h3>
+                        <h3 style="margin: 0 0 16px 0; color: var(--accent); font-size: 18px; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px;">Retention Policies</h3>
                         <p style="font-size: 13px; color: #555; margin: 0 0 16px 0; line-height: 1.5;">
-                            Schedule <code>scripts/run-data-retention-cron.php</code> daily: archive old clicks out of the hot table, then optionally purge raw rows by age.
-                            Campaign KPI / chart / offer / LP stats keep using pre-aggregated summaries — raw purge does not wipe those reports.
-                            Geo, device, and visitor-log drill-downs need raw or archived click rows.
-                            Live CPU / RAM / disk meters and warning banners live on
+                            Schedule <code>scripts/run-data-retention-cron.php</code> daily to move older clicks into archive storage, then optionally delete very old raw click rows.
+                            Campaign overview stats (KPI, charts, offer / landing page totals) stay available after a raw purge.
+                            Detailed geo, device, and visitor-log views need the original or archived click rows.
+                            Check server health on
                             <a href="<?= APP_BASE_URL ?>/index.php?page=server-status">Server Status</a>.
                         </p>
                         <?php
@@ -5286,7 +5468,7 @@ $settingsTabs = array_values(array_filter(
                                    value="<?= htmlspecialchars($allSettings['archive_after_days'] ?? '365') ?>"
                                    min="0" max="3650"
                                    style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
-                            <div style="font-size: 12px; color: #666; margin-top: 4px;">Move clicks older than this from the hot table into clicks_archive (0 = off, default: 365). Keeps recent tracking fast; archived rows still support late postbacks and some drill-downs until purge.</div>
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">Move clicks older than this into archive storage (0 = off, default: 365). Keeps recent tracking responsive; archived clicks still support late postbacks and some detailed reports until they are purged.</div>
                         </div>
 
                         <div style="margin-bottom: 24px;">
@@ -5304,7 +5486,7 @@ $settingsTabs = array_values(array_filter(
             </form>
 
             <div style="max-width: 600px; margin-top: 28px; padding-top: 24px; border-top: 1px solid #e0e0e0;">
-                <h3 style="margin: 0 0 8px 0; color: #3d5a26; font-size: 18px;">Run now</h3>
+                <h3 style="margin: 0 0 8px 0; color: var(--accent); font-size: 18px;">Run now</h3>
                 <p style="font-size: 13px; color: #555; margin: 0 0 16px 0; line-height: 1.5;">
                     Same steps as the daily cron: disk check, archive old hot clicks, then purge raw rows by your saved Log Retention setting.
                     Pre-aggregated campaign stats are kept. Save settings above first if you changed them.
@@ -5388,7 +5570,7 @@ $settingsTabs = array_values(array_filter(
                         <div class="mobile-group-card" style="background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                             <!-- Header: Name -->
                             <div style="margin-bottom: var(--spacing-sm); border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: var(--spacing-xs);">
-                                <div style="font-weight: 600; font-size: 16px; color: #3d5a26;">
+                                <div style="font-weight: 600; font-size: 16px; color: var(--accent);">
                                     <?= htmlspecialchars($group['name']) ?>
                                 </div>
                             </div>
@@ -5560,17 +5742,17 @@ $settingsTabs = array_values(array_filter(
                                             <?php
                                             $roles = [];
                                             if ($user['primary_role_name']) {
-                                                $roles[] = '<span style="background: #3d5a26; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px;">' . htmlspecialchars($user['primary_role_display']) . '</span>';
+                                                $roles[] = '<span style="background: var(--accent); color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px;">' . htmlspecialchars($user['primary_role_display']) . '</span>';
                                             }
                                             foreach ($user['additional_roles'] as $role) {
-                                                $roles[] = '<span style="background: #558b2f; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px;">' . htmlspecialchars($role['display_name']) . '</span>';
+                                                $roles[] = '<span style="background: var(--accent-hover); color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px;">' . htmlspecialchars($role['display_name']) . '</span>';
                                             }
                                             echo implode(' ', $roles) ?: '<span style="color: #999;">No roles</span>';
                                             ?>
                                         </td>
                                         <td style="padding: 12px;">
                                             <?php if ($user['is_active']): ?>
-                                                <span style="color: #4caf50; font-weight: 600;">Active</span>
+                                                <span style="color: var(--accent); font-weight: 600;">Active</span>
                                             <?php else: ?>
                                                 <span style="color: #999;">Inactive</span>
                                             <?php endif; ?>
@@ -5601,7 +5783,7 @@ $settingsTabs = array_values(array_filter(
                             <div class="mobile-user-card" style="background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                                 <!-- Header: Username -->
                                 <div style="margin-bottom: var(--spacing-sm); border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: var(--spacing-xs);">
-                                    <div style="font-weight: 600; font-size: 16px; color: #3d5a26;">
+                                    <div style="font-weight: 600; font-size: 16px; color: var(--accent);">
                                         <?= htmlspecialchars($user['username']) ?>
                                     </div>
                                 </div>
@@ -5621,10 +5803,10 @@ $settingsTabs = array_values(array_filter(
                                         <?php
                                         $roles = [];
                                         if ($user['primary_role_name']) {
-                                            $roles[] = '<span style="background: #3d5a26; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; display: inline-block; margin-right: 4px; margin-bottom: 4px;">' . htmlspecialchars($user['primary_role_display']) . '</span>';
+                                            $roles[] = '<span style="background: var(--accent); color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; display: inline-block; margin-right: 4px; margin-bottom: 4px;">' . htmlspecialchars($user['primary_role_display']) . '</span>';
                                         }
                                         foreach ($user['additional_roles'] as $role) {
-                                            $roles[] = '<span style="background: #558b2f; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; display: inline-block; margin-right: 4px; margin-bottom: 4px;">' . htmlspecialchars($role['display_name']) . '</span>';
+                                            $roles[] = '<span style="background: var(--accent-hover); color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; display: inline-block; margin-right: 4px; margin-bottom: 4px;">' . htmlspecialchars($role['display_name']) . '</span>';
                                         }
                                         echo implode('', $roles) ?: '<span style="color: #999; font-size: 12px;">No roles</span>';
                                         ?>
@@ -5637,7 +5819,7 @@ $settingsTabs = array_values(array_filter(
                                         <div style="font-size: 11px; color: #666; margin-bottom: 4px;"><strong>Status</strong></div>
                                         <div>
                                             <?php if ($user['is_active']): ?>
-                                                <span style="color: #4caf50; font-weight: 600; font-size: 12px;">Active</span>
+                                                <span style="color: var(--accent); font-weight: 600; font-size: 12px;">Active</span>
                                             <?php else: ?>
                                                 <span style="color: #999; font-size: 12px;">Inactive</span>
                                             <?php endif; ?>
@@ -5775,7 +5957,7 @@ $settingsTabs = array_values(array_filter(
                         <?php if ($userAction === 'edit' && isset($editingUser)): ?>
                             <!-- Profile Settings (Timezone & Currency) -->
                             <div style="margin-top: 32px; padding-top: 32px; border-top: 2px solid #eee;">
-                                <h3 style="margin: 0 0 20px 0; font-size: 18px; color: #3d5a26;">Profile Settings</h3>
+                                <h3 style="margin: 0 0 20px 0; font-size: 18px; color: var(--accent);">Profile Settings</h3>
                                 
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
                                     <div>
@@ -5854,7 +6036,7 @@ $settingsTabs = array_values(array_filter(
                                 <?php if ($editingUser['id'] == $_SESSION['user_id']): ?>
                                     <!-- Password Change (only for current user) -->
                                     <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid #eee;">
-                                        <h4 style="margin: 0 0 16px 0; font-size: 16px; color: #3d5a26;">Change Password</h4>
+                                        <h4 style="margin: 0 0 16px 0; font-size: 16px; color: var(--accent);">Change Password</h4>
                                         
                                         <div style="max-width: 400px;">
                                             <div style="margin-bottom: 16px;">
@@ -5945,11 +6127,11 @@ $settingsTabs = array_values(array_filter(
                     </p>
                 </div>
             <?php elseif ($dbMigrationStatus['up_to_date']): ?>
-                <div style="padding: 14px 16px; background: #d4edda; border-radius: 8px; border-left: 4px solid #28a745; margin-bottom: 16px;">
-                    <p style="margin: 0; color: #155724; font-size: 14px; font-weight: 600;">
+                <div style="padding: 14px 16px; background: var(--accent-soft); border-radius: 8px; border-left: 4px solid var(--color-success); margin-bottom: 16px;">
+                    <p style="margin: 0; color: var(--accent-hover); font-size: 14px; font-weight: 600;">
                         Database schema is up to date
                     </p>
-                    <p style="margin: 6px 0 0 0; color: #155724; font-size: 13px;">
+                    <p style="margin: 6px 0 0 0; color: var(--accent-hover); font-size: 13px;">
                         <?= (int)$dbMigrationStatus['applied_count'] ?> of <?= (int)$dbMigrationStatus['total_files'] ?> migrations applied.
                     </p>
                 </div>
@@ -5979,7 +6161,7 @@ $settingsTabs = array_values(array_filter(
                     <button type="submit"
                             class="btn"
                             <?= (!$dbMigrationStatus['ok'] || $dbMigrationStatus['up_to_date']) ? 'disabled' : '' ?>
-                            style="padding: 12px 24px; background: <?= (!$dbMigrationStatus['ok'] || $dbMigrationStatus['up_to_date']) ? '#9e9e9e' : '#3d5a26' ?>; color: white; border: none; border-radius: 6px; cursor: <?= (!$dbMigrationStatus['ok'] || $dbMigrationStatus['up_to_date']) ? 'not-allowed' : 'pointer' ?>; font-weight: 600;">
+                            style="padding: 12px 24px; background: <?= (!$dbMigrationStatus['ok'] || $dbMigrationStatus['up_to_date']) ? '#9e9e9e' : 'var(--accent)' ?>; color: white; border: none; border-radius: 6px; cursor: <?= (!$dbMigrationStatus['ok'] || $dbMigrationStatus['up_to_date']) ? 'not-allowed' : 'pointer' ?>; font-weight: 600;">
                         Update database
                     </button>
                 </form>
@@ -6031,7 +6213,7 @@ $settingsTabs = array_values(array_filter(
                 <?= Csrf::field() ?>
                 
                 <div style="margin-bottom: 24px;">
-                    <label style="display: flex; align-items: center; gap: 12px; cursor: <?= $canManageAppUpdate ? 'pointer' : 'not-allowed' ?>; font-size: 16px; font-weight: 600; color: #3d5a26; opacity: <?= $canManageAppUpdate ? '1' : '0.65' ?>;">
+                    <label style="display: flex; align-items: center; gap: 12px; cursor: <?= $canManageAppUpdate ? 'pointer' : 'not-allowed' ?>; font-size: 16px; font-weight: 600; color: var(--accent); opacity: <?= $canManageAppUpdate ? '1' : '0.65' ?>;">
                         <input type="checkbox" 
                                name="update_check_enabled" 
                                value="1" 
@@ -6046,8 +6228,8 @@ $settingsTabs = array_values(array_filter(
                     </p>
                 </div>
 
-                <div style="margin-top: 32px; padding: 20px; background: #f5f5f5; border-radius: 8px; border-left: 4px solid #3d5a26;">
-                    <h3 style="margin: 0 0 12px 0; color: #3d5a26; font-size: 18px;">Current Version</h3>
+                <div style="margin-top: 32px; padding: 20px; background: #f5f5f5; border-radius: 8px; border-left: 4px solid var(--accent);">
+                    <h3 style="margin: 0 0 12px 0; color: var(--accent); font-size: 18px;">Current Version</h3>
                     <p style="margin: 0 0 16px 0; font-size: 16px; font-family: monospace; color: #333;">
                         <strong><?= htmlspecialchars($currentVersion) ?></strong>
                     </p>
@@ -6066,7 +6248,7 @@ $settingsTabs = array_values(array_filter(
                                     ⚠️ Update available: <?= htmlspecialchars($lastUpdateCheck['latest_version']) ?>
                                 </p>
                             <?php else: ?>
-                                <p style="margin: 8px 0 0 0; font-size: 14px; color: #28a745;">
+                                <p style="margin: 8px 0 0 0; font-size: 14px; color: var(--color-success);">
                                     ✅ You're running the latest version
                                 </p>
                             <?php endif; ?>
@@ -6130,7 +6312,7 @@ $settingsTabs = array_values(array_filter(
                             class="btn btn-primary"
                             id="save-update-settings-btn"
                             <?= $canManageAppUpdate ? '' : 'disabled' ?>
-                            style="padding: 12px 24px; background: <?= $canManageAppUpdate ? '#3d5a26' : '#9e9e9e' ?>; color: white; border: none; border-radius: 6px; cursor: <?= $canManageAppUpdate ? 'pointer' : 'not-allowed' ?>; font-weight: 600;">
+                            style="padding: 12px 24px; background: <?= $canManageAppUpdate ? 'var(--accent)' : '#9e9e9e' ?>; color: white; border: none; border-radius: 6px; cursor: <?= $canManageAppUpdate ? 'pointer' : 'not-allowed' ?>; font-weight: 600;">
                         Save Settings
                     </button>
                 </div>
@@ -6322,7 +6504,7 @@ $settingsTabs = array_values(array_filter(
                         The installer should have installed these automatically, but it may have failed on cPanel.
                     </p>
                     <div style="margin-top: 12px;">
-                        <a href="../public/install-composer.php" target="_blank" style="background: #3d5a26; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: 600; text-decoration: none; display: inline-block;">
+                        <a href="../public/install-composer.php" target="_blank" style="background: var(--accent); color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: 600; text-decoration: none; display: inline-block;">
                             🔧 Open Standalone Installer
                         </a>
                     </div>
@@ -6350,8 +6532,8 @@ php composer.phar install --no-dev --optimize-autoloader</pre>
         
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 24px;">
             <!-- DB-IP Status -->
-            <div style="background: white; border: 2px solid <?= $dbipAvailable ? '#28a745' : '#dc3545' ?>; border-radius: 8px; padding: 20px;">
-                <h3 style="margin-top: 0; color: <?= $dbipAvailable ? '#28a745' : '#dc3545' ?>;">
+            <div style="background: white; border: 2px solid <?= $dbipAvailable ? 'var(--color-success)' : '#dc3545' ?>; border-radius: 8px; padding: 20px;">
+                <h3 style="margin-top: 0; color: <?= $dbipAvailable ? 'var(--color-success)' : '#dc3545' ?>;">
                     <?= $dbipAvailable ? '✓' : '✗' ?> DB-IP Lite
                 </h3>
                 <p style="color: #666; font-size: 14px;">
@@ -6369,8 +6551,8 @@ php composer.phar install --no-dev --optimize-autoloader</pre>
             </div>
             
             <!-- IP2Location Status -->
-            <div style="background: white; border: 2px solid <?= $ip2locationAvailable ? '#28a745' : '#dc3545' ?>; border-radius: 8px; padding: 20px;">
-                <h3 style="margin-top: 0; color: <?= $ip2locationAvailable ? '#28a745' : '#dc3545' ?>;">
+            <div style="background: white; border: 2px solid <?= $ip2locationAvailable ? 'var(--color-success)' : '#dc3545' ?>; border-radius: 8px; padding: 20px;">
+                <h3 style="margin-top: 0; color: <?= $ip2locationAvailable ? 'var(--color-success)' : '#dc3545' ?>;">
                     <?= $ip2locationAvailable ? '✓' : '✗' ?> IP2Location LITE
                 </h3>
                 <p style="color: #666; font-size: 14px;">
@@ -6388,8 +6570,8 @@ php composer.phar install --no-dev --optimize-autoloader</pre>
             </div>
             
             <!-- IPinfo Status -->
-            <div style="background: white; border: 2px solid <?= $ipinfoAvailable ? '#28a745' : '#dc3545' ?>; border-radius: 8px; padding: 20px;">
-                <h3 style="margin-top: 0; color: <?= $ipinfoAvailable ? '#28a745' : '#dc3545' ?>;">
+            <div style="background: white; border: 2px solid <?= $ipinfoAvailable ? 'var(--color-success)' : '#dc3545' ?>; border-radius: 8px; padding: 20px;">
+                <h3 style="margin-top: 0; color: <?= $ipinfoAvailable ? 'var(--color-success)' : '#dc3545' ?>;">
                     <?= $ipinfoAvailable ? '✓' : '✗' ?> IPinfo DB-Lite
                 </h3>
                 <p style="color: #666; font-size: 14px;">
@@ -6407,8 +6589,8 @@ php composer.phar install --no-dev --optimize-autoloader</pre>
             </div>
 
             <!-- DB-IP ASN (ISP) -->
-            <div style="background: white; border: 2px solid <?= $asnAvailable ? '#28a745' : '#dc3545' ?>; border-radius: 8px; padding: 20px;">
-                <h3 style="margin-top: 0; color: <?= $asnAvailable ? '#28a745' : '#dc3545' ?>;">
+            <div style="background: white; border: 2px solid <?= $asnAvailable ? 'var(--color-success)' : '#dc3545' ?>; border-radius: 8px; padding: 20px;">
+                <h3 style="margin-top: 0; color: <?= $asnAvailable ? 'var(--color-success)' : '#dc3545' ?>;">
                     <?= $asnAvailable ? '✓' : '✗' ?> DB-IP ASN Lite (ISP)
                 </h3>
                 <p style="color: #666; font-size: 14px;">
@@ -6447,6 +6629,11 @@ php composer.phar install --no-dev --optimize-autoloader</pre>
                     · CC BY 4.0 · expected <code>DBIP-ASN-Lite.mmdb</code>
                 </li>
                 <li>
+                    <strong>Tor, anonymous, and cloud ranges:</strong>
+                    <code>php scripts/download-anonymous-ranges.php</code>
+                    writes <code>geoip/ranges/anonymous.cidr</code>. A listed IP is stored as Corporate unless the traffic source already said cellular, so the campaign Allow / Record only / Safe URL choice applies. If the file is missing, that label stays on the ASN name.
+                </li>
+                <li>
                     <strong>IP2Location LITE:</strong>
                     <a href="https://lite.ip2location.com/" target="_blank" rel="noopener">Download</a>
                     · data from <a href="https://lite.ip2location.com" target="_blank" rel="noopener">lite.ip2location.com</a> · expected <code>IP2LOCATION-LITE-DB11.BIN</code>
@@ -6469,6 +6656,25 @@ php composer.phar install --no-dev --optimize-autoloader</pre>
     <?php
     $edgeSettings = new \SimpleKuma\Edge\EdgeSettings($db);
     $edgeStatus = $edgeSettings->statusSnapshot();
+    $edgeRoutes = $edgeStatus['routes'];
+    if ($edgeRoutes === []) {
+        $edgeRoutes = [['zone_id' => '', 'pattern' => '']];
+    }
+    $edgeRouteSuggestions = [];
+    try {
+        foreach ((new \SimpleKuma\Entity\TrackingDomain($db))->getAll() as $edgeDomainRow) {
+            if (!in_array((string) ($edgeDomainRow['status'] ?? ''), \SimpleKuma\Entity\TrackingDomain::usableStatuses(), true)) {
+                continue;
+            }
+            $edgeHost = parse_url((string) ($edgeDomainRow['domain'] ?? ''), PHP_URL_HOST);
+            if (is_string($edgeHost) && $edgeHost !== '') {
+                $edgeRouteSuggestions[] = $edgeHost . '/*';
+            }
+        }
+    } catch (Throwable $e) {
+        $edgeRouteSuggestions = [];
+    }
+    $edgeRouteSuggestions = array_values(array_unique($edgeRouteSuggestions));
     $canEditEdge = $permission && $permission->hasPermission(Permission::PERM_SETTINGS_EDIT);
     $defaultOrigin = defined('BASE_URL') ? rtrim((string) BASE_URL, '/') : '';
     $statusValueClass = $edgeStatus['enabled'] ? 'is-ok' : 'is-muted';
@@ -6535,18 +6741,32 @@ php composer.phar install --no-dev --optimize-autoloader</pre>
                            autocomplete="new-password">
                     <div class="settings-edge-redirect__hint">Stored encrypted. Create a token with Workers + KV permissions.</div>
                 </div>
-                <div>
-                    <label for="edge_cf_zone_id">Zone ID (optional, for routes)</label>
-                    <input type="text" id="edge_cf_zone_id" name="cf_zone_id" value="<?= htmlspecialchars($edgeStatus['zone_id']) ?>"
-                           <?= !$canEditEdge ? 'readonly' : '' ?>
-                           placeholder="Zone ID for your tracking domain">
-                </div>
-                <div>
-                    <label for="edge_cf_route_pattern">Route pattern</label>
-                    <input type="text" id="edge_cf_route_pattern" name="cf_route_pattern" value="<?= htmlspecialchars($edgeStatus['route_pattern']) ?>"
-                           <?= !$canEditEdge ? 'readonly' : '' ?>
-                           placeholder="track.example.com/*">
-                    <div class="settings-edge-redirect__hint">Attach the Worker to your proxied tracking hostname.</div>
+                <div style="grid-column: 1 / -1;">
+                    <label>Cloudflare routes</label>
+                    <div class="settings-edge-redirect__hint" style="margin-bottom: 8px;">
+                        One route per tracking hostname. Disabling Edge removes every route listed here.
+                    </div>
+                    <div id="edge-route-rows">
+                        <?php foreach ($edgeRoutes as $edgeRoute): ?>
+                        <div class="edge-route-row" style="display: flex; gap: 8px; margin-bottom: 8px;">
+                            <input type="text" name="route_zone_id[]" value="<?= htmlspecialchars((string) $edgeRoute['zone_id']) ?>"
+                                   <?= !$canEditEdge ? 'readonly' : '' ?>
+                                   placeholder="Zone ID" autocomplete="off" style="flex: 1;">
+                            <input type="text" name="route_pattern[]" value="<?= htmlspecialchars((string) $edgeRoute['pattern']) ?>"
+                                   <?= !$canEditEdge ? 'readonly' : '' ?>
+                                   placeholder="track.example.com/*" autocomplete="off" style="flex: 1;">
+                            <?php if ($canEditEdge): ?>
+                            <button type="button" class="btn btn-secondary edge-route-remove">Remove</button>
+                            <?php endif; ?>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <?php if ($canEditEdge): ?>
+                    <button type="button" class="btn btn-secondary" id="edge-route-add">Add route</button>
+                    <?php if ($edgeRouteSuggestions !== []): ?>
+                    <button type="button" class="btn btn-secondary" id="edge-route-suggest" data-patterns="<?= htmlspecialchars(json_encode($edgeRouteSuggestions), ENT_QUOTES, 'UTF-8') ?>">Add verified domains</button>
+                    <?php endif; ?>
+                    <?php endif; ?>
                 </div>
                 <div>
                     <label for="edge_cf_worker_name">Worker name</label>
@@ -6628,7 +6848,11 @@ php composer.phar install --no-dev --optimize-autoloader</pre>
                 <li>
                     <strong>Save connection</strong>, then click <strong>Deploy / Update Worker</strong>.
                     That creates the KV namespace, uploads the redirect script, binds ingest credentials, and attaches the route.
-                    Use <strong>Health check</strong> afterward to confirm the Cloudflare token, KV namespace, and a signed round-trip to origin <code>/api/edge-click</code> (nginx needs an explicit rewrite — see Edge Redirect docs).
+                    Use <strong>Health check</strong> afterward to confirm the Cloudflare token, KV namespace, and a signed round-trip to origin <code>/api/edge-click</code>.
+                    Deploy stays unhealthy until that round-trip returns 2xx. On nginx, add this inside the tracker server (Apache already rewrites it in <code>.htaccess</code>):
+                    <pre style="white-space: pre-wrap; margin: 8px 0 0;">location = /api/edge-click {
+    rewrite ^ /api/edge-click.php last;
+}</pre>
                 </li>
                 <li>
                     <strong>Enable Edge redirect on each campaign</strong> you want accelerated, then save the campaign
@@ -6652,7 +6876,70 @@ php composer.phar install --no-dev --optimize-autoloader</pre>
             KV namespace: <?= htmlspecialchars($edgeStatus['kv_namespace_id'] ?: 'not provisioned') ?>
             · Ingest secret: <?= $edgeStatus['has_ingest_secret'] ? 'configured' : 'not set' ?>
         </p>
+        <?php if ($canEditEdge): ?>
+        <script>
+        (function () {
+            var rows = document.getElementById('edge-route-rows');
+            var add = document.getElementById('edge-route-add');
+            if (!rows || !add) return;
+            function bindRemove(button) {
+                button.addEventListener('click', function () {
+                    var row = button.closest('.edge-route-row');
+                    if (!row) return;
+                    if (rows.querySelectorAll('.edge-route-row').length === 1) {
+                        row.querySelectorAll('input').forEach(function (input) { input.value = ''; });
+                        return;
+                    }
+                    row.remove();
+                });
+            }
+            rows.querySelectorAll('.edge-route-remove').forEach(bindRemove);
+            function addRow(zone, pattern) {
+                var row = document.createElement('div');
+                row.className = 'edge-route-row';
+                row.style.cssText = 'display:flex;gap:8px;margin-bottom:8px;';
+                row.innerHTML = '<input type="text" name="route_zone_id[]" placeholder="Zone ID" autocomplete="off" style="flex:1;">'
+                    + '<input type="text" name="route_pattern[]" placeholder="track.example.com/*" autocomplete="off" style="flex:1;">'
+                    + '<button type="button" class="btn btn-secondary edge-route-remove">Remove</button>';
+                row.querySelector('input[name="route_zone_id[]"]').value = zone || '';
+                row.querySelector('input[name="route_pattern[]"]').value = pattern || '';
+                bindRemove(row.querySelector('.edge-route-remove'));
+                rows.appendChild(row);
+            }
+            add.addEventListener('click', function () { addRow('', ''); });
+            var suggest = document.getElementById('edge-route-suggest');
+            if (suggest) {
+                suggest.addEventListener('click', function () {
+                    var patterns = [];
+                    try { patterns = JSON.parse(suggest.getAttribute('data-patterns') || '[]'); } catch (e) { patterns = []; }
+                    var existing = Array.prototype.map.call(rows.querySelectorAll('input[name="route_pattern[]"]'), function (input) {
+                        return input.value.trim().toLowerCase();
+                    });
+                    patterns.forEach(function (pattern) {
+                        if (existing.indexOf(String(pattern).toLowerCase()) !== -1) return;
+                        var blanks = rows.querySelectorAll('.edge-route-row');
+                        var placed = false;
+                        blanks.forEach(function (row) {
+                            if (placed) return;
+                            var zone = row.querySelector('input[name="route_zone_id[]"]');
+                            var pat = row.querySelector('input[name="route_pattern[]"]');
+                            if (zone && pat && zone.value.trim() === '' && pat.value.trim() === '') {
+                                pat.value = pattern;
+                                placed = true;
+                            }
+                        });
+                        if (!placed) addRow('', pattern);
+                        existing.push(String(pattern).toLowerCase());
+                    });
+                });
+            }
+        })();
+        </script>
+        <?php endif; ?>
     </div>
+
+<?php elseif ($activeTab === 'grizzly-guard'): ?>
+    <?php include __DIR__ . '/settings-partials/grizzly-guard-tab.php'; ?>
 
 <?php elseif ($activeTab === 'about'): ?>
     <link rel="stylesheet" href="<?= htmlspecialchars(sk_css_href('assets/css/settings-about.css')) ?>">
@@ -6752,6 +7039,24 @@ php composer.phar install --no-dev --optimize-autoloader</pre>
                             <p class="kuma-member-description">
                                 Recognized for major contributions, sharp ideas, and helping shape
                                 Simple KUMA into a stronger tracker for everyone.
+                            </p>
+                        </div>
+                    </article>
+
+                    <article class="kuma-member">
+                        <img
+                            class="kuma-member-photo"
+                            src="<?= ASSETS_BASE_URL ?>/assets/images/jan-johnny.jpg"
+                            alt="Jan (johnny)"
+                        >
+                        <div>
+                            <span class="kuma-member-kicker">Kuma Club member</span>
+                            <span class="kuma-member-name">Jan (johnny)</span>
+                            <p class="kuma-member-role">Bug Reporting &amp; Error Finding</p>
+                            <p class="kuma-member-patched">Patched In: October 24, 2026</p>
+                            <p class="kuma-member-description">
+                                Recognized for bug reports, error finding, and helping catch
+                                problems so Simple KUMA stays solid for everyone.
                             </p>
                         </div>
                     </article>

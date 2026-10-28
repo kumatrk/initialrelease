@@ -35,32 +35,24 @@ $accountEmail = trim($_POST['email'] ?? ($currentUser['email'] ?? ''));
         <h2 class="card-title">Account</h2>
     </div>
     <div class="card-body">
-        <p style="color: #666; margin: 0 0 24px 0; font-size: 14px;">
-            Manage your login profile. Dashboard and reports use your timezone and currency settings.
-        </p>
-        <div style="margin-bottom: 24px; max-width: 480px;">
-            <div style="font-size: 12px; color: #666; margin-bottom: 4px;">Username</div>
-            <div style="font-weight: 600;"><?= htmlspecialchars($currentUser['username'] ?? '') ?></div>
-            <div style="font-size: 12px; color: #666; margin-top: 4px;">Username cannot be changed here.</div>
-        </div>
-
-        <h3 style="margin: 0 0 16px 0; font-size: 18px; color: #3d5a26;">Profile settings</h3>
-        <form method="POST" action="?page=settings&tab=account" style="max-width: 640px; margin-bottom: 40px;">
+        <div class="account-split">
+        <form method="POST" action="?page=settings&tab=account" class="account-panel">
             <?= \SimpleKuma\Auth\Csrf::field() ?>
             <input type="hidden" name="action" value="update_profile">
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; font-weight: 600; margin-bottom: 8px;">Email</label>
-                <input type="email" name="email" required autocomplete="email"
-                       value="<?= htmlspecialchars($accountEmail) ?>"
-                       style="width: 100%; max-width: 400px; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
+            <h3>Profile</h3>
+            <p class="account-meta">Username <strong><?= htmlspecialchars($currentUser['username'] ?? '') ?></strong>. Reports use this timezone and currency.</p>
+            <div class="account-field">
+                <label for="account-email">Email</label>
+                <input type="email" name="email" id="account-email" required autocomplete="email"
+                       value="<?= htmlspecialchars($accountEmail) ?>">
                 <?php if (isset($errors['email'])): ?>
                     <div style="color: #d32f2f; font-size: 12px; margin-top: 4px;"><?= htmlspecialchars($errors['email']) ?></div>
                 <?php endif; ?>
             </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+            <div class="account-pair">
                 <div>
-                    <label style="display: block; font-weight: 600; margin-bottom: 8px;">Timezone</label>
-                    <select name="timezone" style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
+                    <label for="account-timezone">Timezone</label>
+                    <select name="timezone" id="account-timezone">
                         <optgroup label="US &amp; Canada">
                             <option value="America/New_York" <?= $accountNormalizedTimezone === 'America/New_York' ? 'selected' : '' ?>>Eastern Time (ET)</option>
                             <option value="America/Chicago" <?= $accountNormalizedTimezone === 'America/Chicago' ? 'selected' : '' ?>>Central Time (CT)</option>
@@ -91,8 +83,8 @@ $accountEmail = trim($_POST['email'] ?? ($currentUser['email'] ?? ''));
                     <?php endif; ?>
                 </div>
                 <div>
-                    <label style="display: block; font-weight: 600; margin-bottom: 8px;">Currency</label>
-                    <select name="currency" style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
+                    <label for="account-currency">Currency</label>
+                    <select name="currency" id="account-currency">
                         <option value="USD" <?= $accountCurrency === 'USD' ? 'selected' : '' ?>>USD - US Dollar</option>
                         <option value="EUR" <?= $accountCurrency === 'EUR' ? 'selected' : '' ?>>EUR - Euro</option>
                         <option value="GBP" <?= $accountCurrency === 'GBP' ? 'selected' : '' ?>>GBP - British Pound</option>
@@ -102,144 +94,154 @@ $accountEmail = trim($_POST['email'] ?? ($currentUser['email'] ?? ''));
                     </select>
                 </div>
             </div>
-            <button type="submit" class="btn btn-primary">Save profile settings</button>
+            <button type="submit" class="btn btn-primary">Save profile</button>
         </form>
 
-        <h3 style="margin: 0 0 16px 0; font-size: 18px; color: #3d5a26; padding-top: 24px; border-top: 1px solid #eee;">Change password</h3>
-        <form method="POST" action="?page=settings&tab=account" style="max-width: 400px;">
+        <form method="POST" action="?page=settings&tab=account" class="account-panel">
             <?= \SimpleKuma\Auth\Csrf::field() ?>
             <input type="hidden" name="action" value="change_password">
-            <div style="margin-bottom: 16px;">
-                <label style="display: block; font-weight: 600; margin-bottom: 8px;">Current password</label>
-                <input type="password" name="current_password" required autocomplete="current-password"
-                       style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
+            <h3>Password</h3>
+            <div class="account-field">
+                <label for="account-current-password">Current password</label>
+                <input type="password" name="current_password" id="account-current-password" required autocomplete="current-password">
                 <?php if (isset($errors['current_password'])): ?>
                     <div style="color: #d32f2f; font-size: 12px; margin-top: 4px;"><?= htmlspecialchars($errors['current_password']) ?></div>
                 <?php endif; ?>
             </div>
-            <div style="margin-bottom: 16px;">
-                <label style="display: block; font-weight: 600; margin-bottom: 8px;">New password</label>
-                <input type="password" name="new_password" required autocomplete="new-password"
-                       style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
-                <div style="font-size: 12px; color: #666; margin-top: 4px;">Minimum 8 characters</div>
-                <?php if (isset($errors['new_password'])): ?>
-                    <div style="color: #d32f2f; font-size: 12px; margin-top: 4px;"><?= htmlspecialchars($errors['new_password']) ?></div>
-                <?php endif; ?>
+            <div class="account-pair">
+                <div>
+                    <label for="account-new-password">New password</label>
+                    <input type="password" name="new_password" id="account-new-password" required autocomplete="new-password">
+                    <?php if (isset($errors['new_password'])): ?>
+                        <div style="color: #d32f2f; font-size: 12px; margin-top: 4px;"><?= htmlspecialchars($errors['new_password']) ?></div>
+                    <?php endif; ?>
+                </div>
+                <div>
+                    <label for="account-confirm-password">Confirm</label>
+                    <input type="password" name="confirm_password" id="account-confirm-password" required autocomplete="new-password">
+                    <?php if (isset($errors['confirm_password'])): ?>
+                        <div style="color: #d32f2f; font-size: 12px; margin-top: 4px;"><?= htmlspecialchars($errors['confirm_password']) ?></div>
+                    <?php endif; ?>
+                </div>
             </div>
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; font-weight: 600; margin-bottom: 8px;">Confirm new password</label>
-                <input type="password" name="confirm_password" required autocomplete="new-password"
-                       style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
-                <?php if (isset($errors['confirm_password'])): ?>
-                    <div style="color: #d32f2f; font-size: 12px; margin-top: 4px;"><?= htmlspecialchars($errors['confirm_password']) ?></div>
-                <?php endif; ?>
-            </div>
+            <p class="account-meta">At least 8 characters.</p>
             <button type="submit" class="btn btn-primary">Update password</button>
         </form>
+        </div>
 
         <?php if (!empty($canEditLoginGate)): ?>
-        <h3 style="margin: 40px 0 16px 0; font-size: 18px; color: #3d5a26; padding-top: 24px; border-top: 1px solid #eee;">Login page privacy</h3>
-        <p style="color: #666; margin: 0 0 20px 0; font-size: 14px; max-width: 640px;">
-            Hide <code>login.php</code> behind a secret URL token so scanners cannot find the admin login.
-            This is an obscurity layer — keep using a strong password. Without the token, visitors are sent to your decoy URL (or Google if blank).
-        </p>
+        <div class="account-section">
+        <h3>Login page privacy</h3>
+        <p class="notify-hint">Hide login.php behind a secret URL. Visitors without the token go to the decoy page. This still needs a strong password.</p>
 
+        <?php
+        $loginGateOpen = isset($errors['login_gate_param']) || isset($errors['login_gate_token']) || isset($errors['login_gate_redirect_url']);
+        ?>
         <?php if (!empty($loginGateRevealUrl)): ?>
-        <div style="background: #fff8e1; border: 1px solid #f0c36d; border-radius: 4px; padding: 14px 16px; margin-bottom: 20px; max-width: 640px;">
+        <div style="background: #fff8e1; border: 1px solid #f0c36d; border-radius: 4px; padding: 14px 16px; margin-bottom: 12px; max-width: 640px;">
             <div style="font-weight: 600; margin-bottom: 8px;">Your private login URL (copy now)</div>
             <code style="display: block; word-break: break-all; font-size: 13px;"><?= htmlspecialchars($loginGateRevealUrl) ?></code>
             <div style="font-size: 12px; color: #666; margin-top: 8px;">Bookmark this URL. The secret token cannot be shown again after you leave this page.</div>
         </div>
         <?php endif; ?>
 
-        <form method="POST" action="?page=settings&tab=account" id="login-gate-form" style="max-width: 640px;">
+        <form method="POST" action="?page=settings&tab=account" id="login-gate-form">
             <?= \SimpleKuma\Auth\Csrf::field() ?>
             <input type="hidden" name="action" value="update_login_gate">
 
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; font-weight: 600; margin-bottom: 8px;">URL parameter name</label>
-                <input type="text" name="login_gate_param" required
-                       value="<?= htmlspecialchars($loginGateParam ?? \SimpleKuma\Auth\LoginGate::DEFAULT_PARAM_NAME) ?>"
-                       placeholder="mv"
-                       pattern="[A-Za-z][A-Za-z0-9_]*"
-                       maxlength="32"
-                       style="width: 100%; max-width: 200px; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
-                <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                    The query key in your private URL. Default <code>mv</code> → <code>login.php?mv=yourtoken</code>.
-                    Change both this and the token for full control (e.g. <code>login.php?x=MySecret99</code>).
+            <div class="notify-board" id="login-gate-board">
+                <div class="notify-board__head">
+                    <span>Gate</span>
+                    <span>On</span>
+                    <span></span>
                 </div>
-                <?php if (isset($errors['login_gate_param'])): ?>
-                    <div style="color: #d32f2f; font-size: 12px; margin-top: 4px;"><?= htmlspecialchars($errors['login_gate_param']) ?></div>
-                <?php endif; ?>
-            </div>
+                <div class="notify-channel">
+                    <div class="notify-channel__bar">
+                        <span class="notify-channel__name">Login page</span>
+                        <label class="notify-channel__choice">
+                            <input type="checkbox" name="login_gate_enabled" id="login-gate-enabled" value="1" aria-label="Enable login gate" <?= !empty($loginGateEnabled) ? 'checked' : '' ?>>
+                        </label>
+                        <button type="button" class="btn btn-outline notify-setup" id="login-gate-setup"><?= $loginGateOpen ? 'Hide' : 'Setup' ?></button>
+                    </div>
+                    <div class="notify-channel__body" id="login-gate-body" <?= $loginGateOpen ? '' : 'hidden' ?>>
+                        <label class="notify-label" for="login-gate-param">URL parameter</label>
+                        <input class="notify-field" type="text" name="login_gate_param" id="login-gate-param" required
+                               value="<?= htmlspecialchars($loginGateParam ?? \SimpleKuma\Auth\LoginGate::DEFAULT_PARAM_NAME) ?>"
+                               placeholder="mv"
+                               pattern="[A-Za-z][A-Za-z0-9_]*"
+                               maxlength="32">
+                        <p class="notify-hint" style="margin-top: 6px;">Query key in the private URL. <code>mv</code> makes <code>login.php?mv=yourtoken</code>.</p>
+                        <?php if (isset($errors['login_gate_param'])): ?>
+                            <p class="notify-hint" style="color: #d32f2f;"><?= htmlspecialchars($errors['login_gate_param']) ?></p>
+                        <?php endif; ?>
 
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; font-weight: 600; margin-bottom: 8px;">Secret token</label>
-                <div style="position: relative; max-width: 400px;">
-                    <input type="text" name="login_gate_secret" id="login-gate-secret"
-                           value="<?= htmlspecialchars($loginGateTokenValue ?? '') ?>"
-                           autocomplete="off"
-                           autocorrect="off"
-                           autocapitalize="off"
-                           spellcheck="false"
-                           data-lpignore="true"
-                           data-1p-ignore="true"
-                           data-form-type="other"
-                           placeholder="<?= !empty($loginGateHasToken) ? 'Leave blank to keep current token' : 'e.g. mySecretToken99' ?>"
-                           style="width: 100%; padding: 10px 52px 10px 10px; border: 2px solid #ddd; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;">
-                    <button type="button" id="login-gate-secret-toggle"
-                            aria-label="Show token"
-                            title="Show token"
-                            style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 13px; color: #666; padding: 4px 6px;">
-                        Show
-                    </button>
-                </div>
-                <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                    Letters, numbers, hyphens, underscores. Min 8 characters.
-                    You can fill this in and enable the gate in one save.
-                    Current format: <code>login.php?<?= htmlspecialchars($loginGateParam ?? \SimpleKuma\Auth\LoginGate::DEFAULT_PARAM_NAME) ?>=yourtoken</code>
-                </div>
-                <?php if (!empty($loginGateHasToken)): ?>
-                    <div style="font-size: 12px; color: #3d5a26; margin-top: 6px;">A token is already configured.</div>
-                    <label style="display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; cursor: pointer;">
-                        <input type="checkbox" name="login_gate_clear_token" value="1">
-                        Clear configured token (disables gate until you set a new one)
-                    </label>
-                <?php endif; ?>
-                <?php if (isset($errors['login_gate_token'])): ?>
-                    <div style="color: #d32f2f; font-size: 12px; margin-top: 4px;"><?= htmlspecialchars($errors['login_gate_token']) ?></div>
-                <?php endif; ?>
-            </div>
+                        <label class="notify-label" for="login-gate-secret">Secret token</label>
+                        <div style="position: relative; max-width: 480px;">
+                            <input class="notify-field" type="text" name="login_gate_secret" id="login-gate-secret"
+                                   value="<?= htmlspecialchars($loginGateTokenValue ?? '') ?>"
+                                   autocomplete="off"
+                                   autocorrect="off"
+                                   autocapitalize="off"
+                                   spellcheck="false"
+                                   data-lpignore="true"
+                                   data-1p-ignore="true"
+                                   data-form-type="other"
+                                   placeholder="<?= !empty($loginGateHasToken) ? 'Leave blank to keep current token' : 'e.g. mySecretToken99' ?>"
+                                   style="padding-right: 52px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;">
+                            <button type="button" id="login-gate-secret-toggle"
+                                    aria-label="Show token"
+                                    title="Show token"
+                                    style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 13px; color: #666; padding: 4px 6px;">
+                                Show
+                            </button>
+                        </div>
+                        <p class="notify-hint" style="margin-top: 6px;">Letters, numbers, hyphens, and underscores. At least 8 characters. You can set the token and turn the gate on in one save.</p>
+                        <?php if (!empty($loginGateHasToken)): ?>
+                            <p class="notify-hint">A token is already saved.</p>
+                            <label class="notify-channel__choice">
+                                <input type="checkbox" name="login_gate_clear_token" value="1">
+                                Remove the saved token
+                            </label>
+                        <?php endif; ?>
+                        <?php if (isset($errors['login_gate_token'])): ?>
+                            <p class="notify-hint" style="color: #d32f2f;"><?= htmlspecialchars($errors['login_gate_token']) ?></p>
+                        <?php endif; ?>
 
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; font-weight: 600; margin-bottom: 8px;">Decoy redirect URL (optional)</label>
-                <input type="text" name="login_gate_redirect_url" inputmode="url"
-                       value="<?= htmlspecialchars($loginGateRedirectUrl ?? '') ?>"
-                       placeholder="Leave blank to send unauthorized visitors to Google"
-                       style="width: 100%; max-width: 480px; padding: 10px; border: 2px solid #ddd; border-radius: 4px;">
-                <div style="font-size: 12px; color: #666; margin-top: 4px;">
-                    Must be <code>http://</code> or <code>https://</code>. Blank = <?= htmlspecialchars(\SimpleKuma\Auth\LoginGate::FALLBACK_DECOY_URL) ?>
-                </div>
-                <?php if (isset($errors['login_gate_redirect_url'])): ?>
-                    <div style="color: #d32f2f; font-size: 12px; margin-top: 4px;"><?= htmlspecialchars($errors['login_gate_redirect_url']) ?></div>
-                <?php endif; ?>
-            </div>
-
-            <div style="margin-bottom: 20px; padding: 14px 16px; background: var(--bg-secondary, #f5f5f5); border-radius: 4px; max-width: 480px;">
-                <label style="display: flex; align-items: center; gap: 10px; font-weight: 600; cursor: pointer;">
-                    <input type="checkbox" name="login_gate_enabled" id="login-gate-enabled" value="1"
-                           <?= !empty($loginGateEnabled) ? 'checked' : '' ?>>
-                    Enable login gate
-                </label>
-                <div style="font-size: 12px; color: #666; margin-top: 8px;">
-                    Turn this on after (or while) setting the parameter and token above — one Save is enough.
+                        <label class="notify-label" for="login-gate-redirect">Decoy URL</label>
+                        <input class="notify-field" type="text" name="login_gate_redirect_url" id="login-gate-redirect" inputmode="url"
+                               value="<?= htmlspecialchars($loginGateRedirectUrl ?? '') ?>"
+                               placeholder="Leave blank to send visitors to Google">
+                        <p class="notify-hint" style="margin-top: 6px;">Must start with http:// or https://. Blank sends people to <?= htmlspecialchars(\SimpleKuma\Auth\LoginGate::FALLBACK_DECOY_URL) ?>.</p>
+                        <?php if (isset($errors['login_gate_redirect_url'])): ?>
+                            <p class="notify-hint" style="color: #d32f2f;"><?= htmlspecialchars($errors['login_gate_redirect_url']) ?></p>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
 
-            <button type="submit" class="btn btn-primary">Save login privacy</button>
+            <button type="submit" class="btn btn-primary" style="margin-top: 16px;">Save login privacy</button>
         </form>
         <script>
         (function () {
+            var setup = document.getElementById('login-gate-setup');
+            var body = document.getElementById('login-gate-body');
+            var enabled = document.getElementById('login-gate-enabled');
+            function showGate() {
+                if (!body) return;
+                body.hidden = false;
+                if (setup) setup.textContent = 'Hide';
+            }
+            if (setup && body) {
+                setup.addEventListener('click', function () {
+                    body.hidden = !body.hidden;
+                    setup.textContent = body.hidden ? 'Setup' : 'Hide';
+                });
+            }
+            if (enabled) {
+                enabled.addEventListener('change', function () {
+                    if (enabled.checked) showGate();
+                });
+            }
             var input = document.getElementById('login-gate-secret');
             var btn = document.getElementById('login-gate-secret-toggle');
             if (!input || !btn) return;
@@ -261,6 +263,9 @@ $accountEmail = trim($_POST['email'] ?? ($currentUser['email'] ?? ''));
             });
         })();
         </script>
+        </div>
         <?php endif; ?>
+
+        <?php require __DIR__ . '/notifications-card.php'; ?>
     </div>
 </div>

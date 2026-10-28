@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 // Landing Pages CRUD Page
 require_once __DIR__ . '/../config/config.php';
 
@@ -106,7 +106,7 @@ $db->close();
 </div>
 
 <?php if ($success): ?>
-<div style="background: #d4edda; color: #155724; padding: 15px; border-radius: 4px; margin-bottom: 20px; border-left: 4px solid #28a745;">
+<div style="background: var(--accent-soft); color: var(--accent-hover); padding: 15px; border-radius: 4px; margin-bottom: 20px; border-left: 4px solid var(--color-success);">
     ✅ <?= htmlspecialchars($success) ?>
 </div>
 <?php endif; ?>
@@ -183,7 +183,7 @@ $db->close();
                                     <?php endif; ?>
                                 </td>
                                 <td style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-family: monospace;">
-                                    <a href="<?= htmlspecialchars($page['url']) ?>" target="_blank" style="color: #3d5a26;">
+                                    <a href="<?= htmlspecialchars($page['url']) ?>" target="_blank" style="color: var(--accent);">
                                         <?= htmlspecialchars($page['url']) ?> 🔗
                                     </a>
                                 </td>
@@ -256,7 +256,7 @@ $db->close();
                         <div class="mobile-landing-page-card" data-search="<?= htmlspecialchars($searchData, ENT_QUOTES) ?>" style="background: var(--color-white); border: 1px solid var(--color-gray-200); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-md); box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                             <!-- Header: Name -->
                             <div style="margin-bottom: var(--spacing-sm); border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: var(--spacing-xs);">
-                                <div style="font-weight: 600; font-size: 16px; color: #3d5a26;">
+                                <div style="font-weight: 600; font-size: 16px; color: var(--accent);">
                                     <?= htmlspecialchars($page['name']) ?>
                                 </div>
                                 <?php if (!empty($page['tags'])): ?>
@@ -274,8 +274,8 @@ $db->close();
                             <!-- URL -->
                             <div style="margin-bottom: var(--spacing-sm);">
                                 <div style="font-size: 11px; color: #666; margin-bottom: 4px;"><strong>URL</strong></div>
-                                <div style="font-size: 10px; font-family: monospace; color: #3d5a26; word-break: break-all; background: #f9f9f9; padding: 6px; border-radius: 3px;">
-                                    <a href="<?= htmlspecialchars($page['url']) ?>" target="_blank" style="color: #3d5a26; text-decoration: none;">
+                                <div style="font-size: 10px; font-family: monospace; color: var(--accent); word-break: break-all; background: #f9f9f9; padding: 6px; border-radius: 3px;">
+                                    <a href="<?= htmlspecialchars($page['url']) ?>" target="_blank" style="color: var(--accent); text-decoration: none;">
                                         <?= htmlspecialchars($page['url']) ?> 🔗
                                     </a>
                                 </div>
@@ -402,7 +402,7 @@ $db->close();
 <div id="campaigns-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(2px);">
     <div style="background: #fff; border-radius: 12px; padding: 0; max-width: 600px; width: 100%; box-shadow: 0 8px 32px rgba(0,0,0,0.2); animation: modalSlideIn 0.3s ease-out; max-height: 90vh; overflow-y: auto;">
         <!-- Header -->
-        <div style="padding: 20px 24px; border-bottom: 2px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, #3d5a26 0%, #5a7a3a 100%); border-radius: 12px 12px 0 0;">
+        <div style="padding: 20px 24px; border-bottom: 2px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, var(--accent) 0%, var(--accent-muted) 100%); border-radius: 12px 12px 0 0;">
             <h2 id="campaigns-modal-title" style="margin: 0; font-size: 20px; font-weight: 600; color: #fff;">Campaigns</h2>
             <button onclick="closeCampaignsModal()" 
                     style="background: rgba(255,255,255,0.2); border: none; color: #fff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; transition: background 0.2s;"
@@ -447,7 +447,7 @@ function showCampaignsModal(id, name, campaigns) {
         
         campaigns.forEach(function(campaign) {
             const statusBadge = campaign.status === 'active' 
-                ? '<span style="background: #4caf50; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600;">Active</span>'
+                ? '<span style="background: var(--accent); color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600;">Active</span>'
                 : campaign.status === 'paused'
                 ? '<span style="background: #ff9800; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600;">Paused</span>'
                 : '<span style="background: #999; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600;">' + campaign.status + '</span>';

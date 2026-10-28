@@ -24,14 +24,44 @@ final class ThemeRegistry
      */
     private const THEMES = [
         'light' => [
-            'label' => 'Light',
-            'logo' => 'mainlogo.png',
+            'label' => 'Original',
+            'logo' => 'logo-mark.png',
+            'base' => 'light',
+        ],
+        'clean' => [
+            'label' => 'Clean',
+            'logo' => 'logo-mark.png',
             'base' => 'light',
         ],
         'dark' => [
             'label' => 'Dark',
-            'logo' => 'darkmodelogo2.png',
+            'logo' => 'logo-dark.png',
             'base' => 'dark',
+        ],
+        'midnight' => [
+            'label' => 'Midnight',
+            'logo' => 'logo-midnight.png',
+            'base' => 'dark',
+        ],
+        'timber' => [
+            'label' => 'Timber',
+            'logo' => 'logo-timber.png',
+            'base' => 'light',
+        ],
+        'executive' => [
+            'label' => 'Executive',
+            'logo' => 'logo-executive.png',
+            'base' => 'light',
+        ],
+        'onyx' => [
+            'label' => 'Onyx',
+            'logo' => 'logo-onyx.png',
+            'base' => 'dark',
+        ],
+        'ember' => [
+            'label' => 'Ember',
+            'logo' => 'logo-ember.png',
+            'base' => 'light',
         ],
     ];
 

@@ -1,0 +1,109 @@
+/**
+ * Executive: navy sidebar, cool canvas, blue controls, gold as a secondary accent.
+ * Stored id: executive. Base polarity is light.
+ */
+[data-theme="executive"] {
+    --accent: #304f83;
+    --accent-hover: #223b66;
+    --accent-muted: #4774b6;
+    --accent-soft: #f0f4fa;
+
+    --color-forest-dark: #223b66;
+    --color-forest: #304f83;
+    --color-forest-light: #4774b6;
+    --color-bark: #a87420;
+    --color-bark-dark: #8a5e16;
+    --color-cream: #f4f6fa;
+    --color-cream-dark: #e9eef6;
+
+    --color-white: #ffffff;
+    --color-gray-100: #f4f6fa;
+    --color-gray-200: #dce3ef;
+    --color-gray-300: #c5d0e2;
+    --color-gray-600: #63718a;
+    --color-gray-800: #202c46;
+    --color-black: #202c46;
+
+    --heading-color: #202c46;
+    --link-color: #304f83;
+    --link-hover: #223b66;
+
+    --color-success: #1c7b47;
+    --color-success-bg: #e5f4eb;
+    --color-warning: #956914;
+    --color-warning-bg: #f8f1dc;
+    --color-error: #c5353f;
+    --color-error-bg: #fbeaec;
+    --color-info: #304f83;
+    --color-info-bg: #e9eef6;
+
+    --sidebar-bg: #202c46;
+    --sidebar-text: #ffffff;
+    --sidebar-text-muted: #b8c5d9;
+    --sidebar-hover-bg: #283654;
+    --sidebar-active-bg: #304363;
+    --sidebar-active-border: #a87420;
+    --sidebar-active-text: #ffffff;
+    --sidebar-scrollbar-track: #182236;
+    --sidebar-scrollbar-thumb: #4a5d80;
+    --sidebar-scrollbar-thumb-hover: #b8c5d9;
+    --sidebar-border: #304363;
+
+    --page-bg: #f4f6fa;
+    --surface: #ffffff;
+    --surface-raised: #e9eef6;
+    --text-primary: #202c46;
+    --text-muted: #63718a;
+    --border-color: #dce3ef;
+    --navbar-bg: #ffffff;
+    --navbar-border: #dce3ef;
+    --card-header-border: #dce3ef;
+
+    --input-bg: #ffffff;
+    --input-border: #dce3ef;
+    --input-text: #202c46;
+    --input-placeholder: rgba(99, 113, 138, 0.8);
+
+    --table-bg: #ffffff;
+    --table-header-bg: #e9eef6;
+    --table-header-text: #202c46;
+    --table-header-accent: inset 0 -2px 0 #304f83;
+    --table-row-hover: #f0f4fa;
+    --table-border: #dce3ef;
+
+    --btn-on-primary-text: #ffffff;
+    --btn-outline-hover-text: #ffffff;
+    --btn-radius: 4px;
+    --btn-padding-y: 8px;
+    --btn-padding-x: 24px;
+    --badge-warning-text: #956914;
+
+    --logo-max-width: 64px;
+    --logo-max-height: 60px;
+    --auth-logo-max-height: 140px;
+
+    --auth-page-bg: #f4f6fa;
+    --auth-header-bg: #202c46;
+    --auth-header-text: #ffffff;
+    --auth-container-shadow: 0 10px 40px rgba(32, 44, 70, 0.14);
+    --auth-tagline-text: #b8c5d9;
+    --auth-tagline-shadow: none;
+
+    --chart-grid: rgba(32, 44, 70, 0.06);
+    --chart-tick: #63718a;
+    --chart-legend: #63718a;
+    --chart-point-border: #ffffff;
+    --chart-clicks: #304f83;
+    --chart-clicks-fill: rgba(48, 79, 131, 0.12);
+    --chart-tooltip-border: #304f83;
+    --chart-tooltip-bg: rgba(32, 44, 70, 0.94);
+
+    --shadow-sm: 0 1px 2px rgba(32, 44, 70, 0.05);
+    --shadow-md: 0 4px 8px rgba(32, 44, 70, 0.06);
+    --shadow-lg: 0 10px 20px rgba(32, 44, 70, 0.08);
+}
+
+[data-theme="executive"] .card {
+    border: 1px solid var(--border-color);
+    box-shadow: none;
+}

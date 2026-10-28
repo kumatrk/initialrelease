@@ -400,7 +400,7 @@ class Auth
         }
 
         $columns = ['id', 'username', 'email', 'timezone', 'currency', 'role_id', 'is_active'];
-        foreach (['theme', 'sidebar_collapsed', 'dashboard_charts_hidden'] as $optionalCol) {
+        foreach (['theme', 'sidebar_collapsed', 'dashboard_charts_hidden', 'dashboard_period_hidden', 'report_columns_json'] as $optionalCol) {
             $colCheck = $this->db->query("SHOW COLUMNS FROM users LIKE '{$optionalCol}'");
             if ($colCheck && $colCheck->num_rows > 0) {
                 $columns[] = $optionalCol;
