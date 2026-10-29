@@ -4,6 +4,14 @@
 
 ---
 
+# Simple Kuma Tracker Version 1.1.5.30
+
+## Changes in 1.1.5.30
+
+- **NewsBreak Add Integration form** no longer renders as an empty card. The Settings partial called a missing `Csrf::token()` helper and aborted mid-page; it now uses the shared CSRF field so Name / Access Token / timezone / Save show correctly.
+
+---
+
 # Simple Kuma Tracker Version 1.1.5.29
 
 ## Changes in 1.1.5.29

@@ -69,13 +69,13 @@ $nbList = $allNewsBreakIntegrations ?? [];
                                         <a href="?page=settings&tab=api-costs&edit_nb_integration=<?= (int) $integration['id'] ?>"
                                            class="btn btn-secondary" style="padding: 6px 10px; text-decoration: none;">Edit</a>
                                         <form method="post" style="display: inline;" onsubmit="return confirm('Delete this NewsBreak integration?');">
-                                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
+                                            <?= \SimpleKuma\Auth\Csrf::field() ?>
                                             <input type="hidden" name="action" value="delete_nb_integration">
                                             <input type="hidden" name="nb_integration_id" value="<?= (int) $integration['id'] ?>">
                                             <button type="submit" class="btn btn-secondary" style="padding: 6px 10px;">Delete</button>
                                         </form>
                                         <form method="post" style="display: inline;">
-                                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
+                                            <?= \SimpleKuma\Auth\Csrf::field() ?>
                                             <input type="hidden" name="action" value="test_nb_integration">
                                             <input type="hidden" name="nb_integration_id" value="<?= (int) $integration['id'] ?>">
                                             <button type="submit" class="btn btn-secondary" style="padding: 6px 10px;">Test</button>
@@ -97,7 +97,7 @@ $nbList = $allNewsBreakIntegrations ?? [];
             </div>
             <div class="card-body">
                 <form method="post">
-                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(Csrf::token()) ?>">
+                    <?= \SimpleKuma\Auth\Csrf::field() ?>
                     <input type="hidden" name="action" value="<?= is_array($nbEdit) && !empty($nbEdit['id']) ? 'update_nb_integration' : 'create_nb_integration' ?>">
                     <?php if (is_array($nbEdit) && !empty($nbEdit['id'])): ?>
                         <input type="hidden" name="nb_integration_id" value="<?= (int) $nbEdit['id'] ?>">

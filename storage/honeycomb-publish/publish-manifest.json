@@ -1,16 +1,16 @@
 [
     {
-        "slug": "deep-funnels",
-        "name": "Kuma Deep Funnels",
-        "version": "1.0.12",
+        "slug": "proxy-ranges",
+        "name": "Proxy & Datacenter Ranges",
+        "version": "1.0.0",
         "type": "utility",
         "provider_key": "",
-        "min_kuma": "1.1.5",
-        "summary": "Multi-level landing page funnels inside one campaign (up to 5 levels \u00d7 5 LPs). Opaque link keys + Link code helper. Full path tracking and Funnel stats tab.",
-        "zip_url": "https://github.com/kumatrk/honeycomb-addons/releases/download/deep-funnels-1.0.12/deep-funnels.zip",
-        "sha256": "337640eb7859a8751dedc25c87eff11ecbd128b4a9d2da64963c85c52697463d",
-        "zip_path": "C:\\xampp\\htdocs\\simplekuma\\storage\\honeycomb-publish\\deep-funnels.zip",
-        "tag": "deep-funnels-1.0.12",
-        "bytes": 11432
+        "min_kuma": "1.1.5.29",
+        "summary": "One-click download of Tor / anonymous / cloud IP ranges so campaign Bots and proxy traffic (Safe URL / Record only) can see VPN and datacenter visits. No paid IP API.",
+        "zip_url": "https://github.com/kumatrk/honeycomb-addons/releases/download/proxy-ranges-1.0.0/proxy-ranges.zip",
+        "sha256": "f0d84cac70a23b2f10853f1b3d61cc560c464e33be6d3de905ea1a5c2b6420c0",
+        "zip_path": "C:\\xampp\\htdocs\\simplekuma\\storage\\honeycomb-publish\\proxy-ranges.zip",
+        "tag": "proxy-ranges-1.0.0",
+        "bytes": 7227
     }
 ]
