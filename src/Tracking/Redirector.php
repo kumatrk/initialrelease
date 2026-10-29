@@ -22,10 +22,71 @@ class Redirector
     private ?SettingsManager $settings = null;
     private ?string $guardEmergency = null;
 
+    /** @var array<string, mixed>|null Request-scoped GeoLocator result (reuse rules → storeClick). */
+    private ?array $requestGeoLookup = null;
+
+    /** @var array<string, mixed>|null Request-scoped DeviceDetector result. */
+    private ?array $requestDeviceLookup = null;
+
+    private ?string $requestLookupIp = null;
+
+    private ?string $requestLookupUa = null;
+
     public function __construct(mysqli $db)
     {
         $this->db = $db;
         $this->settings = new SettingsManager($db);
+    }
+
+    /**
+     * One GeoLocator open per request IP (redirect rules + storeClick share it).
+     *
+     * @return array<string, mixed>
+     */
+    private function lookupGeoForRequest(string $ip): array
+    {
+        if ($this->requestLookupIp === $ip && is_array($this->requestGeoLookup)) {
+            return $this->requestGeoLookup;
+        }
+        $geoLocator = new \SimpleKuma\Enrichment\GeoLocator($ip);
+        $this->requestGeoLookup = $geoLocator->getGeoData();
+        $this->requestLookupIp = $ip;
+
+        return $this->requestGeoLookup;
+    }
+
+    /**
+     * One DeviceDetector parse per request UA.
+     *
+     * @return array<string, mixed>
+     */
+    private function lookupDeviceForRequest(?string $ua): array
+    {
+        $empty = [
+            'device' => null,
+            'device_brand' => null,
+            'device_model' => null,
+            'os' => null,
+            'os_version' => null,
+            'browser' => null,
+            'browser_version' => null,
+        ];
+        if ($ua === null || $ua === '') {
+            return $empty;
+        }
+        if ($this->requestLookupUa === $ua && is_array($this->requestDeviceLookup)) {
+            return $this->requestDeviceLookup;
+        }
+        try {
+            $deviceDetector = new \SimpleKuma\Enrichment\DeviceDetector($ua);
+            $this->requestDeviceLookup = $deviceDetector->getAll();
+        } catch (\Exception $e) {
+            $this->debugLog('Device detection error: ' . $e->getMessage());
+            $this->requestDeviceLookup = $empty;
+        }
+        $this->requestLookupUa = $ua;
+
+        return $this->requestDeviceLookup;
     }
 
     /**
@@ -1143,39 +1204,28 @@ class Redirector
                 $ip = $this->anonymizeIp($ip);
             }
             $builtInValues['ip'] = $ip;
-            
-            // Get geo data
-            $geoLocator = new \SimpleKuma\Enrichment\GeoLocator($ip);
-            $geoData = $geoLocator->getGeoData();
+
+            // Get geo data (cached for storeClick on the same request)
+            $geoData = $this->lookupGeoForRequest($ip);
             $builtInValues['country'] = $geoData['country'] ?? '';
             $builtInValues['region'] = $geoData['region'] ?? '';
             $builtInValues['city'] = $geoData['city'] ?? '';
         }
-        
-        // Get device data
+
+        // Get device data (cached for storeClick on the same request)
         $ua = $_SERVER['HTTP_USER_AGENT'] ?? null;
         if ($ua) {
-            try {
-                $deviceDetector = new \SimpleKuma\Enrichment\DeviceDetector($ua);
-                $deviceData = $deviceDetector->getAll();
-                $builtInValues['device'] = !empty($deviceData['device']) ? $deviceData['device'] : 'desktop'; // Default to desktop if empty
-                $builtInValues['device_brand'] = $deviceData['device_brand'] ?? '';
-                $builtInValues['device_model'] = $deviceData['device_model'] ?? '';
-                $builtInValues['os'] = $deviceData['os'] ?? '';
-                $builtInValues['os_version'] = $deviceData['os_version'] ?? '';
-                $builtInValues['browser'] = $deviceData['browser'] ?? '';
-                $builtInValues['browser_version'] = $deviceData['browser_version'] ?? '';
-                
-                // Debug logging
-                $this->debugLog("Device detection result: " . json_encode($deviceData));
-                $this->debugLog("Built-in values for redirect rules: device=" . $builtInValues['device']);
-            } catch (\Exception $e) {
-                $this->debugLog("Device detection error: " . $e->getMessage());
-                // Fallback to desktop if detection fails
-                $builtInValues['device'] = 'desktop';
-            }
+            $deviceData = $this->lookupDeviceForRequest($ua);
+            $builtInValues['device'] = !empty($deviceData['device']) ? $deviceData['device'] : 'desktop';
+            $builtInValues['device_brand'] = $deviceData['device_brand'] ?? '';
+            $builtInValues['device_model'] = $deviceData['device_model'] ?? '';
+            $builtInValues['os'] = $deviceData['os'] ?? '';
+            $builtInValues['os_version'] = $deviceData['os_version'] ?? '';
+            $builtInValues['browser'] = $deviceData['browser'] ?? '';
+            $builtInValues['browser_version'] = $deviceData['browser_version'] ?? '';
+            $this->debugLog('Device detection result: ' . json_encode($deviceData));
+            $this->debugLog('Built-in values for redirect rules: device=' . $builtInValues['device']);
         } else {
-            // No user agent - default to desktop
             $builtInValues['device'] = 'desktop';
             $this->debugLog("No user agent provided, defaulting device to 'desktop'");
         }
@@ -1429,8 +1479,7 @@ class Redirector
             // Only do geolocation lookup if we have a valid, non-localhost IP
             if ($ip && $ip !== '::1' && $ip !== '127.0.0.1' && $ip !== '::') {
                 try {
-                    $geoLocator = new \SimpleKuma\Enrichment\GeoLocator($ip);
-                    $geoData = array_merge($geoData, $geoLocator->getGeoData());
+                    $geoData = array_merge($geoData, $this->lookupGeoForRequest($ip));
                 } catch (\Exception $e) {
                     error_log("Redirector: GeoLocator error for IP {$ip}: " . $e->getMessage());
                 }
@@ -1446,8 +1495,7 @@ class Redirector
             );
 
             if ($ua) {
-                $deviceDetector = new \SimpleKuma\Enrichment\DeviceDetector($ua);
-                $deviceData = $deviceDetector->getAll();
+                $deviceData = array_merge($deviceData, $this->lookupDeviceForRequest($ua));
             }
 
             // Structure extra_json for queryable analytics

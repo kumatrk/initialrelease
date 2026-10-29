@@ -28,7 +28,8 @@ final class AnonymousRangeLookup
 
     private static int $loadedStamp = 0;
 
-    private static string $blob = '';
+    /** @var resource|null Open ranges.bin handle — never slurped into a PHP string. */
+    private static $handle = null;
 
     private static int $v4Count = 0;
 
@@ -60,9 +61,12 @@ final class AnonymousRangeLookup
 
     public static function reset(): void
     {
+        if (is_resource(self::$handle)) {
+            fclose(self::$handle);
+        }
+        self::$handle = null;
         self::$loaded = false;
         self::$loadedStamp = 0;
-        self::$blob = '';
         self::$v4Count = 0;
         self::$v4Offset = 0;
         self::$v6Count = 0;
@@ -80,7 +84,7 @@ final class AnonymousRangeLookup
         self::reset();
         try {
             self::load(true);
-            return self::$blob !== '' || self::sourceStamp(self::directory()) === 0;
+            return self::$handle !== null || self::sourceStamp(self::directory()) === 0;
         } catch (\Throwable $e) {
             error_log('AnonymousRangeLookup: ' . $e->getMessage());
             self::reset();
@@ -102,7 +106,7 @@ final class AnonymousRangeLookup
             return false;
         }
 
-        if (self::$blob === '') {
+        if (self::$handle === null) {
             return false;
         }
 
@@ -127,36 +131,65 @@ final class AnonymousRangeLookup
     private static function load(bool $forceParse): void
     {
         $dir = self::directory();
-        $stamp = self::sourceStamp($dir);
-        if (!$forceParse && self::$loaded && self::$loadedStamp === $stamp) {
+        $bin = $dir . DIRECTORY_SEPARATOR . 'ranges.bin';
+
+        // Hot path: stamp from ranges.bin mtime only — never glob *.cidr on a click.
+        if (!$forceParse) {
+            $binStamp = is_file($bin) ? (int) @filemtime($bin) : 0;
+            if (self::$loaded && self::$loadedStamp === $binStamp && self::$handle !== null) {
+                return;
+            }
+            if ($binStamp > 0 && self::openBin($bin)) {
+                self::$loaded = true;
+                self::$loadedStamp = $binStamp;
+                return;
+            }
+            // Missing/corrupt cache: fail open unless the list is small enough to parse here.
+            if (!is_dir($dir)) {
+                self::reset();
+                self::$loaded = true;
+                self::$loadedStamp = 0;
+                return;
+            }
+            $bytes = self::cidrBytes($dir);
+            if ($bytes > self::REQUEST_PARSE_LIMIT) {
+                if (!self::$loggedSkip) {
+                    self::$loggedSkip = true;
+                    error_log('AnonymousRangeLookup: range list is not cached. Run php scripts/download-anonymous-ranges.php');
+                }
+                self::reset();
+                self::$loaded = true;
+                self::$loadedStamp = 0;
+                return;
+            }
+            if ($bytes === 0) {
+                self::reset();
+                self::$loaded = true;
+                self::$loadedStamp = 0;
+                return;
+            }
+            self::buildBin($dir, $bin);
+            $binStamp = is_file($bin) ? (int) @filemtime($bin) : 0;
+            self::openBin($bin);
+            self::$loaded = true;
+            self::$loadedStamp = $binStamp;
             return;
         }
 
+        // Force rebuild (downloader / CLI): CIDR mtimes decide freshness.
+        $stamp = self::sourceStamp($dir);
         self::reset();
         self::$loaded = true;
-        self::$loadedStamp = $stamp;
+        self::$loadedStamp = is_file($bin) ? (int) @filemtime($bin) : $stamp;
 
         if ($stamp === 0 || !is_dir($dir)) {
             return;
         }
 
-        $bin = $dir . DIRECTORY_SEPARATOR . 'ranges.bin';
-        $binFresh = is_file($bin) && (int) @filemtime($bin) >= $stamp;
-        if (!$forceParse && $binFresh && self::readBin($bin)) {
-            return;
-        }
-
-        $bytes = self::cidrBytes($dir);
-        if (!$forceParse && $bytes > self::REQUEST_PARSE_LIMIT) {
-            if (!self::$loggedSkip) {
-                self::$loggedSkip = true;
-                error_log('AnonymousRangeLookup: range list is not cached. Run php scripts/download-anonymous-ranges.php');
-            }
-            return;
-        }
-
         self::buildBin($dir, $bin);
-        self::readBin($bin);
+        if (self::openBin($bin)) {
+            self::$loadedStamp = (int) @filemtime($bin);
+        }
     }
 
     private static function sourceStamp(string $dir): int
@@ -514,33 +547,93 @@ final class AnonymousRangeLookup
         }
     }
 
-    private static function readBin(string $path): bool
+    /**
+     * Open ranges.bin and read header only. Lookup probes use fseek — not a 15MB string.
+     */
+    private static function openBin(string $path): bool
     {
-        $raw = @file_get_contents($path);
-        if (!is_string($raw) || strlen($raw) < 8 || substr($raw, 0, 4) !== self::BIN_MAGIC) {
+        if (is_resource(self::$handle)) {
+            fclose(self::$handle);
+        }
+        self::$handle = null;
+        self::$v4Count = 0;
+        self::$v4Offset = 0;
+        self::$v6Count = 0;
+        self::$v6Offset = 0;
+
+        $size = @filesize($path);
+        if ($size === false || $size < 8) {
             return false;
         }
-        $v4Count = self::readUint32($raw, 4);
+
+        $fh = @fopen($path, 'rb');
+        if ($fh === false) {
+            return false;
+        }
+
+        $header = fread($fh, 8);
+        if (!is_string($header) || strlen($header) !== 8 || substr($header, 0, 4) !== self::BIN_MAGIC) {
+            fclose($fh);
+            return false;
+        }
+
+        $v4Count = self::readUint32($header, 4);
         if ($v4Count === null) {
+            fclose($fh);
             return false;
         }
+
         $v4Offset = 8;
         $v6CountOffset = $v4Offset + ($v4Count * 8);
-        $v6Count = self::readUint32($raw, $v6CountOffset);
+        if ($size < $v6CountOffset + 4) {
+            fclose($fh);
+            return false;
+        }
+
+        if (fseek($fh, $v6CountOffset) !== 0) {
+            fclose($fh);
+            return false;
+        }
+        $v6Header = fread($fh, 4);
+        if (!is_string($v6Header) || strlen($v6Header) !== 4) {
+            fclose($fh);
+            return false;
+        }
+        $v6Count = self::readUint32($v6Header, 0);
         if ($v6Count === null) {
+            fclose($fh);
             return false;
         }
+
         $v6Offset = $v6CountOffset + 4;
-        if (strlen($raw) < $v6Offset + ($v6Count * 32)) {
+        if ($size < $v6Offset + ($v6Count * 32)) {
+            fclose($fh);
             return false;
         }
-        self::$blob = $raw;
+
+        self::$handle = $fh;
         self::$v4Count = $v4Count;
         self::$v4Offset = $v4Offset;
         self::$v6Count = $v6Count;
         self::$v6Offset = $v6Offset;
 
         return true;
+    }
+
+    private static function readBytes(int $offset, int $length): ?string
+    {
+        if (!is_resource(self::$handle) || $length <= 0) {
+            return null;
+        }
+        if (fseek(self::$handle, $offset) !== 0) {
+            return null;
+        }
+        $data = fread(self::$handle, $length);
+        if (!is_string($data) || strlen($data) !== $length) {
+            return null;
+        }
+
+        return $data;
     }
 
     private static function containsV4(int $ip): bool
@@ -550,8 +643,12 @@ final class AnonymousRangeLookup
         while ($lo <= $hi) {
             $mid = ($lo + $hi) >> 1;
             $pos = self::$v4Offset + ($mid * 8);
-            $start = self::readUint32(self::$blob, $pos);
-            $end = self::readUint32(self::$blob, $pos + 4);
+            $record = self::readBytes($pos, 8);
+            if ($record === null) {
+                return false;
+            }
+            $start = self::readUint32($record, 0);
+            $end = self::readUint32($record, 4);
             if ($start === null || $end === null) {
                 return false;
             }
@@ -577,12 +674,16 @@ final class AnonymousRangeLookup
         while ($lo <= $hi) {
             $mid = ($lo + $hi) >> 1;
             $pos = self::$v6Offset + ($mid * 32);
-            $startCmp = substr_compare(self::$blob, $packed, $pos, 16);
+            $record = self::readBytes($pos, 32);
+            if ($record === null) {
+                return false;
+            }
+            $startCmp = strcmp(substr($record, 0, 16), $packed);
             if ($startCmp > 0) {
                 $hi = $mid - 1;
                 continue;
             }
-            $endCmp = substr_compare(self::$blob, $packed, $pos + 16, 16);
+            $endCmp = strcmp(substr($record, 16, 16), $packed);
             if ($endCmp < 0) {
                 $lo = $mid + 1;
                 continue;

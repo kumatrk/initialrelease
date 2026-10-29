@@ -4,6 +4,15 @@
 
 ---
 
+# Simple Kuma Tracker Version 1.1.5.31
+
+## Changes in 1.1.5.31
+
+- **Click redirect speed (privacy ranges pack):** `AnonymousRangeLookup` no longer loads the ~15MB `ranges.bin` into PHP memory on each click. Lookups open the file once per worker and binary-search with `fseek` (header + small probes only). Hot-path freshness uses the bin mtime — no `*.cidr` glob per click.
+- **GeoIP on the click path:** `GeoResolver` is process-scoped (one open city DB chain per FPM worker) and constructs providers lazily so a DB-IP hit does not also open IP2Location/IPinfo. Redirect rules and `storeClick` reuse the same request’s geo/device enrichment instead of looking up twice.
+
+---
+
 # Simple Kuma Tracker Version 1.1.5.30
 
 ## Changes in 1.1.5.30

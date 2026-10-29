@@ -25,8 +25,9 @@ class GeoLocatorAdapter
     {
         $this->ip = $ip;
         // Note: GeoResolver handles API fallback internally via config constants
-        // The parameters are kept for backward compatibility but GeoResolver reads from config
-        $this->resolver = new GeoResolver($databasePath);
+        // The parameters are kept for backward compatibility but GeoResolver reads from config.
+        // Process singleton: open city DBs once per FPM worker, not per click.
+        $this->resolver = GeoResolver::instance($databasePath);
     }
 
     /**
