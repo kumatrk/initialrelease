@@ -4,6 +4,17 @@
 
 ---
 
+# Simple Kuma Tracker Version 1.1.5.33
+
+## Changes in 1.1.5.33
+
+### Packaging hotfix: remove local Optee extracts from zip / public source
+- **1.1.5.32** briefly included local `storage/tmp-optee-*` review extracts in the production zip and `kumatrk/initialrelease` (not product code). This release strips them.
+- Packager now excludes `storage/tmp-*` and `storage/honeycomb-publish`, and fails validation if Optee/tmp paths appear in the zip
+- Same Optee API totals fix as 1.1.5.32 remains (see below). Upgrade from 1.1.5.31 or 1.1.5.32 → **1.1.5.33**
+
+---
+
 # Simple Kuma Tracker Version 1.1.5.32
 
 ## Changes in 1.1.5.32
@@ -13,6 +24,7 @@
 - After the Hermes/V2 breakdown path, grouped totals had been copying UI labels (`clicks` = LP+direct, visits under `visitors`), so Optee and other API clients that map `clicks` → visits saw empty totals while the summary endpoint was fine
 - Grouped **rows** already used visits as `clicks`; they are normalized to the documented API shape (no UI-only fields)
 - No schema/migration change; Optee’s `optee-tracker-simplekuma` plugin does not need an update for this fix
+- **Superseded for download by 1.1.5.33** (packaging cleanup). Prefer **1.1.5.33**.
 
 ---
 
