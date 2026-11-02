@@ -1,0 +1,1531 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-50: #eef9ff;
+  --color-brand-100: #d8f1ff;
+  --color-brand-200: #bae7ff;
+  --color-brand-300: #8adaff;
+  --color-brand-400: #52c3ff;
+  --color-brand-500: #2aa5ff;
+  --color-brand-600: #1486f5;
+  --color-brand-700: #0d6ee1;
+  --color-brand-800: #1158b6;
+  --color-brand-900: #144b8f;
+  --color-brand-950: #112f57;
+}
+
+@source "../../templates";
+@source "../../theme";
+
+/* Custom component styles */
+@layer components {
+  .optee-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .optee-btn-primary {
+    @apply optee-btn bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800;
+  }
+
+  .optee-btn-secondary {
+    @apply optee-btn bg-gray-700 text-gray-200 hover:bg-gray-600 active:bg-gray-500;
+  }
+
+  .optee-btn-success {
+    @apply optee-btn bg-green-600 text-white hover:bg-green-700 active:bg-green-800;
+  }
+
+  .optee-btn-danger {
+    @apply optee-btn bg-red-600 text-white hover:bg-red-700 active:bg-red-800;
+  }
+
+  .optee-btn-ghost {
+    @apply optee-btn bg-transparent text-gray-400 hover:text-gray-200 hover:bg-gray-800;
+  }
+
+  .optee-btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+
+  .optee-card {
+    @apply rounded-xl border border-gray-800 bg-gray-900 p-6;
+  }
+
+  .optee-input {
+    @apply block w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500;
+  }
+
+  .optee-select {
+    @apply optee-input appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2220%22%20height%3D%2220%22%20fill%3D%22none%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:20px_20px] bg-[position:right_8px_center] bg-no-repeat pr-10;
+  }
+
+  .optee-label {
+    @apply block text-sm font-medium text-gray-300 mb-1.5;
+  }
+
+  .optee-badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .optee-badge-green {
+    @apply optee-badge bg-green-900/50 text-green-400 ring-1 ring-green-500/30;
+  }
+
+  .optee-badge-red {
+    @apply optee-badge bg-red-900/50 text-red-400 ring-1 ring-red-500/30;
+  }
+
+  .optee-badge-yellow {
+    @apply optee-badge bg-yellow-900/50 text-yellow-400 ring-1 ring-yellow-500/30;
+  }
+
+  .optee-badge-blue {
+    @apply optee-badge bg-blue-900/50 text-blue-400 ring-1 ring-blue-500/30;
+  }
+
+  .optee-badge-gray {
+    @apply optee-badge bg-gray-800 text-gray-400 ring-1 ring-gray-700;
+  }
+
+  /* "Hide blocked" toggle on campaign stats page (light theme — overridden in compiled CSS). */
+  .optee-hide-blocked-btn {
+    display: none;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    padding: 2px 8px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: #4b5563;
+    background-color: #ffffff;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .optee-hide-blocked-btn:hover {
+    background-color: #f9fafb;
+    color: #111827;
+  }
+  .optee-hide-blocked-btn.is-visible {
+    display: inline-flex;
+  }
+  .optee-hide-blocked-btn.is-active {
+    color: #1d4ed8;
+    background-color: #eff6ff;
+    border-color: #93c5fd;
+  }
+  #optee-stats-wrapper.optee-hide-blocked .optee-zone-blocked,
+  #optee-stats-wrapper.optee-hide-blocked .optee-stats-summary-row {
+    display: none;
+  }
+
+  /* ----- Integration card grid -----
+     Named class rather than responsive utilities: the compiled sheet carries no
+     xl/2xl variants and the Tailwind build is not runnable (see CLAUDE.md).
+     Three columns stay the norm all the way up; the fourth is reserved for
+     genuinely large displays. 2400px, not 1536: a ~2000px window leaves ~1660px
+     of content and four cards there are too narrow — three is the wanted
+     layout. 2400 also clears that window at 125% scaling (~1600 CSS px).
+     Keep in sync with the same block in optee-dashboard.css. */
+  .optee-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+  @media (min-width: 768px)  { .optee-cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (min-width: 1024px) { .optee-cards-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (min-width: 2400px) { .optee-cards-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+  /* ----- Table full screen (Optee.TableFullscreen) -----
+     The wrapper is pinned to the viewport in place — never reparented — so the
+     sticky header/column offsets and delegated handlers survive the toggle.
+     Keep in sync with the same block in optee-dashboard.css. */
+  .optee-tfs-lock { overflow: hidden !important; }
+
+  .optee-tfs-active {
+    position: fixed !important;
+    top: 46px;            /* clears .optee-tfs-bar */
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 9000;        /* below the 9999/10000 modals opened from the table */
+    margin: 0 !important;
+    /* campaign.php sizes the wrapper with an inline max-height — it would clamp
+       the overlay to the old in-page height. */
+    max-height: none !important;
+    background: #fff;
+    overflow: auto !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .optee-tfs-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 46px;
+    z-index: 9001;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 10px;
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .optee-tfs-heading { flex: 1; min-width: 0; }
+  .optee-tfs-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #111827;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .optee-tfs-sub {
+    font-size: 11px;
+    color: #6b7280;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .optee-tfs-act {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+    color: #6b7280;
+    cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  .optee-tfs-act:hover { background: #f9fafb; color: #374151; }
+
+  /* Corner toggle — lives in the sticky top-left header cell, so it stays on
+     screen however far the table is scrolled in either axis. */
+  .optee-tfs-corner {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    background: #fff;
+    color: #9ca3af;
+    cursor: pointer;
+  }
+  .optee-tfs-corner:hover {
+    color: #2aa5ff;
+    border-color: #bfdbfe;
+    background: #f8fbff;
+  }
+  @media (max-width: 768px) {
+    .optee-tfs-corner { width: 28px; height: 28px; top: 1px; left: 1px; }
+  }
+
+  .optee-table {
+    @apply w-full text-sm text-left;
+  }
+
+  .optee-table thead {
+    @apply border-b border-gray-800;
+  }
+
+  .optee-table th {
+    @apply px-4 py-3 text-xs font-medium uppercase tracking-wider text-gray-500;
+  }
+
+  .optee-table td {
+    @apply px-4 py-3 text-gray-300;
+  }
+
+  .optee-table tbody tr {
+    @apply border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors;
+  }
+}
+
+/* Searchable select */
+.optee-ss {
+  position: relative;
+}
+.optee-ss-input {
+  cursor: text;
+}
+.optee-ss-dropdown {
+  position: absolute;
+  z-index: 50;
+  width: 100%;
+  margin-top: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--color-gray-800, #1f2937);
+  border: 1px solid var(--color-gray-700, #374151);
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3);
+}
+.optee-ss-option {
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  color: var(--color-gray-300, #d1d5db);
+  cursor: pointer;
+  transition: background 100ms;
+}
+.optee-ss-option:hover,
+.optee-ss-option.active {
+  background: var(--color-gray-700, #374151);
+  color: var(--color-gray-100, #f3f4f6);
+}
+.optee-ss-empty {
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  color: var(--color-gray-500, #6b7280);
+}
+
+/* Campaign stats table */
+.optee-stats-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.optee-stats-table th,
+.optee-stats-table td {
+  padding: 6px 10px;
+  border: 1px solid #e5e7eb;
+}
+.optee-stats-table th {
+  background: #f9fafb;
+  font-weight: 600;
+  font-size: 12px;
+}
+/* Sticky header rows */
+.optee-stats-table .optee-stats-group-row th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  text-align: center;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.optee-stats-table .optee-stats-col-row th {
+  position: sticky;
+  top: 29px;
+  z-index: 3;
+}
+.optee-stats-col-header {
+  cursor: pointer;
+  user-select: none;
+}
+.optee-stats-col-header:hover {
+  background: #f3f4f6 !important;
+}
+.optee-stats-table tbody tr:hover td {
+  background-color: #f3f4f6;
+}
+.optee-sort-arrow {
+  font-size: 10px;
+  color: #d1d5db;
+}
+
+/* Sticky first column (Date/Zone) */
+.optee-sticky-col {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #f9fafb;
+  min-width: 110px;
+}
+.optee-stats-table tbody .optee-sticky-col {
+  background: #fff;
+  font-weight: 600;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.optee-stats-table tbody tr:hover .optee-sticky-col {
+  background: #f3f4f6;
+}
+.optee-stats-summary-row .optee-sticky-col {
+  background: #f3f4f6 !important;
+}
+/* Weekend (Sat/Sun) rows in the days drilldown — same shade as row hover. */
+.optee-stats-table tbody tr.optee-weekend-row td {
+  background-color: #f3f4f6;
+}
+.optee-stats-table tbody tr.optee-weekend-row .optee-sticky-col {
+  background: #f3f4f6;
+}
+.optee-gh-date {
+  position: sticky;
+  left: 0;
+  top: 0;
+  z-index: 4;
+  background: #f3f4f6 !important;
+  color: #374151;
+  cursor: pointer;
+  user-select: none;
+  text-align: left;
+  vertical-align: bottom;
+}
+
+/* Stats group header colors */
+.optee-gh-ts      { background-color: #eff6ff !important; color: #1e40af; }
+.optee-gh-af      { background-color: #fef2f2 !important; color: #991b1b; }
+.optee-gh-tracker { background-color: #f0fdf4 !important; color: #166534; }
+.optee-gh-mon     { background-color: #faf5ff !important; color: #7e22ce; }
+.optee-gh-custom  { background-color: #eef2ff !important; color: #4338ca; }
+
+/* Custom column field pills — colour-match the group headers */
+.optee-cc-pill { padding:4px 10px; border-radius:9999px; cursor:pointer; font-size:12px; border:1px solid transparent; transition:filter .12s; }
+.optee-cc-pill:hover { filter: brightness(0.96); }
+.optee-cc-pill-ts      { background:#eff6ff; color:#1e40af; border-color:#dbeafe; }
+.optee-cc-pill-af      { background:#fef2f2; color:#991b1b; border-color:#fecaca; }
+.optee-cc-pill-tracker { background:#f0fdf4; color:#166534; border-color:#bbf7d0; }
+.optee-cc-pill-mon     { background:#faf5ff; color:#7e22ce; border-color:#e9d5ff; }
+
+/* Stats cell colors */
+.optee-cell-green  { background-color: #dcfce7 !important; color: #166534; }
+.optee-cell-yellow { background-color: #fef9c3 !important; color: #854d0e; }
+.optee-cell-red    { background-color: #fee2e2 !important; color: #991b1b; }
+.optee-cell-empty  { color: #d1d5db; }
+
+/* Summary rows (Sum / Avg) */
+.optee-stats-summary-row td {
+  background: #f3f4f6 !important;
+  font-weight: 600;
+  border-top: 2px solid #d1d5db;
+}
+.optee-summary-label {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+}
+
+/* Drill-down buttons */
+.optee-drill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  cursor: pointer;
+  border: 1px solid #d1d5db;
+  background-color: #ffffff;
+  color: #374151;
+  white-space: nowrap;
+  transition: all 0.15s;
+  text-decoration: none;
+}
+/* Tabs render as <a> so right-click offers "Open in new tab". These :link /
+   :visited selectors outrank a host theme's a:visited, which would otherwise
+   beat the plain .optee-drill-btn colour and turn visited tabs purple. */
+.optee-drill-btn:link,
+.optee-drill-btn:visited { color: #374151; text-decoration: none; }
+.optee-drill-btn:hover { background-color: #f3f4f6; color: #111827; text-decoration: none; }
+.optee-drill-btn.active { background-color: var(--color-brand-600); color: #ffffff; border-color: var(--color-brand-600); }
+.optee-drill-btn svg { display: inline; vertical-align: middle; }
+
+.optee-drill-has-dropdown {
+  padding-right: 0;
+}
+.optee-drill-chevron {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.5rem;
+  padding: 0 0.5rem;
+  align-self: stretch;
+  cursor: pointer;
+}
+
+/* Drill-down dropdown */
+.optee-drill-dropdown {
+  position: relative;
+  display: inline-block;
+}
+.optee-drill-dropdown-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  min-width: 160px;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  z-index: 20;
+  padding: 4px 0;
+}
+.optee-drill-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 6px 14px;
+  font-size: 0.8125rem;
+  text-align: left;
+  background: none;
+  border: none;
+  color: #374151;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.optee-drill-dropdown-item:link,
+.optee-drill-dropdown-item:visited { color: #374151; text-decoration: none; }
+.optee-drill-dropdown-item:hover {
+  background-color: #f3f4f6;
+  text-decoration: none;
+}
+.optee-drill-dropdown-item.active {
+  font-weight: 600;
+  color: var(--color-brand-600, #2aa5ff);
+}
+
+/* Cache badge with icon */
+.optee-cache-icon-badge {
+  gap: 4px;
+  margin-right: 6px;
+}
+.optee-cache-icon-badge svg {
+  display: inline;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+/* Cache popover */
+.optee-cache-popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 50;
+  margin-top: 4px;
+  padding: 10px 14px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+  min-width: 220px;
+  font-size: 12px;
+  color: #374151;
+}
+.optee-cache-detail {
+  display: flex;
+  align-items: center;
+  padding: 3px 0;
+}
+
+/* Suggestion badge + popover */
+.optee-suggestion-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0.188rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1;
+  border-radius: 9999px;
+  border: 1px solid #c4b5fd;
+  white-space: nowrap;
+  color: #6d28d9;
+  background-color: #f5f3ff;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.optee-suggestion-badge:hover {
+  background-color: #ede9fe;
+}
+.optee-suggestion-badge svg {
+  display: inline;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.optee-suggestion-popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 50;
+  margin-top: 4px;
+  padding: 10px 14px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+  min-width: 280px;
+  font-size: 12px;
+  color: #374151;
+}
+.optee-suggestion-popover label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+}
+.optee-suggestion-popover input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: #7c3aed;
+  cursor: pointer;
+}
+
+/* Spinner */
+.optee-spinner {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  border: 3px solid #e5e7eb;
+  border-top-color: var(--color-brand-600);
+  border-radius: 50%;
+  animation: optee-spin 0.6s linear infinite;
+}
+@keyframes optee-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Pulse animation for automation running indicator */
+.optee-pulse {
+  animation: optee-pulse 1.5s ease-in-out infinite;
+}
+@keyframes optee-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.5); opacity: 0.7; }
+}
+
+.bg-blue-500 { background-color: #3b82f6; }
+
+/* Balance table */
+.optee-balance-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.optee-balance-table th,
+.optee-balance-table td {
+  padding: 8px 14px;
+  border: 1px solid #e5e7eb;
+  text-align: right;
+}
+.optee-balance-table th {
+  background: #f9fafb;
+  font-weight: 600;
+  font-size: 12px;
+  color: #374151;
+  text-align: center;
+}
+.optee-balance-table tbody tr:hover td {
+  background-color: #f9fafb;
+}
+.optee-bal-date-col {
+  text-align: left !important;
+  font-weight: 600;
+  color: #374151;
+  min-width: 100px;
+  background-color: #f3f4f6;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+}
+.optee-balance-table thead .optee-bal-date-col {
+  z-index: 4;
+}
+.optee-bal-total-col {
+  font-weight: 600;
+  background-color: #f3f4f6;
+  position: sticky;
+  z-index: 2;
+}
+.optee-balance-table thead .optee-bal-total-col {
+  z-index: 3;
+}
+.optee-bal-positive {
+  color: #059669;
+}
+.optee-bal-negative {
+  color: #dc2626;
+}
+
+/* Sidebar base */
+#optee-sidebar {
+  overflow: hidden;
+}
+
+/* Sidebar transition */
+.sidebar-collapsed .sidebar-text {
+  display: none;
+}
+
+.sidebar-collapsed .sidebar-icon {
+  margin: 0;
+}
+
+/* Collapsed nav scrolls vertically so the collapse toggle stays reachable;
+   tooltips are rendered as a fixed-position element (below) via JS.
+   No scrollbar gutter: the rail is only 64px, and a visible gutter (10-11px in
+   Firefox, which ignores ::-webkit-scrollbar) eats the width the active pill
+   needs. Scrolling still works — only the bar is hidden. */
+.sidebar-collapsed #optee-sidebar nav {
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+.sidebar-collapsed #optee-sidebar nav::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* Fixed-width centred pill — see the matching block in optee-dashboard.css
+   (issue #30). Also covers #optee-sidebar-toggle via the id's specificity. */
+.sidebar-collapsed #optee-sidebar .optee-nav-item {
+  width: 2.5rem;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 0;
+  padding-right: 0;
+  gap: 0;
+  justify-content: center;
+}
+
+.sidebar-collapsed #optee-sidebar nav li {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Logo row (px-4) and collapse-toggle row (px-3) sit outside <nav>; match the
+   nav's 0.5rem so all three rows share one centre line. */
+.sidebar-collapsed #optee-sidebar > div {
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+.sidebar-collapsed #optee-sidebar > div:first-child {
+  justify-content: center;
+}
+
+.optee-sidebar-tip {
+  position: fixed;
+  transform: translateY(-50%);
+  padding: 0.375rem 0.75rem;
+  background-color: #111827;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  border-radius: 0.375rem;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms ease;
+  z-index: 60;
+}
+
+.optee-sidebar-tip.is-visible {
+  opacity: 1;
+}
+
+/* Dropdown animation */
+.dropdown-enter {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.95);
+}
+
+.dropdown-enter-active {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition: opacity 150ms ease-out, transform 150ms ease-out;
+}
+
+/* Modal overlay */
+.optee-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.optee-modal-content {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 520px;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+}
+/* Campaign Actions grid: 4 per row on desktop, 3 on mobile. */
+#optee-actions-grid {
+  grid-template-columns: repeat(4, 1fr);
+}
+@media (max-width: 640px) {
+  #optee-actions-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+.optee-action-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px 4px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.optee-action-tile:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+.optee-action-tile-icon {
+  color: #6b7280;
+  display: flex;
+}
+.optee-action-tile-label {
+  font-size: 11px;
+  color: #374151;
+  text-align: center;
+  line-height: 1.3;
+}
+
+/* Editable balance cells */
+.optee-bal-editable {
+  cursor: pointer;
+}
+.optee-bal-editable:hover {
+  background-color: #f0f9ff !important;
+}
+.optee-bal-edit-input {
+  width: 80px;
+  padding: 2px 6px;
+  font-size: 13px;
+  border: 1px solid var(--color-brand-500);
+  border-radius: 4px;
+  text-align: right;
+  outline: none;
+}
+
+/* Earnings table */
+.optee-earnings-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.optee-earnings-table th,
+.optee-earnings-table td {
+  padding: 8px 14px;
+  border: 1px solid #e5e7eb;
+  text-align: right;
+}
+.optee-earnings-table th {
+  background: #f9fafb;
+  font-weight: 600;
+  font-size: 12px;
+  color: #374151;
+  text-align: center;
+}
+.optee-earnings-table tbody tr:hover td {
+  background-color: #f9fafb;
+}
+.optee-earn-date-col {
+  text-align: left !important;
+  font-weight: 600;
+  color: #374151;
+  min-width: 100px;
+  background-color: #f3f4f6;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+}
+.optee-earn-summary-col {
+  font-weight: 600;
+  background-color: #f3f4f6;
+  position: sticky;
+  z-index: 2;
+}
+.optee-earnings-table thead .optee-earn-summary-col {
+  z-index: 3;
+}
+.optee-earnings-table thead .optee-earn-date-col {
+  z-index: 4;
+}
+.optee-earn-revenue {
+  color: #059669;
+}
+.optee-earn-cost {
+  color: #dc2626;
+}
+
+/* Earnings summary row */
+.optee-earn-summary-row td {
+  background: #f3f4f6 !important;
+  font-weight: 600;
+  border-top: 2px solid #d1d5db;
+}
+
+/* Balance summary row */
+.optee-bal-summary-row td {
+  background: #f3f4f6 !important;
+  font-weight: 600;
+  border-top: 2px solid #d1d5db;
+}
+
+/* Toast notification */
+.optee-toast {
+  animation: slideInRight 300ms ease-out;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Info icon (i) — column headers */
+.optee-info-icon {
+  cursor: help;
+  color: #9ca3af;
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 3px;
+}
+.optee-info-icon svg {
+  display: inline;
+  vertical-align: middle;
+}
+.optee-info-icon:hover {
+  color: #6b7280;
+}
+
+/* Knowledgebase cards */
+.optee-kb-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  background: #fff;
+  transition: box-shadow 150ms ease;
+}
+.optee-kb-card:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.optee-kb-card-pinned {
+  border-left: 4px solid #8b5cf6;
+  background: #f5f3ff;
+}
+.optee-kb-badge-pinned {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #ede9fe;
+  color: #7c3aed;
+  padding: 2px 8px;
+  border-radius: 9999px;
+}
+.optee-kb-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #111827;
+  text-decoration: none;
+  line-height: 1.4;
+}
+.optee-kb-link:hover {
+  color: var(--color-brand-600);
+}
+
+/* Zone toggle switch */
+.optee-gh-toggle {
+  width: 1%;
+  padding: 4px 10px !important;
+  text-align: center !important;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.optee-toggle-cell {
+  width: 1%;
+  padding: 4px 10px !important;
+  text-align: center !important;
+  white-space: nowrap;
+}
+.optee-zone-toggle,
+.optee-country-toggle,
+.optee-targeting-toggle {
+  position: relative;
+  display: inline-block;
+  width: 30px;
+  height: 16px;
+  border-radius: 8px;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  background: #d1d5db;
+  transition: background 0.2s ease;
+  vertical-align: middle;
+}
+.optee-zone-toggle.is-on,
+.optee-country-toggle.is-on,
+.optee-targeting-toggle.is-on {
+  background: var(--color-brand-500, #2aa5ff);
+}
+.optee-zone-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  transition: left 0.2s ease;
+  pointer-events: none;
+}
+.optee-zone-toggle.is-on .optee-zone-toggle-thumb,
+.optee-country-toggle.is-on .optee-zone-toggle-thumb,
+.optee-targeting-toggle.is-on .optee-zone-toggle-thumb {
+  left: 16px;
+}
+.optee-zone-toggle.is-loading,
+.optee-country-toggle.is-loading,
+.optee-targeting-toggle.is-loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.optee-zone-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid #d1d5db;
+  border-top-color: #2aa5ff;
+  border-radius: 50%;
+  animation: optee-spin 0.6s linear infinite;
+}
+@keyframes optee-spin {
+  to { transform: rotate(360deg); }
+}
+tr.optee-zone-blocked td {
+  color: #b0b0b0;
+}
+
+/* ==========================================================================
+   Command Palette (Ctrl+K)
+   ========================================================================== */
+
+.optee-cmd-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  justify-content: center;
+  padding-top: 20vh;
+  background: rgba(0,0,0,0.25);
+  backdrop-filter: blur(2px);
+}
+.optee-cmd-dialog {
+  width: 560px;
+  max-width: 95vw;
+  max-height: 480px;
+  background: #fff;
+  border-radius: 0.75rem;
+  box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  align-self: flex-start;
+}
+.optee-cmd-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+.optee-cmd-input-row svg {
+  flex-shrink: 0;
+  color: #9ca3af;
+}
+.optee-cmd-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 1.0625rem;
+  color: #111827;
+  background: transparent;
+}
+.optee-cmd-input::placeholder {
+  color: #9ca3af;
+}
+.optee-cmd-results {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem 0;
+}
+.optee-cmd-group-label {
+  padding: 0.375rem 1rem 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9ca3af;
+}
+.optee-cmd-item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  color: #374151;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.optee-cmd-item:hover,
+.optee-cmd-item.is-active {
+  background: #f3f4f6;
+}
+.optee-cmd-item.is-active {
+  background: var(--color-brand-50, #eef8ff);
+  color: var(--color-brand-700, #0c6ae1);
+}
+.optee-cmd-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  color: #9ca3af;
+}
+.optee-cmd-item.is-active .optee-cmd-item-icon {
+  color: var(--color-brand-500, #2aa5ff);
+}
+.optee-cmd-empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: #9ca3af;
+}
+.optee-cmd-footer {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  border-top: 1px solid #e5e7eb;
+  font-size: 0.6875rem;
+  color: #9ca3af;
+}
+.optee-cmd-footer kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.25rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.25rem;
+  background: #f9fafb;
+  font-size: 0.625rem;
+  font-family: inherit;
+  color: #6b7280;
+}
+.optee-cmd-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 1rem;
+  min-width: 220px;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  background: #fff;
+  font-size: 0.875rem;
+  color: #9ca3af;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.optee-cmd-trigger:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+  color: #6b7280;
+}
+.optee-cmd-trigger kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.125rem 0.375rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.25rem;
+  background: #f3f4f6;
+  font-size: 0.6875rem;
+  font-family: inherit;
+  color: #9ca3af;
+  line-height: 1;
+}
+
+/* ── Rules form ── */
+.optee-form-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.optee-form-row .optee-label {
+  margin-bottom: 0;
+}
+#optee-rule-form > * + *,
+#optee-rule-edit-form > * + *,
+#rule-fields > * + * {
+  margin-top: 1.25rem !important;
+}
+#rule-fields:disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+/* Rule form — styled checkboxes & radios */
+#optee-rule-form input[type="checkbox"],
+#optee-rule-edit-form input[type="checkbox"],
+#optee-rule-form input[type="radio"],
+#optee-rule-edit-form input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #d1d5db;
+  background: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+  position: relative;
+  margin-right: 6px;
+}
+#optee-rule-form input[type="checkbox"],
+#optee-rule-edit-form input[type="checkbox"] {
+  border-radius: 4px;
+}
+#optee-rule-form input[type="radio"],
+#optee-rule-edit-form input[type="radio"] {
+  border-radius: 50%;
+}
+#optee-rule-form input[type="checkbox"]:checked,
+#optee-rule-edit-form input[type="checkbox"]:checked {
+  background: #2aa5ff;
+  border-color: #2aa5ff;
+}
+#optee-rule-form input[type="checkbox"]:checked::after,
+#optee-rule-edit-form input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 5px;
+  height: 10px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+#optee-rule-form input[type="radio"]:checked,
+#optee-rule-edit-form input[type="radio"]:checked {
+  border-color: #2aa5ff;
+  background: #fff;
+}
+#optee-rule-form input[type="radio"]:checked::after,
+#optee-rule-edit-form input[type="radio"]:checked::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2aa5ff;
+}
+#optee-rule-form input[type="checkbox"]:hover,
+#optee-rule-edit-form input[type="checkbox"]:hover,
+#optee-rule-form input[type="radio"]:hover,
+#optee-rule-edit-form input[type="radio"]:hover {
+  border-color: #93c5fd;
+}
+
+/* Rules list — campaign groups */
+.optee-rules-campaign-group .optee-rules-chevron {
+  transition: transform 0.15s ease;
+}
+.optee-rules-campaign-group.collapsed .optee-rules-chevron {
+  transform: rotate(0deg) !important;
+}
+
+.optee-rule-result-detail td {
+  border-top: none !important;
+}
+
+/* =====================================================================
+   Timeframe picker (presets + custom date range)
+   ===================================================================== */
+.optee-tf {
+  position: relative;
+  display: inline-block;
+}
+.optee-tf-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  width: auto;
+  min-height: 38px;
+  padding: 0.5rem 0.75rem;
+  background-image: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.optee-tf-caret {
+  color: #6b7280;
+  flex-shrink: 0;
+  transition: transform 150ms ease;
+}
+.optee-tf.is-open .optee-tf-caret {
+  transform: rotate(180deg);
+}
+.optee-tf-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+.optee-tf-body {
+  display: flex;
+  align-items: stretch;
+}
+.optee-tf-cal {
+  padding: 0.75rem 1rem;
+}
+.optee-tf-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.optee-tf-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  background: #ffffff;
+  color: #374151;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.optee-tf-nav:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+.optee-tf-months {
+  display: flex;
+  gap: 1.5rem;
+  flex: 1;
+  justify-content: center;
+}
+.optee-tf-month {
+  width: 224px;
+}
+.optee-tf-month-name {
+  text-align: center;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 0.5rem;
+}
+.optee-tf-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.optee-tf-dow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #9ca3af;
+}
+.optee-tf-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  font-size: 0.8125rem;
+  color: #374151;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 100ms ease, color 100ms ease;
+}
+.optee-tf-day.is-empty {
+  cursor: default;
+}
+.optee-tf-day:not(.is-empty):not(.is-disabled):not(.is-start):not(.is-end):hover {
+  background: #e6f4ff;
+}
+.optee-tf-day.is-disabled {
+  color: #d1d5db;
+  cursor: not-allowed;
+}
+.optee-tf-day.is-today {
+  font-weight: 700;
+}
+.optee-tf-day.is-inrange {
+  background: #e6f4ff;
+  border-radius: 0;
+}
+.optee-tf-day.is-start,
+.optee-tf-day.is-end {
+  background: var(--color-brand-500, #2aa5ff);
+  color: #ffffff;
+  font-weight: 600;
+}
+.optee-tf-presets {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid #e5e7eb;
+  padding: 0.5rem;
+  min-width: 132px;
+}
+.optee-tf-preset {
+  text-align: left;
+  padding: 0.4rem 0.625rem;
+  font-size: 0.8125rem;
+  color: #374151;
+  background: transparent;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 100ms ease, color 100ms ease;
+}
+.optee-tf-preset:hover {
+  background: #f3f4f6;
+}
+.optee-tf-preset.is-active {
+  background: #e6f4ff;
+  color: var(--color-brand-600, #1186e6);
+  font-weight: 600;
+}
+.optee-tf-preset-custom {
+  margin-top: 0.25rem;
+  border-top: 1px solid #f3f4f6;
+  padding-top: 0.5rem;
+}
+.optee-tf-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.625rem 1rem;
+  border-top: 1px solid #e5e7eb;
+  background: #fafafa;
+}
+.optee-tf-foot-range {
+  font-size: 0.8125rem;
+  color: #6b7280;
+}
+.optee-tf-foot-range.is-error {
+  color: #dc2626;
+  font-weight: 600;
+}
+.optee-tf-foot-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+@media (max-width: 640px) {
+  .optee-tf-body {
+    flex-direction: column-reverse;
+  }
+  .optee-tf-months {
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+  }
+  .optee-tf-presets {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-left: none;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  /* In the wrapped row layout, drop the desktop vertical separator so the
+     Custom range button aligns with its row neighbours (no stray top border). */
+  .optee-tf-preset-custom {
+    margin-top: 0;
+    border-top: none;
+    padding-top: 0.4rem;
+  }
+  /* Pin to the viewport as a bottom sheet — the trigger button sits mid-row,
+     so an absolutely-positioned dropdown overflows off-screen on narrow widths. */
+  .optee-tf-menu {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-width: none;
+    max-height: 85vh;
+    overflow-y: auto;
+    border-radius: 0.75rem 0.75rem 0 0;
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.18);
+  }
+}

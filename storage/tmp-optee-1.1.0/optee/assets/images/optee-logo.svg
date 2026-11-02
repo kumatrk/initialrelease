@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 28" fill="none">
+  <circle cx="14" cy="14" r="12" fill="#2aa5ff"/>
+  <path d="M8 14l4 4 8-8" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="32" y="20" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="700" fill="currentColor">Optee</text>
+</svg>

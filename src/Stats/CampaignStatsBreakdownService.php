@@ -63,11 +63,84 @@ class CampaignStatsBreakdownService
             throw new \InvalidArgumentException($e->getMessage(), 0, $e);
         }
 
+        // API contract (Optee + docs): clicks = visits, lp_clicks = LP CTAs.
+        // V2 UI totals use clicks = LP+direct and visitors = visits — remap so
+        // meta.totals matches GET /stats/campaigns/{id} without group_by.
+        $rows = [];
+        foreach ($bd['rows'] ?? [] as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $rows[] = $this->normalizeApiGroupedRow($row);
+        }
+
         return [
-            'rows' => $bd['rows'] ?? [],
+            'rows' => $rows,
             'total' => (int) ($bd['total'] ?? 0),
-            'totals' => is_array($bd['totals'] ?? null) ? $bd['totals'] : [],
+            'totals' => $this->apiTotalsForCampaign($campaignId, $dateFrom, $dateTo, $timezone),
         ];
+    }
+
+    /**
+     * Campaign summary metrics in API field names (clicks = visits).
+     *
+     * @return array<string, mixed>
+     */
+    private function apiTotalsForCampaign(
+        int $campaignId,
+        string $dateFrom,
+        string $dateTo,
+        string $timezone
+    ): array {
+        $summary = (new CampaignStatsService($this->db))->getCampaignStats(
+            $campaignId,
+            $dateFrom,
+            $dateTo,
+            $timezone
+        );
+        if ($summary === []) {
+            return [];
+        }
+
+        $s = $summary[0];
+
+        return [
+            'clicks' => (int) ($s['clicks'] ?? 0),
+            'lp_clicks' => (int) ($s['lp_clicks'] ?? 0),
+            'conversions' => (int) ($s['conversions'] ?? 0),
+            'cost' => (float) ($s['cost'] ?? 0),
+            'revenue' => (float) ($s['revenue'] ?? 0),
+            'profit' => (float) ($s['profit'] ?? 0),
+            'roi' => (float) ($s['roi'] ?? 0),
+            'conversion_rate' => (float) ($s['conversion_rate'] ?? 0),
+        ];
+    }
+
+    /**
+     * Strip UI-only V2 fields; keep API grouped-row shape.
+     *
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function normalizeApiGroupedRow(array $row): array
+    {
+        // V2 breakdown already aliases visits as clicks on rows; keep that.
+        $out = [
+            'group' => (string) ($row['group'] ?? $row['group_key'] ?? 'N/A'),
+            'clicks' => (int) ($row['clicks'] ?? $row['visitors'] ?? 0),
+            'lp_clicks' => (int) ($row['lp_clicks'] ?? 0),
+            'conversions' => (int) ($row['conversions'] ?? 0),
+            'cost' => (float) ($row['cost'] ?? 0),
+            'revenue' => (float) ($row['revenue'] ?? 0),
+            'profit' => (float) ($row['profit'] ?? 0),
+            'roi' => (float) ($row['roi'] ?? 0),
+            'conversion_rate' => (float) ($row['conversion_rate'] ?? 0),
+        ];
+        if (isset($row['group_label']) && $row['group_label'] !== null && $row['group_label'] !== '') {
+            $out['group_label'] = (string) $row['group_label'];
+        }
+
+        return $out;
     }
 
     /**

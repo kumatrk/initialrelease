@@ -1,0 +1,13 @@
+{
+  "name": "optee",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build:css": "npx @tailwindcss/cli -i ./assets/css/tailwind-input.css -o ./assets/css/optee-dashboard.css --minify",
+    "watch:css": "npx @tailwindcss/cli -i ./assets/css/tailwind-input.css -o ./assets/css/optee-dashboard.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.0.0",
+    "tailwindcss": "^4.0.0"
+  }
+}

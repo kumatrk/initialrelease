@@ -4,6 +4,18 @@
 
 ---
 
+# Simple Kuma Tracker Version 1.1.5.32
+
+## Changes in 1.1.5.32
+
+### Fix: API grouped stats `meta.totals` for Optee / integrators
+- `GET /api/v1/stats/campaigns/{id}?group_by=…` again returns `meta.totals` in the same field meanings as the campaign summary (without `group_by`): **`clicks` = visits**, **`lp_clicks` = landing-page clicks**
+- After the Hermes/V2 breakdown path, grouped totals had been copying UI labels (`clicks` = LP+direct, visits under `visitors`), so Optee and other API clients that map `clicks` → visits saw empty totals while the summary endpoint was fine
+- Grouped **rows** already used visits as `clicks`; they are normalized to the documented API shape (no UI-only fields)
+- No schema/migration change; Optee’s `optee-tracker-simplekuma` plugin does not need an update for this fix
+
+---
+
 # Simple Kuma Tracker Version 1.1.5.31
 
 ## Changes in 1.1.5.31
