@@ -4,6 +4,19 @@
 
 ---
 
+# Simple Kuma Tracker Version 1.1.5.34
+
+## Changes in 1.1.5.34
+
+### Fix: Check for updates “Data too long for column 'value'”
+- GitHub’s evergreen `latest` Release body had grown to the full `release-notes.md` (~64 KB). Caching that JSON in `settings.value` (**TEXT**, 65,535 bytes) failed, so Settings showed the MySQL error and **Update Now never appeared** (the failed cache write aborted the whole check).
+- **UpdateChecker** now caps changelog text before cache/history writes, shrinks the cache payload if needed, and never lets a cache/history failure flip a successful GitHub check into `success: false`.
+- Migration **110** widens `settings.value` and `update_check_history.changelog` to **MEDIUMTEXT**.
+- **Publish:** `create-release.ps1` attaches a **short** Release body (current version section only) via `scripts/build-github-release-notes.php`, so installs still on older builds can Check → Update Now onto this fix. Full notes remain in the zip `release-notes.md`.
+- After this release is live, open **Settings → Updates → Check for updates** again. If Check still fails for network/permissions reasons, use the manual zip overlay in `UPGRADE.md`.
+
+---
+
 # Simple Kuma Tracker Version 1.1.5.33
 
 ## Changes in 1.1.5.33

@@ -26,6 +26,12 @@ class UpdateChecker
     public const EVERGREEN_RELEASE_TITLE = 'Simple Kuma Download';
     public const EVERGREEN_ASSET_NAME = 'simplekuma-download.zip';
     private const CACHE_DURATION = 3600; // 1 hour cache
+    /** Keep cached changelog under classic TEXT even before migration 110. */
+    private const CHANGELOG_CACHE_MAX = 24000;
+    /** History column was TEXT; stay under 65KB until MEDIUMTEXT migration runs. */
+    private const CHANGELOG_HISTORY_MAX = 60000;
+    /** Hard cap for settings.value JSON (TEXT = 65,535). */
+    private const CACHE_JSON_MAX = 60000;
 
     public function __construct(mysqli $db)
     {
@@ -128,7 +134,11 @@ class UpdateChecker
             }
             $updateAvailable = $this->compareVersions($currentVersion, $latestVersion) < 0;
             $updateType = $this->determineUpdateType($currentVersion, $latestVersion);
-            
+            $changelog = self::capChangelog(
+                (string) ($latestRelease['body'] ?? ''),
+                self::CHANGELOG_CACHE_MAX
+            );
+
             $result = [
                 'success' => true,
                 'current_version' => $currentVersion,
@@ -138,17 +148,24 @@ class UpdateChecker
                     ?? (self::GITHUB_API_BASE . $this->getRepository() . '/zipball/' . rawurlencode((string) $latestRelease['tag_name'])),
                 'update_available' => $updateAvailable,
                 'update_type' => $updateType,
-                'changelog' => $latestRelease['body'] ?? '',
+                'changelog' => $changelog,
                 'release_url' => $latestRelease['html_url'] ?? $this->getEvergreenReleaseUrl(),
                 'published_at' => $latestRelease['published_at'] ?? null,
                 'checked_at' => time()
             ];
 
-            // Cache the result
+            // Never let cache/history writes flip a successful GitHub check into failure
+            // (that blocked Update Now when release notes overflowed settings.value TEXT).
             $this->cacheUpdateInfo($result);
-
-            // Log to database
-            $this->logUpdateCheck($currentVersion, $latestVersion, $updateAvailable, $updateType, $latestRelease['body'] ?? '', true, null);
+            $this->logUpdateCheck(
+                $currentVersion,
+                $latestVersion,
+                $updateAvailable,
+                $updateType,
+                self::capChangelog((string) ($latestRelease['body'] ?? ''), self::CHANGELOG_HISTORY_MAX),
+                true,
+                null
+            );
 
             return $result;
 
@@ -495,12 +512,77 @@ class UpdateChecker
     }
 
     /**
-     * Cache update info in settings
+     * Trim release notes so settings / history columns cannot overflow TEXT.
+     */
+    public static function capChangelog(string $changelog, int $maxBytes): string
+    {
+        if ($maxBytes < 32) {
+            return '';
+        }
+        if (strlen($changelog) <= $maxBytes) {
+            return $changelog;
+        }
+
+        $suffix = "\n… truncated";
+        $keep = $maxBytes - strlen($suffix);
+        if ($keep < 1) {
+            return substr($changelog, 0, $maxBytes);
+        }
+
+        return substr($changelog, 0, $keep) . $suffix;
+    }
+
+    /**
+     * Cache update info in settings (never throws; shrinks changelog if needed).
      */
     private function cacheUpdateInfo(array $info): void
     {
-        $this->settings->set('update_check_cache', json_encode($info));
-        $this->settings->set('update_check_cache_time', (string)time());
+        try {
+            if (!isset($info['changelog']) || !is_string($info['changelog'])) {
+                $info['changelog'] = '';
+            } else {
+                $info['changelog'] = self::capChangelog($info['changelog'], self::CHANGELOG_CACHE_MAX);
+            }
+
+            $payload = json_encode($info);
+            if ($payload === false) {
+                error_log('UpdateChecker: could not encode update_check_cache');
+                return;
+            }
+
+            while (strlen($payload) > self::CACHE_JSON_MAX) {
+                $current = (string) ($info['changelog'] ?? '');
+                if ($current === '') {
+                    break;
+                }
+                $nextMax = (int) max(0, (int) (strlen($current) / 2) - 16);
+                $info['changelog'] = $nextMax > 0
+                    ? self::capChangelog($current, $nextMax)
+                    : '';
+                $payload = json_encode($info);
+                if ($payload === false) {
+                    error_log('UpdateChecker: could not encode update_check_cache after shrink');
+                    return;
+                }
+            }
+
+            if (strlen($payload) > self::CACHE_JSON_MAX) {
+                $info['changelog'] = '';
+                $payload = json_encode($info);
+                if ($payload === false || strlen($payload) > self::CACHE_JSON_MAX) {
+                    error_log('UpdateChecker: update_check_cache still too large without changelog');
+                    return;
+                }
+            }
+
+            if (!$this->settings->set('update_check_cache', $payload)) {
+                error_log('UpdateChecker: failed to store update_check_cache (settings.value may be TEXT-full)');
+                return;
+            }
+            $this->settings->set('update_check_cache_time', (string) time());
+        } catch (\Throwable $e) {
+            error_log('UpdateChecker: cache write skipped: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -515,28 +597,41 @@ class UpdateChecker
         bool $success,
         ?string $errorMessage
     ): void {
-        $stmt = $this->db->prepare("
-            INSERT INTO update_check_history 
-            (current_version, latest_version, update_available, update_type, changelog, check_successful, error_message)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ");
-        if ($stmt === false) {
-            error_log('Could not record update check: ' . $this->db->error);
-            return;
-        }
+        try {
+            $stmt = $this->db->prepare("
+                INSERT INTO update_check_history 
+                (current_version, latest_version, update_available, update_type, changelog, check_successful, error_message)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ");
+            if ($stmt === false) {
+                error_log('Could not record update check: ' . $this->db->error);
+                return;
+            }
 
-        $stmt->bind_param(
-            'ssissis',
-            $currentVersion,
-            $latestVersion,
-            $updateAvailable,
-            $updateType,
-            $changelog,
-            $success,
-            $errorMessage
-        );
-        
-        $stmt->execute();
+            $changelog = $changelog === null
+                ? null
+                : self::capChangelog($changelog, self::CHANGELOG_HISTORY_MAX);
+            $errorMessage = $errorMessage === null
+                ? null
+                : self::capChangelog($errorMessage, 4000);
+
+            $stmt->bind_param(
+                'ssissis',
+                $currentVersion,
+                $latestVersion,
+                $updateAvailable,
+                $updateType,
+                $changelog,
+                $success,
+                $errorMessage
+            );
+
+            if (!$stmt->execute()) {
+                error_log('Could not record update check: ' . $stmt->error);
+            }
+        } catch (\Throwable $e) {
+            error_log('Could not record update check: ' . $e->getMessage());
+        }
     }
 
     /**

@@ -1,6 +1,6 @@
 # Upgrading an existing Simple Kuma install (agent runbook)
 
-Use this document when applying **v1.1.5.33** (or later production zip) over a live install **without** losing campaigns, database data, or legacy `/km/` tracking links.
+Use this document when applying **v1.1.5.34** (or later production zip) over a live install **without** losing campaigns, database data, or legacy `/km/` tracking links.
 
 Designed for operators, shell scripts, and AI agents (Hermes, Codex, etc.) with SSH or file access to the server.
 
@@ -8,17 +8,18 @@ Designed for operators, shell scripts, and AI agents (Hermes, Codex, etc.) with 
 
 ---
 
-## What's new in 1.1.5.33 (operators)
+## What's new in 1.1.5.34 (operators)
 
 Prefer **Settings → Updates → Update Now**. Full detail: `release-notes.md`.
 
 | Area | What to expect after upgrade |
 |------|------------------------------|
-| Packaging | **1.1.5.33** replaces **1.1.5.32** downloads: removes accidental local Optee review extracts from the zip / public source. Same product code as 1.1.5.32 for the API fix. |
-| REST API / Optee | Grouped campaign stats (`group_by`) `meta.totals` again match the summary endpoint: `clicks` = visits, `lp_clicks` = LP clicks. No DB migration. |
-| From 1.1.5.31 | Privacy-ranges / GeoIP click-path speed (no full `ranges.bin` load per click). |
+| Update check | Fixes **Data too long for column 'value'** on Check for updates (release notes overflowed `settings.value` TEXT). Migration **110**; evergreen GitHub notes are short again so older installs can one-click onto this build. |
+| From 1.1.5.33 | Packaging cleanup (no local Optee extracts in zip). |
+| From 1.1.5.32 | Optee/API grouped `meta.totals` field meanings. |
+| From 1.1.5.31 | Privacy-ranges / GeoIP click-path speed. |
 | Honeycomb | **TikTok Cost 1.2.0 / Ringba 1.2.0 still held** on the catalog. |
-| Migrations | Through **109** (unchanged from 1.1.5.31). One-click updater applies pending migrations automatically. |
+| Migrations | Through **110**. One-click updater applies pending migrations automatically. |
 
 ---
 
@@ -40,6 +41,11 @@ database migrations through `MigrationRunner`.
 The GitHub Release zip asset is not required for one-click upgrades. It remains the preferred
 fresh-install package because it contains large GeoIP databases omitted from git.
 
+If **Check for updates** previously failed with **Data too long for column 'value'**, re-check after
+**1.1.5.34** (or later) is published — evergreen Release notes are short again so the check can
+succeed on older builds, then **Update Now** installs the fix. If Check still fails (network,
+permissions, PHP Zip limits), use the CLI procedure below.
+
 Existing installations that predate the one-click updater need one final manual/CLI upgrade to
 the first release that contains it. Every later tagged release can be installed from Settings.
 
@@ -50,11 +56,11 @@ execution limits prevent the web updater from completing.
 
 ## For AI agents (copy this brief)
 
-**Goal:** Overlay v1.1.5.33 files onto an existing install. **Never** overwrite `config/config.php` or delete `storage/`. **Never** run `install.php` on production.
+**Goal:** Overlay v1.1.5.34 files onto an existing install. **Never** overwrite `config/config.php` or delete `storage/`. **Never** run `install.php` on production.
 
 **Inputs needed from operator:**
 1. Live install path (contains `config/config.php`)
-2. Path to `simplekuma-download.zip` / `simplekuma-v1.1.5.33.zip` or extracted folder
+2. Path to `simplekuma-download.zip` / `simplekuma-v1.1.5.34.zip` or extracted folder
 3. Approval to run DB backup + upgrade
 
 **Commands (in order):**
@@ -67,7 +73,7 @@ php scripts/apply-release-upgrade.php --migrations
 php scripts/verify-production-security.php
 ```
 
-**Success criteria:** Admin loads, campaigns visible, `/km/{key}` still redirects, `version.php` matches the zip you applied, pending migrations through **109** applied.
+**Success criteria:** Admin loads, campaigns visible, `/km/{key}` still redirects, `version.php` matches the zip you applied, pending migrations through **110** applied.
 
 **Do not change** `BASE_URL` or ad URLs unless operator explicitly requests Safe Browsing remediation.
 
@@ -100,7 +106,7 @@ php scripts/verify-production-security.php
 
 - SSH or SFTP access to the server
 - Path to live install (contains `config/config.php`, `public/index.php`)
-- `simplekuma-download.zip` / production zip for **1.1.5.33** (or extracted folder)
+- `simplekuma-download.zip` / production zip for **1.1.5.34** (or extracted folder)
 - PHP CLI on the server (`php` in PATH)
 - **Database backup** before `--migrations`
 
@@ -135,7 +141,7 @@ php scripts/apply-release-upgrade.php \
 
 (Omitting `--apply` previews files that would be copied.)
 
-Review output: file count, version (e.g. `1.1.5.31` → `1.1.5.33`, or your current → target).
+Review output: file count, version (e.g. `1.1.5.31` → `1.1.5.34`, or your current → target).
 
 ### 4. Apply files
 
@@ -180,7 +186,7 @@ Manual checks:
 - [ ] Campaign list loads; tracking link modal opens (API)
 - [ ] Legacy click URL still works: `https://YOUR-TRACKING-DOMAIN/km/{campaign_key}`
 - [ ] New `go.php` exists: `https://YOUR-TRACKING-DOMAIN/go.php?k={campaign_key}` (after optional config below)
-- [ ] Sidebar / About shows **v1.1.5.33**
+- [ ] Sidebar / About shows **v1.1.5.34**
 
 ### 7. JSON output (for agents)
 
@@ -288,7 +294,7 @@ The upgrade script does not delete files; rollback is restore-from-backup.
 
 ## Version reference
 
-- **Target release:** 1.1.5.33
+- **Target release:** 1.1.5.34
 - **Upgrade tool:** `scripts/apply-release-upgrade.php` (shipped in production zip)
 - **In-app update UI:** supported at Settings → Updates; this CLI runbook remains the fallback
-- **Changelog:** `release-notes.md` (section **1.1.5.33**)
+- **Changelog:** `release-notes.md` (section **1.1.5.34**)

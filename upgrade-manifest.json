@@ -2,8 +2,8 @@
   "schema": "simplekuma-upgrade-manifest",
   "schema_version": 1,
   "release": {
-    "version": "1.1.5.33",
-    "release_date": "2026-11-02",
+    "version": "1.1.5.34",
+    "release_date": "2026-11-03",
     "channel": "stable"
   },
   "purpose": "Overlay this release onto an existing install without replacing config, storage, or database data.",
@@ -219,6 +219,10 @@
     {
       "file": "database/migrations/109_newsbreak_cost_tables.sql",
       "description": "NewsBreak Access-Token integrations and hourly cost overlay table"
+    },
+    {
+      "file": "database/migrations/110_widen_update_check_cache_storage.sql",
+      "description": "Widen settings.value and update_check_history.changelog to MEDIUMTEXT for update-check cache"
     }
   ],
   "agent_workflow": [
@@ -251,7 +255,7 @@
       "commands": [
         "php scripts/verify-production-security.php",
         "php scripts/verify-campaign-stats-v2.php --campaign-id=ID --from=YYYY-MM-DD --to=YYYY-MM-DD (dev/staging — scripts not in production zip)",
-        "confirm version.php shows 1.1.5.33",
+        "confirm version.php shows 1.1.5.34",
         "confirm /km/{campaign_key} still redirects",
         "confirm admin campaign-list loads"
       ]
@@ -259,8 +263,8 @@
   ],
   "success_criteria": [
     "config/config.php SHA-256 unchanged after --apply",
-    "version.php reports 1.1.5.33 (bump when this release ships)",
-    "migrations through 109 applied or already present",
+    "version.php reports 1.1.5.34 (bump when this release ships)",
+    "migrations through 110 applied or already present",
     "campaigns visible in admin",
     "legacy /km/ tracking links still work",
     "Facebook Marketing Fetch Ad Accounts works with ads_read + ads_management (no business_management required)"
@@ -270,6 +274,10 @@
     "release-notes.md",
     "UPGRADE.md",
     "upgrade-manifest.json",
+    "src/Update/UpdateChecker.php",
+    "database/migrations/110_widen_update_check_cache_storage.sql",
+    "scripts/build-github-release-notes.php",
+    "create-release.ps1",
     "views/settings.php",
     "src/Http/ProxyHandler.php",
     "src/Entity/FacebookMarketingIntegration.php",
