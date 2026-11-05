@@ -29,12 +29,14 @@ class CampaignStatsService
         }
 
         $ids = array_map(static fn (array $row): int => (int) $row['id'], $campaigns);
+        // includeApiCosts=true so Optee / API clients see Meta/Google/NewsBreak/
+        // Honeycomb spend the same way Campaign Stats UI does (not manual-only).
         $metrics = (new CampaignListStatsService($this->db))->loadStatsForCampaignIds(
             $ids,
             $dateFrom,
             $dateTo,
             $timezone,
-            false
+            true
         );
 
         $rows = [];

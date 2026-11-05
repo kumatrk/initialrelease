@@ -4,6 +4,22 @@
 
 ---
 
+# Simple Kuma Tracker Version 1.1.5.35
+
+## Changes in 1.1.5.35
+
+### Fix: Optee / API grouped stats join + cost parity
+- Grouped `GET /api/v1/stats/campaigns/{id}?group_by=…` rows now include **`zone_id`** (same value as `group`) so Optee can merge tracker stats onto traffic-source zone rows instead of showing blank Simple Kuma columns
+- Accept date aliases Optee/integrators may send: `date_from` / `date_to` / `start_date` / `end_date` (in addition to `from` / `to`)
+- Grouped default `per_page` raised from 50 → **500** (max still 1000) so large zone lists are not truncated mid-merge
+- Invalid `group_by` errors list allowed dimensions for that campaign
+- `GET /campaigns/{id}/tracking-link` returns **`zone_fields`** (`zone_id` / `zone_name`) for Optee’s zone-field picker
+- API campaign summary / grouped `meta.totals` **cost** now includes synced network spend (Meta / Google / NewsBreak / Honeycomb), matching Campaign Stats UI — not manual CPC only
+- No schema/migration change; Optee’s `optee-tracker-simplekuma` plugin does not need an update for this fix
+- After update: in Optee, confirm the campaign’s zone field is set, then reload Last 7 days — Simple Kuma Visits/Clicks/Conv should show numbers on zones that have traffic
+
+---
+
 # Simple Kuma Tracker Version 1.1.5.34
 
 ## Changes in 1.1.5.34

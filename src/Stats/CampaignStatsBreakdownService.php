@@ -125,8 +125,12 @@ class CampaignStatsBreakdownService
     private function normalizeApiGroupedRow(array $row): array
     {
         // V2 breakdown already aliases visits as clicks on rows; keep that.
+        // Optee (and other trackers) merge by zone_id — mirror group so clients
+        // that read zone_id instead of group still join TS zone rows.
+        $group = (string) ($row['group'] ?? $row['group_key'] ?? 'N/A');
         $out = [
-            'group' => (string) ($row['group'] ?? $row['group_key'] ?? 'N/A'),
+            'group' => $group,
+            'zone_id' => $group,
             'clicks' => (int) ($row['clicks'] ?? $row['visitors'] ?? 0),
             'lp_clicks' => (int) ($row['lp_clicks'] ?? 0),
             'conversions' => (int) ($row['conversions'] ?? 0),
@@ -155,8 +159,12 @@ class CampaignStatsBreakdownService
     ): void {
         $allowed = $this->allowedTokensForCampaign($campaign, $dateFrom, $dateTo, $timezone);
         if (!in_array($groupBy, $allowed, true)) {
+            $hint = implode(', ', array_slice($allowed, 0, 25));
+            if (count($allowed) > 25) {
+                $hint .= ', …';
+            }
             throw new \InvalidArgumentException(
-                "Invalid group_by '{$groupBy}'. Choose a dimension available for this campaign's traffic source."
+                "Invalid group_by '{$groupBy}'. Allowed for this campaign: {$hint}"
             );
         }
     }

@@ -218,13 +218,22 @@ class StatsController extends BaseController
 
         $today = Formatter::getTodayInTimezone($timezone);
 
+        // Accept Optee / integrator aliases (date_from, start_date) as well as from/to.
+        $from = $request->query('from')
+            ?? $request->query('date_from')
+            ?? $request->query('start_date')
+            ?? $today;
 
+        $to = $request->query('to')
+            ?? $request->query('date_to')
+            ?? $request->query('end_date')
+            ?? $today;
 
         return [
 
-            'from' => $request->query('from') ?? $today,
+            'from' => is_string($from) && $from !== '' ? $from : $today,
 
-            'to' => $request->query('to') ?? $today,
+            'to' => is_string($to) && $to !== '' ? $to : $today,
 
             'timezone' => $timezone,
 
@@ -256,7 +265,9 @@ class StatsController extends BaseController
 
         $page = max(1, $request->queryInt('page') ?? 1);
 
-        $perPage = max(1, min(1000, $request->queryInt('per_page') ?? 50));
+        // Default 500 (was 50): Optee zone reports often have 100+ zones; a low
+        // page size left unmatched TS rows looking like blank Simple Kuma columns.
+        $perPage = max(1, min(1000, $request->queryInt('per_page') ?? 500));
 
         $sort = $request->query('sort') ?? 'clicks';
 

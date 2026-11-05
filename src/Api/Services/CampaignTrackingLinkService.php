@@ -16,7 +16,13 @@ class CampaignTrackingLinkService
     /**
      * @param array<string, mixed> $campaign
      * @param array<string, mixed>|null $trafficSource
-     * @return array{url: string, base_url: string, identifier: string, tokens: list<string>}
+     * @return array{
+     *   url: string,
+     *   base_url: string,
+     *   identifier: string,
+     *   tokens: list<string>,
+     *   zone_fields: list<array{zone_id: string, zone_name: string}>
+     * }
      */
     public function build(array $campaign, ?array $trafficSource = null, ?string $slug = null): array
     {
@@ -77,11 +83,26 @@ class CampaignTrackingLinkService
 
         $url = ClickPath::appendParams($baseUrl, $params);
 
+        // Optee get_zone_fields expects [{zone_id, zone_name}, …]. Mirror tokens
+        // so the zone picker works even if the client only reads zone_fields.
+        $zoneFields = [];
+        foreach ($tokenLabels as $label) {
+            $label = trim((string) $label);
+            if ($label === '' || strcasecmp($label, 'Tf') === 0 || strcasecmp($label, 'cost') === 0) {
+                continue;
+            }
+            $zoneFields[] = [
+                'zone_id' => $label,
+                'zone_name' => $label,
+            ];
+        }
+
         return [
             'url' => $url,
             'base_url' => $baseUrl,
             'identifier' => $identifier,
             'tokens' => $tokenLabels,
+            'zone_fields' => $zoneFields,
         ];
     }
 

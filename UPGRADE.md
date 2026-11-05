@@ -1,6 +1,6 @@
 # Upgrading an existing Simple Kuma install (agent runbook)
 
-Use this document when applying **v1.1.5.34** (or later production zip) over a live install **without** losing campaigns, database data, or legacy `/km/` tracking links.
+Use this document when applying **v1.1.5.35** (or later production zip) over a live install **without** losing campaigns, database data, or legacy `/km/` tracking links.
 
 Designed for operators, shell scripts, and AI agents (Hermes, Codex, etc.) with SSH or file access to the server.
 
@@ -8,18 +8,18 @@ Designed for operators, shell scripts, and AI agents (Hermes, Codex, etc.) with 
 
 ---
 
-## What's new in 1.1.5.34 (operators)
+## What's new in 1.1.5.35 (operators)
 
 Prefer **Settings → Updates → Update Now**. Full detail: `release-notes.md`.
 
 | Area | What to expect after upgrade |
 |------|------------------------------|
-| Update check | Fixes **Data too long for column 'value'** on Check for updates (release notes overflowed `settings.value` TEXT). Migration **110**; evergreen GitHub notes are short again so older installs can one-click onto this build. |
+| Optee / API | Grouped stats include `zone_id` for Optee zone merge; date aliases; larger default `per_page`; API cost includes synced network spend. |
+| From 1.1.5.34 | Update check TEXT overflow fix (migration **110**). |
 | From 1.1.5.33 | Packaging cleanup (no local Optee extracts in zip). |
 | From 1.1.5.32 | Optee/API grouped `meta.totals` field meanings. |
-| From 1.1.5.31 | Privacy-ranges / GeoIP click-path speed. |
 | Honeycomb | **TikTok Cost 1.2.0 / Ringba 1.2.0 still held** on the catalog. |
-| Migrations | Through **110**. One-click updater applies pending migrations automatically. |
+| Migrations | Through **110** (no new migration in 1.1.5.35). One-click updater applies pending migrations automatically. |
 
 ---
 
@@ -56,11 +56,11 @@ execution limits prevent the web updater from completing.
 
 ## For AI agents (copy this brief)
 
-**Goal:** Overlay v1.1.5.34 files onto an existing install. **Never** overwrite `config/config.php` or delete `storage/`. **Never** run `install.php` on production.
+**Goal:** Overlay v1.1.5.35 files onto an existing install. **Never** overwrite `config/config.php` or delete `storage/`. **Never** run `install.php` on production.
 
 **Inputs needed from operator:**
 1. Live install path (contains `config/config.php`)
-2. Path to `simplekuma-download.zip` / `simplekuma-v1.1.5.34.zip` or extracted folder
+2. Path to `simplekuma-download.zip` / `simplekuma-v1.1.5.35.zip` or extracted folder
 3. Approval to run DB backup + upgrade
 
 **Commands (in order):**
@@ -106,7 +106,7 @@ php scripts/verify-production-security.php
 
 - SSH or SFTP access to the server
 - Path to live install (contains `config/config.php`, `public/index.php`)
-- `simplekuma-download.zip` / production zip for **1.1.5.34** (or extracted folder)
+- `simplekuma-download.zip` / production zip for **1.1.5.35** (or extracted folder)
 - PHP CLI on the server (`php` in PATH)
 - **Database backup** before `--migrations`
 
@@ -141,7 +141,7 @@ php scripts/apply-release-upgrade.php \
 
 (Omitting `--apply` previews files that would be copied.)
 
-Review output: file count, version (e.g. `1.1.5.31` → `1.1.5.34`, or your current → target).
+Review output: file count, version (e.g. `1.1.5.34` → `1.1.5.35`, or your current → target).
 
 ### 4. Apply files
 
@@ -186,7 +186,7 @@ Manual checks:
 - [ ] Campaign list loads; tracking link modal opens (API)
 - [ ] Legacy click URL still works: `https://YOUR-TRACKING-DOMAIN/km/{campaign_key}`
 - [ ] New `go.php` exists: `https://YOUR-TRACKING-DOMAIN/go.php?k={campaign_key}` (after optional config below)
-- [ ] Sidebar / About shows **v1.1.5.34**
+- [ ] Sidebar / About shows **v1.1.5.35**
 
 ### 7. JSON output (for agents)
 
@@ -294,7 +294,7 @@ The upgrade script does not delete files; rollback is restore-from-backup.
 
 ## Version reference
 
-- **Target release:** 1.1.5.34
+- **Target release:** 1.1.5.35
 - **Upgrade tool:** `scripts/apply-release-upgrade.php` (shipped in production zip)
 - **In-app update UI:** supported at Settings → Updates; this CLI runbook remains the fallback
-- **Changelog:** `release-notes.md` (section **1.1.5.34**)
+- **Changelog:** `release-notes.md` (section **1.1.5.35**)
