@@ -116,7 +116,7 @@ sudo systemctl restart apache2
 
 ### Nginx
 
-Nginx does not use `.htaccess`. Point `root` at `public/` and include click rewrites for `/km/`, `/go/`, and `/c/` — see **`docker/nginx.conf.example`**. Without those rewrites, tracking links can open the login page. The app also recovers that case when `/km/…` falls through to `index.php`, but the example config is still recommended.
+Nginx does not use `.htaccess`. Point `root` at `public/` and include rewrites for `/km/`, `/go/`, `/c/`, `/api/v1/`, and `/api/edge-click` — see **`docker/nginx.conf.example`**. Without those rewrites, tracking links and the REST API can open the login page. The app also recovers those paths when they fall through to `index.php`, but the example config is still recommended.
 
 ### Permissions (Linux)
 

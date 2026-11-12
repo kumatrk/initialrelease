@@ -4,6 +4,17 @@
 
 ---
 
+# Simple Kuma Tracker Version 1.1.5.38
+
+## Changes in 1.1.5.38
+
+### Fix: REST API v1 on bare nginx
+- Clean `/api/v1/…` URLs that fall through `try_files` → `index.php` are handed to `api/v1/index.php` **before** admin login (same safety net pattern as clicks / Edge ingest)
+- Stops Hermes and other Bearer clients from getting login HTML instead of JSON when the nginx vhost omits the API rewrite
+- Docs + Settings → Kuma API include the recommended `location ^~ /api/v1` snippet; explicit nginx rewrite remains preferred
+
+---
+
 # Simple Kuma Tracker Version 1.1.5.37
 
 ## Changes in 1.1.5.37

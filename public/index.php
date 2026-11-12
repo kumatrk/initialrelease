@@ -21,6 +21,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../src/bootstrap_web_paths.php';
 
+use SimpleKuma\Api\ApiV1FrontDispatch;
 use SimpleKuma\Auth\Auth;
 use SimpleKuma\Auth\Permission;
 use SimpleKuma\Auth\SingleAdminMode;
@@ -29,10 +30,11 @@ use SimpleKuma\Theme\ThemeRegistry;
 use SimpleKuma\Edge\EdgeIngestFrontDispatch;
 use SimpleKuma\Tracking\FrontControllerClickDispatch;
 
-// Nginx (and misconfigured Apache) may fall through /km|/go|/c or
-// /api/edge-click → index.php. Hand off before auth so tracking never
-// redirects to the login page.
+// Nginx (and misconfigured Apache) may fall through /km|/go|/c,
+// /api/edge-click, or /api/v1/* → index.php. Hand off before auth so
+// tracking and the REST API never redirect to the login page.
 EdgeIngestFrontDispatch::dispatchIfNeeded(__DIR__ . '/api/edge-click.php');
+ApiV1FrontDispatch::dispatchIfNeeded(__DIR__ . '/api/v1/index.php');
 FrontControllerClickDispatch::dispatchIfNeeded(__DIR__ . '/km.php');
 
 // UTF-8 for admin HTML (campaign redirect-rule fields with diacritics, etc.)

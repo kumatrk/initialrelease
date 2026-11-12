@@ -4,8 +4,9 @@
 # Copy/adapt into your site config, then: nginx -t && systemctl reload nginx
 #
 # Apache users: you do not need this; public/.htaccess already rewrites click paths.
-# PHP also recovers bare try_files→index.php for /km|/go|/c (see FrontControllerClickDispatch),
-# but explicit rewrites below are preferred (API paths, less work in the admin front controller).
+# PHP also recovers bare try_files→index.php for /km|/go|/c, /api/edge-click, and /api/v1/*
+# (FrontControllerClickDispatch / EdgeIngestFrontDispatch / ApiV1FrontDispatch),
+# but explicit rewrites below are preferred (less work in the admin front controller).
 
 server {
     listen 80;

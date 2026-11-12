@@ -44,6 +44,14 @@ $apiTableMissing = !$apiKeyEntity->tableExists();
             <code id="api-base-url" class="api-code-inline"><?= htmlspecialchars($apiBaseUrl) ?></code>
             <button type="button" class="btn btn-secondary api-copy-btn" data-copy-target="api-base-url">Copy</button>
         </div>
+        <p style="color: #666; margin: 16px 0 0 0; font-size: 13px;">
+            Use this base URL as-is (for example <code>…/api/v1</code>). Do not append <code>index.php</code> unless your host is broken.
+            Apache already rewrites clean <code>/api/v1/…</code> paths. On nginx, add this inside the tracker server block
+            (or rely on the app safety net after updating; explicit rewrite is still preferred):
+        </p>
+        <pre class="api-code-block" style="margin-top: 8px;">location ^~ /api/v1 {
+    rewrite ^/api/v1(?:/(.*))?$ /api/v1/index.php?$query_string last;
+}</pre>
     </div>
 </div>
 
