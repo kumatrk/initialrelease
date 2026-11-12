@@ -4,6 +4,18 @@
 
 ---
 
+# Simple Kuma Tracker Version 1.1.5.37
+
+## Changes in 1.1.5.37
+
+### Fix: Campaigns list “Show All” still paginated
+- Selecting **Show → All** now loads every matching campaign on one page (no “25 of N / page 1/2” leftover)
+- Page-size change submits as a real GET (preserves dates, status filters, search, and sort)
+- Date/status Apply keeps the current `campaigns_per_page` value
+- Status line reads **Showing all N campaigns** when All is active
+
+---
+
 # Simple Kuma Tracker Version 1.1.5.36
 
 ## Changes in 1.1.5.36

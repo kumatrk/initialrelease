@@ -1056,18 +1056,22 @@ if ($editCampaign && isset($editCampaign['id'])) {
                         // Preserve list sort / page-size across date/status Apply (reset to page 1).
                         $preserveSort = (string)($_GET['campaigns_sort'] ?? '');
                         $preserveDir = (string)($_GET['campaigns_dir'] ?? '');
-                        $preservePerPage = (string)($_GET['campaigns_per_page'] ?? '');
+                        $preservePerPage = strtolower(trim((string)($_GET['campaigns_per_page'] ?? '25')));
+                        if (!in_array($preservePerPage, ['25', '50', 'all', '0'], true)) {
+                            $preservePerPage = '25';
+                        }
+                        if ($preservePerPage === '0') {
+                            $preservePerPage = 'all';
+                        }
                         $preserveSearchQ = trim((string)($_GET['campaigns_q'] ?? ''));
                         if ($preserveSort !== ''): ?>
                         <input type="hidden" name="campaigns_sort" value="<?= htmlspecialchars($preserveSort) ?>">
                         <?php endif;
                         if ($preserveDir !== ''): ?>
                         <input type="hidden" name="campaigns_dir" value="<?= htmlspecialchars($preserveDir) ?>">
-                        <?php endif;
-                        if ($preservePerPage !== ''): ?>
-                        <input type="hidden" name="campaigns_per_page" value="<?= htmlspecialchars($preservePerPage) ?>">
-                        <?php endif;
-                        if ($preserveSearchQ !== ''): ?>
+                        <?php endif; ?>
+                        <input type="hidden" name="campaigns_per_page" id="campaign-list-preserve-per-page" value="<?= htmlspecialchars($preservePerPage) ?>">
+                        <?php if ($preserveSearchQ !== ''): ?>
                         <input type="hidden" name="campaigns_q" value="<?= htmlspecialchars($preserveSearchQ) ?>">
                         <?php endif; ?>
 
@@ -1228,14 +1232,21 @@ if ($editCampaign && isset($editCampaign['id'])) {
             }
 
             $campaignsListPage = max(1, (int)($_GET['campaigns_page'] ?? 1));
-            $perPageRaw = strtolower(trim((string)($_GET['campaigns_per_page'] ?? '25')));
+            // Accept all / 0 / All (any case). Anything else must be 25 or 50.
+            $perPageParam = $_GET['campaigns_per_page'] ?? '25';
+            if (is_array($perPageParam)) {
+                $perPageParam = (string) (end($perPageParam) ?: '25');
+            }
+            $perPageRaw = strtolower(trim((string) $perPageParam));
             $campaignsShowAll = ($perPageRaw === 'all' || $perPageRaw === '0');
-            $campaignsPerPage = $campaignsShowAll ? PHP_INT_MAX : (int)$perPageRaw;
-            if (!$campaignsShowAll && !in_array($campaignsPerPage, [25, 50], true)) {
+            if ($campaignsShowAll) {
+                $perPageRaw = 'all';
+                $campaignsPerPage = PHP_INT_MAX;
+            } elseif (in_array($perPageRaw, ['25', '50'], true)) {
+                $campaignsPerPage = (int) $perPageRaw;
+            } else {
                 $campaignsPerPage = 25;
                 $perPageRaw = '25';
-            } elseif ($campaignsShowAll) {
-                $perPageRaw = 'all';
             }
 
             $metricSortKeys = ['views', 'clicks', 'conv', 'cost', 'revenue', 'profit', 'roi'];
@@ -1419,6 +1430,7 @@ if ($editCampaign && isset($editCampaign['id'])) {
                 }
             }
 
+            $pageShownCount = count($pageCampaigns);
             // Keep $allCampaigns as page slice for empty check / render
             $allCampaigns = $pageCampaigns;
             $GLOBALS['campaignListStatsPreloaded'] = $statsPreloaded;
@@ -1508,22 +1520,49 @@ if ($editCampaign && isset($editCampaign['id'])) {
                 <?php endif; ?>
             <?php else: ?>
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-size:13px; color:#666; flex-wrap:wrap; gap:8px;">
-                    <span>Showing <?= count($allCampaigns) ?> of <?= (int)$campaignStatsTotal ?> campaigns<?= $campaignsShowAll ? '' : ' (page ' . (int)$campaignsListPage . '/' . (int)$campaignsTotalPages . ')' ?><?= $campaignsSearchQ !== '' ? ' matching “' . htmlspecialchars($campaignsSearchQ) . '”' : '' ?></span>
+                    <span><?php
+                        if ($campaignsShowAll) {
+                            echo 'Showing all ' . (int)$campaignStatsTotal . ' campaigns';
+                        } else {
+                            echo 'Showing ' . (int)$pageShownCount . ' of ' . (int)$campaignStatsTotal
+                                . ' campaigns (page ' . (int)$campaignsListPage . '/' . (int)$campaignsTotalPages . ')';
+                        }
+                        if ($campaignsSearchQ !== '') {
+                            echo ' matching “' . htmlspecialchars($campaignsSearchQ) . '”';
+                        }
+                    ?></span>
                     <span style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                        <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px;">
-                            Show
-                            <select id="campaignsPerPageSelect" style="padding:3px 6px; font-size:12px; border:1px solid #ddd; border-radius:4px; background:#fff;"
-                                    onchange="(function(sel){ var u=new URL(window.location.href); u.searchParams.set('campaigns_per_page', sel.value); u.searchParams.set('campaigns_page','1'); window.location=u.toString(); })(this)">
-                                <option value="25"<?= $perPageRaw === '25' ? ' selected' : '' ?>>25</option>
-                                <option value="50"<?= $perPageRaw === '50' ? ' selected' : '' ?>>50</option>
-                                <option value="all"<?= $perPageRaw === 'all' ? ' selected' : '' ?>>All</option>
-                            </select>
-                        </label>
+                        <form method="get" action="" id="campaigns-per-page-form" style="display:inline-flex; align-items:center; gap:6px; margin:0; font-size:12px;">
+                            <input type="hidden" name="page" value="<?= htmlspecialchars($listPageSlug) ?>">
+                            <input type="hidden" name="date_from" value="<?= htmlspecialchars($dateFrom) ?>">
+                            <input type="hidden" name="date_to" value="<?= htmlspecialchars($dateTo) ?>">
+                            <input type="hidden" name="campaigns_page" value="1">
+                            <?php if ($allowedStatuses !== null): foreach ($allowedStatuses as $st): ?>
+                            <input type="hidden" name="status_filter[]" value="<?= htmlspecialchars($st) ?>">
+                            <?php endforeach; endif; ?>
+                            <?php if ($campaignsSortKey !== ''): ?>
+                            <input type="hidden" name="campaigns_sort" value="<?= htmlspecialchars($campaignsSortKey) ?>">
+                            <input type="hidden" name="campaigns_dir" value="<?= htmlspecialchars($campaignsSortDir) ?>">
+                            <?php endif; ?>
+                            <?php if ($campaignsSearchQ !== ''): ?>
+                            <input type="hidden" name="campaigns_q" value="<?= htmlspecialchars($campaignsSearchQ) ?>">
+                            <?php endif; ?>
+                            <label for="campaignsPerPageSelect" style="display:inline-flex; align-items:center; gap:6px; margin:0;">
+                                Show
+                                <select name="campaigns_per_page" id="campaignsPerPageSelect"
+                                        style="padding:3px 6px; font-size:12px; border:1px solid #ddd; border-radius:4px; background:#fff;"
+                                        onchange="(function(sel){ var preserve=document.getElementById('campaign-list-preserve-per-page'); if(preserve){ preserve.value=sel.value; } sel.form.submit(); })(this)">
+                                    <option value="25"<?= $perPageRaw === '25' ? ' selected' : '' ?>>25</option>
+                                    <option value="50"<?= $perPageRaw === '50' ? ' selected' : '' ?>>50</option>
+                                    <option value="all"<?= $perPageRaw === 'all' ? ' selected' : '' ?>>All</option>
+                                </select>
+                            </label>
+                        </form>
                         <?php if (!$campaignsShowAll && $campaignsListPage > 1): ?>
-                            <a class="btn btn-outline" style="padding:4px 10px; font-size:12px;" href="?<?= $listBaseQs ?>&campaigns_page=<?= $campaignsListPage - 1 ?>">Previous</a>
+                            <a class="btn btn-outline" style="padding:4px 10px; font-size:12px;" href="?<?= htmlspecialchars($listBaseQs) ?>&campaigns_page=<?= $campaignsListPage - 1 ?>">Previous</a>
                         <?php endif; ?>
                         <?php if (!$campaignsShowAll && $campaignsListPage < $campaignsTotalPages): ?>
-                            <a class="btn btn-outline" style="padding:4px 10px; font-size:12px;" href="?<?= $listBaseQs ?>&campaigns_page=<?= $campaignsListPage + 1 ?>">Next</a>
+                            <a class="btn btn-outline" style="padding:4px 10px; font-size:12px;" href="?<?= htmlspecialchars($listBaseQs) ?>&campaigns_page=<?= $campaignsListPage + 1 ?>">Next</a>
                         <?php endif; ?>
                     </span>
                 </div>
