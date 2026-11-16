@@ -85,7 +85,8 @@ final class EdgeClickIngest
             $costParamKey,
             $payload['cost'] ?? null,
             isset($payload['cost_currency']) ? (string) $payload['cost_currency'] : 'USD',
-            $campaign['default_cpc'] ?? null
+            $campaign['default_cpc'] ?? null,
+            $campaign['cost_model'] ?? ClickCostResolver::MODEL_CPC
         );
 
         $recorder = new ClickRecorder($this->db);

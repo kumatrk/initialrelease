@@ -356,14 +356,15 @@ class RedirectlessTracker
     private function captureCost(array $campaign, array $params, ?int $trafficSourceId = null): ?array
     {
         $defaultCpc = $campaign['default_cpc'] ?? null;
+        $costModel = $campaign['cost_model'] ?? ClickCostResolver::MODEL_CPC;
 
         if (!$trafficSourceId) {
-            return ClickCostResolver::resolve($params, 'cost', null, 'USD', $defaultCpc);
+            return ClickCostResolver::resolve($params, 'cost', null, 'USD', $defaultCpc, $costModel);
         }
 
         $trafficSourceConfig = $this->getTrafficSourceConfig($trafficSourceId);
         if (!$trafficSourceConfig) {
-            return ClickCostResolver::resolve($params, 'cost', null, 'USD', $defaultCpc);
+            return ClickCostResolver::resolve($params, 'cost', null, 'USD', $defaultCpc, $costModel);
         }
 
         $costMethod = $trafficSourceConfig['cost_tracking_method'] ?? 'manual_token';
@@ -372,17 +373,17 @@ class RedirectlessTracker
             ? (string) $trafficSourceConfig['cost_param_key']
             : 'cost';
 
-        // Integrated API: still honor a keyed URL cost if present (usually "cost"), else default CPC.
+        // Integrated API: still honor a keyed URL cost if present (usually "cost"), else default CPC/CPM.
         if ($costMethod === 'integrated_api') {
-            $fromUrl = ClickCostResolver::resolve($params, $costParamKey, null, $currency, null);
+            $fromUrl = ClickCostResolver::resolve($params, $costParamKey, null, $currency, null, $costModel);
             if ($fromUrl !== null) {
                 return $fromUrl;
             }
 
-            return ClickCostResolver::resolve([], null, null, $currency, $defaultCpc);
+            return ClickCostResolver::resolve([], null, null, $currency, $defaultCpc, $costModel);
         }
 
-        return ClickCostResolver::resolve($params, $costParamKey, null, $currency, $defaultCpc);
+        return ClickCostResolver::resolve($params, $costParamKey, null, $currency, $defaultCpc, $costModel);
     }
 
     /**

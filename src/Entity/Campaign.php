@@ -221,6 +221,7 @@ class Campaign
             $this->persistBotRoute((int)$newId, $data);
             $this->persistGuard((int)$newId, $data);
             $this->persistEdgeFlags((int)$newId, $data);
+            $this->persistCostModel((int)$newId, $data);
             \SimpleKuma\Edge\EdgeCampaignSync::hookAfterSave($this->db, (int)$newId);
         }
         if (defined('DEBUG_MODE') && DEBUG_MODE) {
@@ -762,6 +763,7 @@ class Campaign
             $this->persistBotRoute($id, $data);
             $this->persistGuard($id, $data);
             $this->persistEdgeFlags($id, $data);
+            $this->persistCostModel($id, $data);
             \SimpleKuma\Edge\EdgeCampaignSync::hookAfterSave($this->db, $id);
         }
         
@@ -837,6 +839,43 @@ class Campaign
         $stmt->bind_param('ii', $flag, $campaignId);
         $stmt->execute();
         $stmt->close();
+    }
+
+    /**
+     * Persist CPC/CPM cost model after main INSERT/UPDATE (migration 111).
+     *
+     * @param array<string, mixed> $data
+     */
+    private function persistCostModel(int $campaignId, array $data): void
+    {
+        if (!$this->campaignsTableHasCostModel()) {
+            return;
+        }
+        if (!array_key_exists('cost_model', $data)) {
+            return;
+        }
+        $model = \SimpleKuma\Tracking\ClickCostResolver::normalizeModel(
+            is_string($data['cost_model'] ?? null) ? (string) $data['cost_model'] : null
+        );
+        $stmt = $this->db->prepare('UPDATE campaigns SET cost_model = ? WHERE id = ?');
+        if (!$stmt) {
+            return;
+        }
+        $stmt->bind_param('si', $model, $campaignId);
+        $stmt->execute();
+        $stmt->close();
+    }
+
+    private function campaignsTableHasCostModel(): bool
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+        $result = $this->db->query("SHOW COLUMNS FROM campaigns LIKE 'cost_model'");
+        $cached = $result && $result->num_rows > 0;
+
+        return $cached;
     }
 
     private function campaignsTableHasAllowMultipleConversions(): bool

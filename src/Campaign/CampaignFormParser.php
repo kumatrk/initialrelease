@@ -70,6 +70,7 @@ class CampaignFormParser
             'google_ads_integration_id' => $googleAdsIntegrationId,
             'status' => $post['status'] ?? 'active',
             'default_cpc' => !empty($post['default_cpc']) ? (float)$post['default_cpc'] : null,
+            'cost_model' => (($post['cost_model'] ?? 'cpc') === 'cpm') ? 'cpm' : 'cpc',
             'min_postback_payout' => self::parseMinPostbackPayoutFromPost($post),
             'allow_multiple_conversions' => !empty($post['allow_multiple_conversions']),
             'fallback_offer_id' => !empty($post['fallback_offer_id']) ? (int)$post['fallback_offer_id'] : null,
@@ -188,6 +189,7 @@ class CampaignFormParser
             'status' => $input['status'] ?? 'active',
             'default_cpc' => isset($input['default_cpc']) && $input['default_cpc'] !== '' && $input['default_cpc'] !== null
                 ? (float)$input['default_cpc'] : null,
+            'cost_model' => (($input['cost_model'] ?? 'cpc') === 'cpm') ? 'cpm' : 'cpc',
             'min_postback_payout' => self::parseMinPostbackPayoutFromArray($input),
             'allow_multiple_conversions' => !empty($input['allow_multiple_conversions']),
             'fallback_offer_id' => !empty($input['fallback_offer_id']) ? (int)$input['fallback_offer_id'] : null,

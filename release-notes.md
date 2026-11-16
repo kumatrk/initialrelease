@@ -4,6 +4,19 @@
 
 ---
 
+# Simple Kuma Tracker Version 1.1.5.39
+
+## Changes in 1.1.5.39
+
+### Campaign cost model: CPC vs CPM
+- Per-campaign **Cost model** (`cpc` default | `cpm`): URL/default cost tokens on CPM campaigns are stored as **raw÷1000** per click (Meta/Google API spend overlays unchanged)
+- Create wizard + edit form label switches **Default CPC** / **Default CPM**; migration `111_add_campaign_cost_model.sql`
+- Edit-only **Fix CPM history**: date range + typed confirm divides stored click (and summary) costs by 1000 for mis-stored CPM campaigns — not auto-run on model toggle
+- After a successful Fix, campaign is marked (`cpm_history_fixed_at` / range); second run blocked unless **Allow run again** is checked (migration `112`)
+- **Operator note:** if an old CPM campaign stored the full rate as per-click cost, set Cost model to CPM for new traffic, then run **Fix CPM history** once for the bad date range (do not run twice without the override)
+
+---
+
 # Simple Kuma Tracker Version 1.1.5.38
 
 ## Changes in 1.1.5.38

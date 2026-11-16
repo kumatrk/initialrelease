@@ -85,6 +85,7 @@ final class EdgeCampaignSerializer
             'slug_id' => null,
             'slugs' => $slugs,
             'default_cpc' => isset($campaign['default_cpc']) ? (float) $campaign['default_cpc'] : null,
+            'cost_model' => (($campaign['cost_model'] ?? 'cpc') === 'cpm') ? 'cpm' : 'cpc',
             'traffic_source_id' => $tsId,
             'traffic_source' => $trafficSource,
             'custom_tokens' => $this->normalizeCustomTokens($customTokens),

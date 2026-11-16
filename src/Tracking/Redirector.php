@@ -542,61 +542,30 @@ class Redirector
      */
     private function captureCost(array $campaign, array $params, ?int $trafficSourceId = null, ?array $trafficSourceConfig = null): ?array
     {
-        // If click has a hard cost in URL, use it for this click (takes precedence over everything)
-        // Check 'cost' (common param) and traffic source's cost_param_key
-        $costParamKey = ($trafficSourceConfig && !empty($trafficSourceConfig['cost_param_key']))
-            ? $trafficSourceConfig['cost_param_key']
-            : 'cost';
-        $costValue = $params[$costParamKey] ?? $params['cost'] ?? null;
-        if ($costValue !== null && $costValue !== '' && is_numeric($costValue)) {
-            return [
-                'cost' => (float)$costValue,
-                'currency' => $trafficSourceConfig ? ($trafficSourceConfig['cost_currency'] ?? 'USD') : 'USD',
-            ];
-        }
+        $defaultCpc = $campaign['default_cpc'] ?? null;
+        $costModel = $campaign['cost_model'] ?? ClickCostResolver::MODEL_CPC;
+        $currency = $trafficSourceConfig['cost_currency'] ?? 'USD';
 
-        // If no traffic source detected, return null or default
         if (!$trafficSourceId || !$trafficSourceConfig) {
-            if (!empty($campaign['default_cpc'])) {
-                return [
-                    'cost' => (float)$campaign['default_cpc'],
-                    'currency' => 'USD',
-                ];
-            }
-            return null;
+            return ClickCostResolver::resolve($params, 'cost', null, 'USD', $defaultCpc, $costModel);
         }
 
         $costMethod = $trafficSourceConfig['cost_tracking_method'] ?? 'manual_token';
+        $costParamKey = !empty($trafficSourceConfig['cost_param_key'])
+            ? (string) $trafficSourceConfig['cost_param_key']
+            : 'cost';
 
-        // Integrated API cost is applied by the cost updaters, not on the redirect.
+        // Integrated API spend is applied by cost updaters; still honor URL/default via resolver.
         if ($costMethod === 'integrated_api') {
-            if (!empty($campaign['default_cpc'])) {
-                return [
-                    'cost' => (float)$campaign['default_cpc'],
-                    'currency' => $trafficSourceConfig['cost_currency'] ?? 'USD',
-                ];
+            $fromUrl = ClickCostResolver::resolve($params, $costParamKey, null, $currency, null, $costModel);
+            if ($fromUrl !== null) {
+                return $fromUrl;
             }
-            return null;
+
+            return ClickCostResolver::resolve([], null, null, $currency, $defaultCpc, $costModel);
         }
 
-        // Manual token method: get cost from URL parameter
-        if (!empty($trafficSourceConfig['cost_param_key']) && isset($params[$trafficSourceConfig['cost_param_key']])) {
-            // Cost provided in URL
-            return [
-                'cost' => (float)$params[$trafficSourceConfig['cost_param_key']],
-                'currency' => $trafficSourceConfig['cost_currency'] ?? 'USD',
-            ];
-        }
-
-        // Use default CPC if no cost param found
-        if (!empty($campaign['default_cpc'])) {
-            return [
-                'cost' => (float)$campaign['default_cpc'],
-                'currency' => $trafficSourceConfig['cost_currency'] ?? 'USD',
-            ];
-        }
-
-        return null;
+        return ClickCostResolver::resolve($params, $costParamKey, null, $currency, $defaultCpc, $costModel);
     }
 
     /**

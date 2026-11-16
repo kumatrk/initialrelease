@@ -103,6 +103,7 @@ if ($action === 'clone' && $id && $_SERVER['REQUEST_METHOD'] === 'POST') {
             'google_ads_integration_id' => $originalCampaign['google_ads_integration_id'],
             'status' => 'paused', // Clone as paused by default
             'default_cpc' => $originalCampaign['default_cpc'],
+            'cost_model' => (($originalCampaign['cost_model'] ?? 'cpc') === 'cpm') ? 'cpm' : 'cpc',
             'min_postback_payout' => $originalCampaign['min_postback_payout'] ?? null,
             'allow_multiple_conversions' => !empty($originalCampaign['allow_multiple_conversions']),
             'fallback_offer_id' => $originalCampaign['fallback_offer_id'] ?? null,
@@ -188,6 +189,21 @@ if (isset($_GET['success'])) {
         $count = isset($_GET['count']) ? (int)$_GET['count'] : 0;
         $success = "Successfully reset {$count} click(s) for the campaign";
         $action = 'list';
+    } elseif ($_GET['success'] === 'cpm_history_fixed') {
+        $clicksUpdated = isset($_GET['clicks']) ? (int) $_GET['clicks'] : 0;
+        $oldSum = isset($_GET['old']) ? (float) $_GET['old'] : 0.0;
+        $newSum = isset($_GET['new']) ? (float) $_GET['new'] : 0.0;
+        $success = sprintf(
+            'CPM history fixed: %d click(s) updated. Cost sum %.6f → %.6f.',
+            $clicksUpdated,
+            $oldSum,
+            $newSum
+        );
+        if ($action === 'edit' && $id) {
+            // Stay on edit so the Fix panel flash is visible
+        } else {
+            $action = 'edit';
+        }
     }
 }
 
@@ -309,6 +325,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors['general'] = 'Failed to reset clicks: ' . $e->getMessage();
                 error_log('reset_campaign_clicks failed: ' . $e->getMessage());
                 $action = 'list';
+            }
+        }
+    } elseif ($action === 'fix_cpm_history') {
+        $campaignId = (int) ($_POST['campaign_id'] ?? $_POST['id'] ?? 0);
+        $dateFrom = trim((string) ($_POST['date_from'] ?? ''));
+        $dateTo = trim((string) ($_POST['date_to'] ?? ''));
+        $confirmed = !empty($_POST['confirm_cpm_fix']);
+        $allowRerun = !empty($_POST['allow_cpm_fix_rerun']);
+
+        if (!$permission || !$permission->hasPermission(Permission::PERM_CAMPAIGN_EDIT)) {
+            $errors['general'] = 'You do not have permission to fix CPM history';
+            $action = $campaignId > 0 ? 'edit' : 'list';
+            $id = $campaignId > 0 ? $campaignId : $id;
+        } elseif ($campaignId <= 0) {
+            $errors['general'] = 'Invalid campaign ID';
+            $action = 'list';
+        } elseif (!$confirmed) {
+            $errors['general'] = 'Confirm that costs in this range will be divided by 1000 before running Fix CPM history.';
+            $action = 'edit';
+            $id = $campaignId;
+        } else {
+            try {
+                $fixer = new \SimpleKuma\Tracking\CampaignCpmCostFixer($db);
+                $result = $fixer->fixHistory($campaignId, $dateFrom, $dateTo, $allowRerun);
+                $qs = http_build_query([
+                    'page' => 'campaigns',
+                    'action' => 'edit',
+                    'id' => $campaignId,
+                    'success' => 'cpm_history_fixed',
+                    'clicks' => $result['clicks_updated'] + $result['archive_updated'],
+                    'old' => number_format($result['old_cost_sum'], 6, '.', ''),
+                    'new' => number_format($result['new_cost_sum'], 6, '.', ''),
+                ]);
+                header('Location: ?' . $qs);
+                exit;
+            } catch (\Throwable $e) {
+                $errors['general'] = 'Failed to fix CPM history: ' . $e->getMessage();
+                error_log('fix_cpm_history failed: ' . $e->getMessage());
+                $action = 'edit';
+                $id = $campaignId;
             }
         }
     } else {
@@ -471,6 +527,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'google_ads_integration_id' => $googleAdsIntegrationId, // Explicitly null for non-Google Ads traffic sources
         'status' => $_POST['status'] ?? 'active',
         'default_cpc' => !empty($_POST['default_cpc']) ? (float)$_POST['default_cpc'] : null,
+        'cost_model' => (($_POST['cost_model'] ?? 'cpc') === 'cpm') ? 'cpm' : 'cpc',
         'min_postback_payout' => (isset($_POST['min_postback_payout']) && $_POST['min_postback_payout'] !== '' && (float)$_POST['min_postback_payout'] >= 0)
             ? (float)$_POST['min_postback_payout'] : null,
         'allow_multiple_conversions' => !empty($_POST['allow_multiple_conversions']),
@@ -3467,6 +3524,9 @@ if ($editCampaign && isset($editCampaign['id'])) {
                     <a href="?page=campaigns" class="btn btn-secondary">Cancel</a>
                 </div>
             </form>
+            <?php if (!empty($campaignFixCpmHistoryFormHtml)) {
+                echo $campaignFixCpmHistoryFormHtml;
+            } ?>
             <script>
                 // Slug management functions
                 function addSlugRow() {

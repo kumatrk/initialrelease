@@ -17,20 +17,131 @@ use SimpleKuma\Release\TrafficSourceReleaseHelper;
                                        class="campaign-form-input">
                             </div>
                             <div>
-                                <label class="campaign-form-label">Default CPC</label>
                                 <?php
+                                $editCostModel = (($editCampaign['cost_model'] ?? 'cpc') === 'cpm') ? 'cpm' : 'cpc';
                                 $editDefaultCpc = $editCampaign['default_cpc'] ?? null;
                                 $editDefaultCpcValue = ($editDefaultCpc === null || $editDefaultCpc === '')
                                     ? ''
                                     : rtrim(rtrim(number_format((float) $editDefaultCpc, 6, '.', ''), '0'), '.');
                                 ?>
+                                <label class="campaign-form-label">Cost model</label>
+                                <select name="cost_model" id="campaign_cost_model" class="campaign-form-input"
+                                        onchange="(function(sel){ var lab=document.getElementById('campaign_default_cost_label'); var hint=document.getElementById('campaign_default_cost_hint'); if(lab) lab.textContent = sel.value==='cpm' ? 'Default CPM' : 'Default CPC'; if(hint) hint.textContent = sel.value==='cpm' ? 'CPM rate used when cost param missing (stored as rate÷1000 per click)' : 'Used when cost param not provided'; })(this)">
+                                    <option value="cpc"<?= $editCostModel === 'cpc' ? ' selected' : '' ?>>CPC (per click)</option>
+                                    <option value="cpm"<?= $editCostModel === 'cpm' ? ' selected' : '' ?>>CPM (per thousand)</option>
+                                </select>
+                                <div class="campaign-form-hint">URL/default cost tokens: CPC stored as-is; CPM stored as value÷1000 per click</div>
+                                <label class="campaign-form-label" id="campaign_default_cost_label" style="margin-top:10px;">
+                                    <?= $editCostModel === 'cpm' ? 'Default CPM' : 'Default CPC' ?>
+                                </label>
                                 <input type="number" name="default_cpc" step="any" min="0"
                                        value="<?= htmlspecialchars($editDefaultCpcValue) ?>"
                                        placeholder="0.00"
                                        class="campaign-form-input">
-                                <div class="campaign-form-hint">Used when cost param not provided</div>
+                                <div class="campaign-form-hint" id="campaign_default_cost_hint">
+                                    <?= $editCostModel === 'cpm'
+                                        ? 'CPM rate used when cost param missing (stored as rate÷1000 per click)'
+                                        : 'Used when cost param not provided' ?>
+                                </div>
                             </div>
                         </div>
+
+                        <?php if ($action === 'edit' && !empty($editCampaign['id'])): ?>
+                        <?php
+                            $cpmFixCampaignId = (int) $editCampaign['id'];
+                            $cpmFixDateTo = gmdate('Y-m-d');
+                            $cpmFixDateFrom = $cpmFixDateTo;
+                            $cpmFixFirstStmt = $db->prepare(
+                                'SELECT DATE(MIN(ts)) AS first_day FROM clicks WHERE campaign_id = ?'
+                            );
+                            if ($cpmFixFirstStmt) {
+                                $cpmFixFirstStmt->bind_param('i', $cpmFixCampaignId);
+                                $cpmFixFirstStmt->execute();
+                                $cpmFixFirstRow = $cpmFixFirstStmt->get_result()->fetch_assoc();
+                                $cpmFixFirstStmt->close();
+                                $firstDay = (string) ($cpmFixFirstRow['first_day'] ?? '');
+                                if ($firstDay !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $firstDay)) {
+                                    $cpmFixDateFrom = $firstDay;
+                                }
+                            }
+                            $cpmFixMarker = (new \SimpleKuma\Tracking\CampaignCpmCostFixer($db))->getFixMarker($cpmFixCampaignId);
+                            $cpmAlreadyFixed = is_array($cpmFixMarker) && !empty($cpmFixMarker['fixed_at']);
+                            $cpmFixedAtLabel = $cpmAlreadyFixed
+                                ? (string) $cpmFixMarker['fixed_at']
+                                : '';
+                            $cpmFixedRangeLabel = '';
+                            if ($cpmAlreadyFixed && !empty($cpmFixMarker['fixed_from']) && !empty($cpmFixMarker['fixed_to'])) {
+                                $cpmFixedRangeLabel = (string) $cpmFixMarker['fixed_from'] . ' → ' . (string) $cpmFixMarker['fixed_to'];
+                            }
+                            // Rendered outside #campaign-form via $campaignFixCpmHistoryFormHtml (no nested forms).
+                            ob_start();
+                        ?>
+                        <div class="campaign-form-panel" id="campaign-fix-cpm-history" style="margin:16px 0;">
+                            <label class="campaign-form-label">Fix CPM history</label>
+                            <div class="campaign-form-hint" style="margin-bottom:8px;">
+                                Divides stored click costs by 1000 for this campaign in the date range, then updates daily/token summary costs.
+                                Use when older clicks were ingested as CPC but the traffic was CPM. Switching Cost model alone only affects new clicks.
+                                After a successful run this campaign is marked fixed so a second ÷1000 cannot happen by accident.
+                            </div>
+                            <?php if ($cpmAlreadyFixed): ?>
+                            <div class="campaign-form-notice" style="margin-bottom:10px;">
+                                Already fixed on <?= htmlspecialchars($cpmFixedAtLabel) ?> UTC
+                                <?php if ($cpmFixedRangeLabel !== ''): ?>
+                                    (range <?= htmlspecialchars($cpmFixedRangeLabel) ?>)
+                                <?php endif; ?>.
+                                A second run will divide costs by 1000 again — only override if you intentionally need that.
+                            </div>
+                            <?php endif; ?>
+                            <form method="post" action="?page=campaigns&amp;action=edit&amp;id=<?= $cpmFixCampaignId ?>"
+                                  id="campaign-fix-cpm-form"
+                                  onsubmit="return confirm('Divide stored costs by 1000 for this campaign and date range? This cannot be undone automatically.');">
+                                <?= \SimpleKuma\Auth\Csrf::field() ?>
+                                <input type="hidden" name="action" value="fix_cpm_history">
+                                <input type="hidden" name="campaign_id" value="<?= $cpmFixCampaignId ?>">
+                                <div class="campaign-form-grid campaign-form-grid--auto" style="gap:10px; align-items:end;">
+                                    <div>
+                                        <label class="campaign-form-label campaign-form-label--sm" for="cpm_fix_date_from">From (UTC)</label>
+                                        <input type="date" name="date_from" id="cpm_fix_date_from" required
+                                               value="<?= htmlspecialchars($cpmFixDateFrom) ?>"
+                                               class="campaign-form-input campaign-form-input--sm"
+                                               <?= $cpmAlreadyFixed ? 'disabled' : '' ?>>
+                                    </div>
+                                    <div>
+                                        <label class="campaign-form-label campaign-form-label--sm" for="cpm_fix_date_to">To (UTC)</label>
+                                        <input type="date" name="date_to" id="cpm_fix_date_to" required
+                                               value="<?= htmlspecialchars($cpmFixDateTo) ?>"
+                                               class="campaign-form-input campaign-form-input--sm"
+                                               <?= $cpmAlreadyFixed ? 'disabled' : '' ?>>
+                                    </div>
+                                    <div style="padding-bottom:4px;">
+                                        <label class="campaign-form-label campaign-form-label--sm" style="display:flex; gap:6px; align-items:flex-start; font-weight:normal;">
+                                            <input type="checkbox" name="confirm_cpm_fix" value="1" required
+                                                   <?= $cpmAlreadyFixed ? 'disabled' : '' ?>>
+                                            <span>I understand costs in this range will be divided by 1000</span>
+                                        </label>
+                                        <?php if ($cpmAlreadyFixed): ?>
+                                        <label class="campaign-form-label campaign-form-label--sm" style="display:flex; gap:6px; align-items:flex-start; font-weight:normal; margin-top:8px;">
+                                            <input type="checkbox" name="allow_cpm_fix_rerun" id="allow_cpm_fix_rerun" value="1"
+                                                   onchange="(function(cb){ var f=document.getElementById('campaign-fix-cpm-form'); if(!f) return; ['date_from','date_to','confirm_cpm_fix'].forEach(function(n){ var el=f.querySelector('[name=\"'+n+'\"]'); if(el) el.disabled=!cb.checked; }); var btn=document.getElementById('cpm_fix_submit'); if(btn) btn.disabled=!cb.checked; })(this)">
+                                            <span>Allow run again (I understand this will ÷1000 a second time)</span>
+                                        </label>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div>
+                                        <button type="submit" class="btn btn-secondary btn-sm" id="cpm_fix_submit"
+                                                <?= $cpmAlreadyFixed ? 'disabled' : '' ?>>Fix CPM history</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                        <?php
+                            $campaignFixCpmHistoryFormHtml = ob_get_clean();
+                        ?>
+                        <div class="campaign-form-hint" style="margin-top:8px;">
+                            After save, use <a href="#campaign-fix-cpm-history">Fix CPM history</a> below the form if older clicks need ÷1000.
+                            <?php if ($cpmAlreadyFixed): ?>Already marked fixed.<?php endif; ?>
+                        </div>
+                        <?php endif; ?>
 
                         <div class="campaign-form-field">
                             <label class="campaign-form-label">Tags</label>

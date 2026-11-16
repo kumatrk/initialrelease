@@ -413,6 +413,8 @@ function normalizeTime(t) {
 }
 
 function captureCost(campaign, params) {
+  // Return RAW network/default amounts. Origin EdgeClickIngest + ClickCostResolver
+  // apply campaign.cost_model (cpm → /1000) so we never double-convert.
   const ts = campaign.traffic_source || {};
   const rawKey = ts.cost_param_key != null ? String(ts.cost_param_key).trim() : '';
   const costKey = rawKey || 'cost';

@@ -8,11 +8,25 @@
                placeholder="e.g., FB Keto Campaign" class="campaign-form-input">
     </div>
     <div class="campaign-form-field" style="margin-bottom:0;">
-        <label class="campaign-form-label" for="wizard_default_cpc">Default CPC</label>
+        <?php $wizardCostModel = cc_input('cost_model', 'cpc') === 'cpm' ? 'cpm' : 'cpc'; ?>
+        <label class="campaign-form-label" for="wizard_cost_model">Cost model</label>
+        <select name="cost_model" id="wizard_cost_model" class="campaign-form-input"
+                onchange="(function(sel){ var lab=document.getElementById('wizard_default_cost_label'); var hint=document.getElementById('wizard_default_cost_hint'); if(lab) lab.textContent = sel.value==='cpm' ? 'Default CPM' : 'Default CPC'; if(hint) hint.textContent = sel.value==='cpm' ? 'CPM rate when cost param missing (stored as rate÷1000 per click)' : 'Used when cost param not provided'; })(this)">
+            <option value="cpc" <?= cc_selected($wizardCostModel, 'cpc') ?>>CPC (per click)</option>
+            <option value="cpm" <?= cc_selected($wizardCostModel, 'cpm') ?>>CPM (per thousand)</option>
+        </select>
+        <div class="campaign-form-hint">CPC = store token as-is; CPM = store token÷1000 per click</div>
+        <label class="campaign-form-label" id="wizard_default_cost_label" for="wizard_default_cpc" style="margin-top:10px;">
+            <?= $wizardCostModel === 'cpm' ? 'Default CPM' : 'Default CPC' ?>
+        </label>
         <input type="number" name="default_cpc" id="wizard_default_cpc" step="any" min="0"
                value="<?= htmlspecialchars(cc_input('default_cpc')) ?>"
                placeholder="0.00" class="campaign-form-input">
-        <div class="campaign-form-hint">Used when cost param not provided</div>
+        <div class="campaign-form-hint" id="wizard_default_cost_hint">
+            <?= $wizardCostModel === 'cpm'
+                ? 'CPM rate when cost param missing (stored as rate÷1000 per click)'
+                : 'Used when cost param not provided' ?>
+        </div>
     </div>
 </div>
 
